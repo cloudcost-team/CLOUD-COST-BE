@@ -1,0 +1,13 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:cci;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+
+cci:
+  app-env: local
+  aws:
+    backend-role-arn: arn:aws:iam::111122223333:role/CloudCostInsightBackendRole
+    template-url: https://cci-templates-111122223333.s3.ap-northeast-2.amazonaws.com/customer-readonly-role.yaml
+    callback-topic-arn: arn:aws:sns:ap-northeast-2:111122223333:cloudcost-insight-connections
+    # callback-queue-url은 비워 둔다 → 테스트에서는 SQS 수신기가 켜지지 않는다
