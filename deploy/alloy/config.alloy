@@ -1,0 +1,88 @@
+// Grafana Alloy: 이 서버의 VM·DB·앱 지표를 모아 Grafana Cloud(Prometheus)로 보낸다.
+// 서버 쪽에는 들어오는 포트를 새로 열지 않는다 (Alloy가 밖으로 보내기만 한다).
+// 필요한 환경변수(서버 ~/cloudcost/.env): GRAFANA_CLOUD_PROM_URL, GRAFANA_CLOUD_PROM_USER, GRAFANA_CLOUD_API_KEY, DB_PASSWORD
+// job 이름은 Grafana Cloud의 Linux Server·PostgreSQL 통합 대시보드가 기대하는 값을 쓴다.
+
+// ── VM (EC2): CPU·메모리·스왑·디스크·네트워크 ──────────────────────────
+prometheus.exporter.unix "node" {
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+  rootfs_path = "/host/root"
+  udev_data_path = "/host/root/run/udev/data"
+
+  filesystem {
+    fs_types_exclude     = "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|tmpfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$"
+    mount_points_exclude = "^/(dev|proc|run|sys|var/lib/docker/.+)($|/)"
+  }
+}
+
+discovery.relabel "node" {
+  targets = prometheus.exporter.unix.node.targets
+
+  rule {
+    target_label = "instance"
+    replacement  = "cloudcost-server"
+  }
+  rule {
+    target_label = "job"
+    replacement  = "integrations/node_exporter"
+  }
+}
+
+prometheus.scrape "node" {
+  targets         = discovery.relabel.node.output
+  scrape_interval = "60s"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+// ── DB (PostgreSQL): 연결 수·DB 크기·트랜잭션·캐시 적중률 ────────────────
+prometheus.exporter.postgres "db" {
+  data_source_names = [string.format("postgresql://cci:%s@127.0.0.1:5432/cci?sslmode=disable", sys.env("DB_PASSWORD"))]
+}
+
+discovery.relabel "db" {
+  targets = prometheus.exporter.postgres.db.targets
+
+  rule {
+    target_label = "instance"
+    replacement  = "cloudcost-db"
+  }
+  rule {
+    target_label = "job"
+    replacement  = "integrations/postgres_exporter"
+  }
+}
+
+prometheus.scrape "db" {
+  targets         = discovery.relabel.db.output
+  scrape_interval = "60s"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+// ── 앱 (Spring Boot): API 응답 시간·오류율·JVM·DB 커넥션 풀 ────────────
+prometheus.scrape "app" {
+  targets = [{
+    "__address__" = "127.0.0.1:8081",
+    "instance"    = "cloudcost-app",
+    "job"         = "cloudcost-app",
+  }]
+  metrics_path    = "/actuator/prometheus"
+  scrape_interval = "60s"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+// ── Grafana Cloud로 전송 ────────────────────────────────────────────
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_CLOUD_PROM_URL")
+
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_PROM_USER")
+      password = sys.env("GRAFANA_CLOUD_API_KEY")
+    }
+  }
+
+  external_labels = {
+    environment = "prod",
+  }
+}

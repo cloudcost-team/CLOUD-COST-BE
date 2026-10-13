@@ -12,6 +12,8 @@ cp build/libs/cloudcost-insight-*.jar deploy/app.jar
 
 SSH_OPTS=(-i "$KEY" -o StrictHostKeyChecking=accept-new)
 scp "${SSH_OPTS[@]}" deploy/app.jar deploy/Dockerfile deploy/docker-compose.yml deploy/Caddyfile "$SERVER:~/cloudcost/"
+ssh "${SSH_OPTS[@]}" "$SERVER" "mkdir -p ~/cloudcost/alloy"
+scp "${SSH_OPTS[@]}" deploy/alloy/config.alloy "$SERVER:~/cloudcost/alloy/"
 rm -f deploy/app.jar
 
 ssh "${SSH_OPTS[@]}" "$SERVER" 'cd ~/cloudcost && test -f .env || { echo ".env가 없습니다. docs/DEPLOY.md 5절을 보세요."; exit 1; } && docker compose up -d --build && docker compose ps'
