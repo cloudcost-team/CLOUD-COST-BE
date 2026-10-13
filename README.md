@@ -1,4 +1,4 @@
-# CloudCost Insight Backend
+# CloudCost Backend
 
 > AWS 계정을 **읽기 전용 IAM Role**로 연결하기만 하면,
 > 내 EC2가 얼마나 켜져 있었고 비용이 얼마쯤 나왔는지 바로 보여 줍니다.
@@ -7,7 +7,7 @@
 <br />
 
 ## Architecture
-<img src="assets/architecture.svg" alt="CloudCost Insight 아키텍처" width="100%" />
+<img src="assets/architecture.svg" alt="CloudCost 아키텍처" width="100%" />
 
 <br />
 
@@ -144,22 +144,6 @@ docs/                     # 아키텍처·API·데이터 모델·보안·배포 
 - Java 21
 - Docker (로컬 PostgreSQL)
 - AWS CLI 프로필 (실제 AWS 연결 시, [docs/AWS_SETUP_GUIDE.md](docs/AWS_SETUP_GUIDE.md))
-
-### 설치
-
-```bash
-git clone https://github.com/cloudcost-insight-team/CLOUD-COST-BE.git
-cd CLOUD-COST-BE
-```
-
-### 로컬 실행
-
-로컬 프로필은 기본값으로 활성화됩니다. 필요한 값은 환경 변수로 넣습니다.
-
-```bash
-docker compose up -d db
-AWS_PROFILE=<백엔드 프로필> CCI_BACKEND_ROLE_ARN=<백엔드 Role ARN> GOOGLE_CLIENT_ID=<클라이언트 ID> ./gradlew bootRun
-```
 
 ### 테스트
 
