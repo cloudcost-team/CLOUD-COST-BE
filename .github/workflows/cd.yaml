@@ -1,0 +1,93 @@
+name: CloudCost CD 파이프라인
+
+on:
+  push:
+    branches: [ "dev" ]
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write   # GitHub OIDC로 AWS 역할을 맡는다 (AWS 액세스 키를 저장하지 않는다)
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yaml
+
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: wrapper
+          cache-read-only: false
+
+      - name: Build bootJar
+        run: |
+          chmod +x gradlew
+          ./gradlew bootJar -x test
+          cp build/libs/cloudcost-insight-*.jar deploy/app.jar
+
+      - name: AWS 자격 증명 (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-northeast-2
+
+      # 서버 SSH(22)는 평소 관리자 IP만 열려 있다. 배포하는 동안만 이 러너 IP를 열고 끝나면 닫는다.
+      - name: 러너 IP SSH 임시 허용
+        run: |
+          RUNNER_IP=$(curl -fsS https://checkip.amazonaws.com)
+          echo "RUNNER_IP=$RUNNER_IP" >> "$GITHUB_ENV"
+          aws ec2 authorize-security-group-ingress --group-id "${{ secrets.PROD_SG_ID }}" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${RUNNER_IP}/32,Description=github-actions-deploy}]"
+
+      - name: 배포 파일 서버로 복사
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_KEY }}
+          source: "deploy/app.jar,deploy/Dockerfile,deploy/docker-compose.yml,deploy/Caddyfile"
+          target: "~/cloudcost"
+          strip_components: 1
+
+      - name: 서버에서 컨테이너 재시작
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_KEY }}
+          command_timeout: 10m
+          script: |
+            set -e
+            cd ~/cloudcost
+            test -f .env || { echo ".env가 없습니다 (docs/DEPLOY.md 5절)"; exit 1; }
+            docker compose up -d --build
+            for i in $(seq 1 40); do
+              if curl -fsS http://127.0.0.1:8080/api/v1/auth/config > /dev/null; then echo "앱 정상 기동"; break; fi
+              if [ "$i" -eq 40 ]; then docker compose logs --tail 50 app; exit 1; fi
+              sleep 5
+            done
+            docker image prune -f
+            docker compose ps
+
+      - name: 러너 IP SSH 허용 해제
+        if: always() && env.RUNNER_IP != ''
+        run: |
+          aws ec2 revoke-security-group-ingress --group-id "${{ secrets.PROD_SG_ID }}" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${RUNNER_IP}/32}]"
