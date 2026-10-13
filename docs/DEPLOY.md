@@ -92,6 +92,7 @@ jar를 빌드해 서버로 복사하고 컨테이너를 다시 띄운다. 처음
 | 앱 로그 | `docker compose logs -f app` |
 | 재시작 | `docker compose restart app` |
 | 상태 | `docker compose ps` |
+| DB 접속 (IntelliJ 등) | SSH 터널 사용: SSH `ec2-user@<탄력적 IP>` + 키 → DB 호스트 `localhost`, 포트 `5432`, DB `cci`, 사용자 `cci`, 비밀번호는 서버 `.env`의 `DB_PASSWORD` |
 | DB 백업 | `docker compose exec db pg_dump -U cci cci > backup-$(date +%F).sql` |
 
 **비용** (서울): t3.small 약 $19/월 (t3.medium이면 약 $38) + 공인 IPv4 약 $3.6/월 + 디스크 20GiB 약 $1.8/월 + 도메인 연 1회 (Route 53으로 DNS를 관리하면 호스팅 영역 $0.5/월 추가).
@@ -139,5 +140,5 @@ AWS 권한은 GitHub OIDC로 받는다 (GitHub에 AWS 액세스 키를 저장하
 - [ ] 루트 사용자 액세스 키 비활성화 (IAM 대시보드 경고)
 - [ ] 보안 그룹 22번은 내 IP만
 - [ ] `.env`는 서버에만 (`chmod 600`), JWT_SECRET·DB_PASSWORD는 서버에서 생성
-- [ ] DB 포트(5432)는 밖으로 열지 않음 (compose에 ports 없음)
+- [ ] DB 포트(5432)는 서버 내부(127.0.0.1)에만 열림, 보안 그룹에 5432 없음
 - [ ] 서버에 AWS 액세스 키 없음 (인스턴스 역할 사용)

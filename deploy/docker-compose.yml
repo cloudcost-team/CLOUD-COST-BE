@@ -17,7 +17,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-    # 포트를 밖으로 열지 않는다 (앱만 내부 네트워크로 접속)
+    # 서버 내부(127.0.0.1)에서만 열린다. 인터넷에는 열리지 않고, DB 도구는 SSH 터널로만 접속한다 (docs/DEPLOY.md 9절).
+    ports:
+      - "127.0.0.1:5432:5432"
 
   app:
     build: .
