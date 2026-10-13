@@ -98,6 +98,29 @@ jar를 빌드해 서버로 복사하고 컨테이너를 다시 띄운다. 처음
 **비용** (서울): t3.small 약 $19/월 (t3.medium이면 약 $38) + 공인 IPv4 약 $3.6/월 + 디스크 20GiB 약 $1.8/월 + 도메인 연 1회 (Route 53으로 DNS를 관리하면 호스팅 영역 $0.5/월 추가).
 데모가 끝나면 **인스턴스 중지**로 서버 비용을 멈춘다 (디스크·IP 비용은 남는다). 완전히 그만둘 때는 인스턴스 종료 + 탄력적 IP 릴리스.
 
+## 9-1. 모니터링 (Grafana Cloud)
+서버의 Alloy 컨테이너가 VM·DB·앱 지표를 1분마다 Grafana Cloud로 보낸다. 서버에 새로 여는 포트는 없다.
+
+**한 번만: 서버 `.env`에 추가** (토큰은 Grafana Cloud → My Account → 스택 → Prometheus → Details에서 만든 `glc_...` 값. 채팅·저장소에 쓰지 않는다)
+```bash
+cat >> ~/cloudcost/.env <<'ENV'
+COMPOSE_PROFILES=monitoring
+GRAFANA_CLOUD_PROM_URL=https://prometheus-<리전>.grafana.net/api/prom/push
+GRAFANA_CLOUD_PROM_USER=<Prometheus 인스턴스 ID 숫자>
+GRAFANA_CLOUD_API_KEY=<토큰>
+ENV
+chmod 600 ~/cloudcost/.env
+```
+그다음 배포(`deploy.sh` 또는 CD)하면 `alloy` 컨테이너가 함께 뜬다. 확인: `docker compose ps`, `docker compose logs alloy --tail 50`.
+
+**한 번만: Grafana Cloud 대시보드**
+1. Connections → **Linux Server** 통합 → *Install* (대시보드만 설치. Alloy 설치 안내는 건너뛴다) → Dashboards의 *Linux node / overview*에서 `cloudcost-server` 선택
+2. Connections → **PostgreSQL** 통합 → *Install* → *PostgreSQL overview*
+3. Dashboards → New → Import → ID `4701` (JVM Micrometer) 또는 `19004` (Spring Boot 3.x Statistics), 데이터 소스는 `grafanacloud-…-prom`, `application = cloudcost-insight`
+4. 알림(Alerting → Alert rules) 추천: `up{job="cloudcost-app"} == 0` 2분 / CPU 90% 10분 / 디스크 여유 15% 미만 / 메모리 여유 10% 미만
+
+무료 플랜(활성 시계열 1만 개) 안에 들어간다. 끄려면 `.env`에서 `COMPOSE_PROFILES` 줄을 지우고 `docker compose --profile monitoring stop alloy`.
+
 ## 10. GitHub Actions CI/CD
 | 워크플로 | 언제 | 하는 일 |
 |---|---|---|
@@ -143,4 +166,6 @@ AWS 권한은 GitHub OIDC로 받는다 (GitHub에 AWS 액세스 키를 저장하
 - [ ] 보안 그룹 22번은 내 IP만
 - [ ] `.env`는 서버에만 (`chmod 600`), JWT_SECRET·DB_PASSWORD는 서버에서 생성
 - [ ] DB 포트(5432)는 서버 내부(127.0.0.1)에만 열림, 보안 그룹에 5432 없음
+- [ ] Actuator 포트(8081)도 127.0.0.1에만 열림, Caddy는 8080만 프록시
+- [ ] Grafana Cloud 토큰은 서버 `.env`에만, 권한은 metrics write만
 - [ ] 서버에 AWS 액세스 키 없음 (인스턴스 역할 사용)

@@ -68,7 +68,7 @@ jobs:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USERNAME }}
           key: ${{ secrets.PROD_KEY }}
-          source: "deploy/app.jar,deploy/Dockerfile,deploy/docker-compose.yml,deploy/Caddyfile"
+          source: "deploy/app.jar,deploy/Dockerfile,deploy/docker-compose.yml,deploy/Caddyfile,deploy/alloy/config.alloy"
           target: "~/cloudcost"
           strip_components: 1
 

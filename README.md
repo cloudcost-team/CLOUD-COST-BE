@@ -92,6 +92,7 @@
 ### 인프라 · 배포
 - **EC2 + Docker Compose** - Caddy(HTTPS 자동) → 앱 → PostgreSQL
 - **GitHub Actions** - CI(테스트), CD(자동 배포, AWS는 OIDC)
+- **Grafana Cloud + Alloy** - 서버(VM)·PostgreSQL·앱(Actuator/Micrometer) 지표 모니터링 (서버 밖에서 확인)
 
 <br />
 
