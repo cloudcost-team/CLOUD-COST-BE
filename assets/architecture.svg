@@ -1,0 +1,188 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1120 600" width="1120" height="600" font-family="-apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker>
+    <style>
+      .name { font-size: 12px; font-weight: 700; fill: #0f172a; text-anchor: middle; }
+      .group { font-size: 13px; font-weight: 700; }
+      .tag { font-size: 10.5px; font-weight: 600; }
+      .w { fill: none; stroke: #ffffff; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+      .wf { fill: #ffffff; }
+    </style>
+
+    <!-- ===== 아이콘 (56x56, 원점 = 왼쪽 위) ===== -->
+    <g id="i-user">
+      <rect width="56" height="56" rx="12" fill="#475569"/>
+      <rect class="w" x="11" y="14" width="34" height="26" rx="3"/>
+      <line class="w" x1="11" y1="21" x2="45" y2="21"/>
+      <circle class="wf" cx="15" cy="17.5" r="1.3"/><circle class="wf" cx="19" cy="17.5" r="1.3"/>
+      <circle class="w" cx="28" cy="29" r="3.2"/><path class="w" d="M22 38 q6 -6 12 0"/>
+    </g>
+    <g id="i-google">
+      <rect width="56" height="56" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+      <path d="M40 29.3c0-.9-.1-1.8-.2-2.6H28v5h6.7c-.3 1.6-1.2 2.9-2.5 3.8v3.1h4C38.6 36.4 40 33.1 40 29.3z" fill="#4285F4"/>
+      <path d="M28 41c3.4 0 6.2-1.1 8.3-3.1l-4-3.1c-1.1.8-2.6 1.2-4.3 1.2-3.3 0-6.1-2.2-7.1-5.2h-4.1v3.2C18.8 38.2 23.1 41 28 41z" fill="#34A853"/>
+      <path d="M20.9 30.8c-.3-.8-.4-1.6-.4-2.4s.1-1.7.4-2.4v-3.2h-4.1c-.9 1.7-1.3 3.6-1.3 5.6s.5 3.9 1.3 5.6l4.1-3.2z" fill="#FBBC05"/>
+      <path d="M28 20.8c1.9 0 3.5.6 4.8 1.9l3.6-3.6C34.2 17.1 31.4 16 28 16c-4.9 0-9.2 2.8-11.2 6.9l4.1 3.2c1-3 3.8-5.3 7.1-5.3z" fill="#EA4335"/>
+    </g>
+    <g id="i-github">
+      <rect width="56" height="56" rx="12" fill="#1f2328"/>
+      <g transform="translate(11.5 11.5) scale(2.06)">
+        <path fill="#ffffff" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+      </g>
+    </g>
+    <g id="i-caddy">
+      <rect width="56" height="56" rx="12" fill="#0891b2"/>
+      <path class="w" d="M20 26 v-5 a8 8 0 0 1 16 0 v5"/>
+      <rect class="wf" x="16" y="26" width="24" height="17" rx="3"/>
+      <circle cx="28" cy="33" r="2.4" fill="#0891b2"/><rect x="27" y="34" width="2" height="5" fill="#0891b2"/>
+    </g>
+    <g id="i-spring">
+      <rect width="56" height="56" rx="12" fill="#6db33f"/>
+      <path class="wf" d="M40 14c-12 0-22 5-23 17-.4 4 1 7 3 9 2-6 6-11 13-14-6 4-9 8-11 15 9 1 17-5 18-14 .5-5 0-9 0-13z"/>
+    </g>
+    <g id="i-db">
+      <rect width="56" height="56" rx="12" fill="#336791"/>
+      <ellipse class="w" cx="28" cy="18" rx="12" ry="4.5"/>
+      <path class="w" d="M16 18 v20 c0 2.5 5.4 4.5 12 4.5 s12 -2 12 -4.5 v-20"/>
+      <path class="w" d="M16 28 c0 2.5 5.4 4.5 12 4.5 s12 -2 12 -4.5"/>
+    </g>
+    <g id="i-price">
+      <rect width="56" height="56" rx="12" fill="#ed7100"/>
+      <path class="w" d="M14 26 V15 h11 l17 17 -11 11 z"/>
+      <circle class="wf" cx="20" cy="21" r="2.2"/>
+      <text x="30.5" y="36.5" font-size="12" font-weight="800" fill="#ffffff" text-anchor="middle" transform="rotate(45 30.5 32)">$</text>
+    </g>
+    <g id="i-sns">
+      <rect width="56" height="56" rx="12" fill="#e7157b"/>
+      <path class="w" d="M14 24 h7 l14 -8 v24 l-14 -8 h-7 z"/>
+      <path class="w" d="M19 32 l3 8"/>
+      <path class="w" d="M39 23 q3 5 0 10"/><path class="w" d="M42 19 q6 9 0 18"/>
+    </g>
+    <g id="i-sqs">
+      <rect width="56" height="56" rx="12" fill="#e7157b"/>
+      <rect class="w" x="11" y="21" width="10" height="14" rx="2"/>
+      <rect class="w" x="23" y="21" width="10" height="14" rx="2"/>
+      <rect class="w" x="35" y="21" width="10" height="14" rx="2"/>
+      <path class="w" d="M11 42 h34 l-4 -3 m4 3 l-4 3"/>
+    </g>
+    <g id="i-s3">
+      <rect width="56" height="56" rx="12" fill="#3f8624"/>
+      <ellipse class="w" cx="28" cy="17" rx="13" ry="4"/>
+      <path class="w" d="M15 17 l3.5 22 c.5 2.5 4.5 4 9.5 4 s9 -1.5 9.5 -4 l3.5 -22"/>
+    </g>
+    <g id="i-shield">
+      <rect width="56" height="56" rx="12" fill="#dd344c"/>
+      <path class="w" d="M28 12 l13 5 v9 c0 9 -6 15 -13 18 c-7 -3 -13 -9 -13 -18 v-9 z"/>
+      <path class="w" d="M22 28 l4.5 4.5 l8 -8.5"/>
+    </g>
+    <g id="i-cfn">
+      <rect width="56" height="56" rx="12" fill="#e7157b"/>
+      <path class="w" d="M28 13 l14 7 -14 7 -14 -7 z"/>
+      <path class="w" d="M14 28 l14 7 14 -7"/>
+      <path class="w" d="M14 36 l14 7 14 -7"/>
+    </g>
+    <g id="i-role">
+      <rect width="56" height="56" rx="12" fill="#dd344c"/>
+      <circle class="w" cx="21" cy="28" r="7"/>
+      <path class="w" d="M28 28 h16 m-4 0 v5 m-5 -5 v4"/>
+    </g>
+    <g id="i-ec2">
+      <rect width="56" height="56" rx="12" fill="#ed7100"/>
+      <rect class="w" x="17" y="17" width="22" height="22" rx="2"/>
+      <rect class="wf" x="23" y="23" width="10" height="10" rx="1"/>
+      <path class="w" d="M23 12 v5 M28 12 v5 M33 12 v5 M23 39 v5 M28 39 v5 M33 39 v5 M12 23 h5 M12 28 h5 M12 33 h5 M39 23 h5 M39 28 h5 M39 33 h5"/>
+    </g>
+    <g id="i-cw">
+      <rect width="56" height="56" rx="12" fill="#e7157b"/>
+      <path class="w" d="M12 40 h32"/>
+      <path class="w" d="M14 34 l7 -7 6 5 9 -11 6 4"/>
+      <circle class="wf" cx="36" cy="21" r="2.4"/>
+    </g>
+  </defs>
+
+  <rect width="1120" height="600" rx="16" fill="#ffffff"/>
+  <text x="24" y="38" font-size="19" font-weight="800" fill="#0f172a">CloudCost Insight</text>
+
+  <!-- ===== 그룹 ===== -->
+  <rect x="170" y="58" width="525" height="522" rx="16" fill="#fff7ed" stroke="#fb923c" stroke-dasharray="6 4"/>
+  <text x="188" y="82" class="group" fill="#c2410c">CloudCost AWS</text>
+  <rect x="192" y="96" width="482" height="186" rx="14" fill="#ffffff" stroke="#f97316"/>
+  <text x="208" y="118" class="tag" fill="#c2410c">EC2 · Docker</text>
+
+  <rect x="735" y="58" width="365" height="522" rx="16" fill="#f5f3ff" stroke="#8b5cf6" stroke-dasharray="6 4"/>
+  <text x="753" y="82" class="group" fill="#6d28d9">고객 AWS 계정</text>
+  <rect x="790" y="512" width="255" height="40" rx="20" fill="#ede9fe"/>
+  <text x="917" y="537" class="tag" fill="#5b21b6" text-anchor="middle">READ ONLY · 허용 액션 2개 · Access Key 없음</text>
+
+  <!-- ===== 노드 (아이콘 중심 = 이름 위) ===== -->
+  <!-- 왼쪽 -->
+  <use xlink:href="#i-user"   x="52"  y="102"/><text x="80"  y="174" class="name">사용자</text>
+  <use xlink:href="#i-google" x="52"  y="272"/><text x="80"  y="344" class="name">Google 로그인</text>
+  <use xlink:href="#i-github" x="52"  y="452"/><text x="80"  y="524" class="name">GitHub Actions</text>
+
+  <!-- EC2 안 -->
+  <use xlink:href="#i-caddy"  x="247" y="160"/><text x="275" y="232" class="name">Caddy</text>
+  <use xlink:href="#i-spring" x="402" y="160"/><text x="430" y="232" class="name">Spring Boot</text>
+  <use xlink:href="#i-db"     x="557" y="160"/><text x="585" y="232" class="name">PostgreSQL</text>
+
+  <!-- 우리 계정 서비스 -->
+  <use xlink:href="#i-price"  x="222" y="350"/><text x="250" y="422" class="name">Price List</text>
+  <use xlink:href="#i-sns"    x="372" y="350"/><text x="400" y="422" class="name">SNS</text>
+  <use xlink:href="#i-sqs"    x="532" y="350"/><text x="560" y="422" class="name">SQS</text>
+  <use xlink:href="#i-shield" x="222" y="472"/><text x="250" y="544" class="name">보안 그룹</text>
+  <use xlink:href="#i-s3"     x="372" y="472"/><text x="400" y="544" class="name">S3 템플릿</text>
+
+  <!-- 고객 계정 -->
+  <use xlink:href="#i-cfn"    x="882" y="112"/><text x="910" y="184" class="name">CloudFormation</text>
+  <use xlink:href="#i-role"   x="882" y="252"/><text x="910" y="324" class="name">Read Only Role</text>
+  <use xlink:href="#i-ec2"    x="812" y="392"/><text x="840" y="464" class="name">EC2</text>
+  <use xlink:href="#i-cw"     x="952" y="392"/><text x="980" y="464" class="name">CloudWatch</text>
+
+  <!-- ===== 연결 ===== -->
+  <!-- 사용자 → Caddy → Spring → DB -->
+  <path d="M110 130 C 170 130, 190 185, 243 188" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#ab)"/>
+  <text x="150" y="124" class="tag" fill="#1d4ed8">HTTPS</text>
+  <path d="M305 188 L398 188" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#ab)"/>
+  <path d="M460 188 L553 188" stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+
+  <!-- 사용자 ↔ Google, Spring → Google 검증 -->
+  <path d="M80 182 L80 268" stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+  <text x="88" y="230" class="tag" fill="#475569">ID 토큰</text>
+  <path d="M410 218 C 330 290, 200 300, 112 300" stroke="#64748b" stroke-width="1.6" fill="none" stroke-dasharray="5 4" marker-end="url(#a)"/>
+  <text x="220" y="286" class="tag" fill="#475569">토큰 검증</text>
+
+  <!-- Spring → Price List -->
+  <path d="M415 220 C 360 280, 280 300, 258 346" stroke="#64748b" stroke-width="1.6" fill="none" marker-end="url(#a)"/>
+  <text x="318" y="318" class="tag" fill="#475569">단가</text>
+
+  <!-- Spring → Read Only Role (AssumeRole) -->
+  <path d="M430 156 C 440 66, 770 66, 790 200 C 800 262, 840 280, 878 280" stroke="#2563eb" stroke-width="2.2" fill="none" marker-end="url(#ab)"/>
+  <text x="560" y="78" class="tag" fill="#1d4ed8">AssumeRole + External ID</text>
+  <!-- Role → EC2 / CloudWatch -->
+  <path d="M896 334 L852 388" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#ab)"/>
+  <path d="M924 334 L968 388" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#ab)"/>
+  <text x="910" y="372" class="tag" fill="#1d4ed8" text-anchor="middle">읽기</text>
+
+  <!-- CloudFormation → SNS → SQS → Spring -->
+  <path d="M880 150 L718 150 L718 330 L400 330 L400 346" stroke="#d97706" stroke-width="2" fill="none" stroke-dasharray="6 4" marker-end="url(#ao)"/>
+  <text x="726" y="244" class="tag" fill="#b45309">생성·삭제 신호</text>
+  <path d="M430 378 L528 378" stroke="#d97706" stroke-width="2" fill="none" marker-end="url(#ao)"/>
+  <path d="M548 348 C 530 290, 495 235, 462 208" stroke="#d97706" stroke-width="2" fill="none" stroke-dasharray="6 4" marker-end="url(#ao)"/>
+  <text x="508" y="300" class="tag" fill="#b45309">폴링</text>
+
+  <!-- S3 템플릿 → CloudFormation (빠른 생성 링크) -->
+  <path d="M430 500 L703 500 L703 128 L878 128" stroke="#d97706" stroke-width="1.6" fill="none" stroke-dasharray="2 4" marker-end="url(#ao)"/>
+  <text x="560" y="494" class="tag" fill="#b45309">빠른 생성 링크</text>
+
+  <!-- GitHub → 보안 그룹, EC2 -->
+  <path d="M110 480 C 160 480, 180 500, 218 500" stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+  <text x="148" y="474" class="tag" fill="#475569">OIDC</text>
+  <path d="M94 450 C 120 360, 170 300, 200 282" stroke="#64748b" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+  <text x="114" y="384" class="tag" fill="#475569">SSH 배포</text>
+
+  <!-- 범례 -->
+  <line x1="24" y1="566" x2="50" y2="566" stroke="#2563eb" stroke-width="2"/><text x="56" y="570" class="tag" fill="#475569">조회</text>
+  <line x1="92" y1="566" x2="118" y2="566" stroke="#d97706" stroke-width="2" stroke-dasharray="6 4"/><text x="124" y="570" class="tag" fill="#475569">연결 신호</text>
+</svg>
