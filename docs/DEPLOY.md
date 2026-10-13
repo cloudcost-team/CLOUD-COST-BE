@@ -118,8 +118,10 @@ AWS 권한은 GitHub OIDC로 받는다 (GitHub에 AWS 액세스 키를 저장하
      "Action": "sts:AssumeRoleWithWebIdentity",
      "Condition": {
        "StringEquals": { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-                         "token.actions.githubusercontent.com:sub": "repo:cloudcost-insight-team/CLOUD-COST-BE:ref:refs/heads/dev" } } } ] }
+                         "token.actions.githubusercontent.com:sub": "repo:<조직>@<조직ID>/<저장소>@<저장소ID>:ref:refs/heads/dev" } } } ] }
    ```
+   이 저장소는 GitHub의 **immutable subject** 형식을 쓴다. 정확한 접두어는 `gh api repos/<조직>/<저장소>/actions/oidc/customization/sub`의 `sub_claim_prefix`로 확인한다.
+   (형식이 다르면 배포 단계가 `Not authorized to perform sts:AssumeRoleWithWebIdentity`로 실패한다)
    권한 정책 (서버 보안 그룹의 규칙 추가·삭제만):
    ```json
    { "Version": "2012-10-17", "Statement": [ { "Effect": "Allow",
