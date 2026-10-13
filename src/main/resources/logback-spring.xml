@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- 로그 메시지에서 자격증명·JWT·Authorization 값을 *** 로 가린다 (docs/SECURITY.md) -->
+    <conversionRule conversionWord="maskedMsg" class="com.cloudcost.entrypoint.logging.MaskingMessageConverter"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{36} - %maskedMsg%n%ex{short}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <logger name="software.amazon.awssdk.request" level="WARN"/>
+    <logger name="software.amazon.awssdk.auth" level="WARN"/>
+    <logger name="org.apache.http.wire" level="OFF"/>
+    <logger name="org.apache.http.headers" level="OFF"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

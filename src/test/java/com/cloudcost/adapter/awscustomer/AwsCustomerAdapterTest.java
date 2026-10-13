@@ -1,0 +1,153 @@
+package com.cloudcost.adapter.awscustomer;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import com.cloudcost.application.error.AwsAccessException;
+import com.cloudcost.application.error.AwsAccessException.Category;
+import com.cloudcost.application.port.CustomerAwsSession.DescribeResult;
+import com.cloudcost.domain.ec2.Ec2Instance;
+import com.cloudcost.domain.usage.HourlySample;
+import java.time.Instant;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.cloudwatch.CloudWatchClient;
+import software.amazon.awssdk.services.cloudwatch.model.CloudWatchException;
+import software.amazon.awssdk.services.cloudwatch.model.Datapoint;
+import software.amazon.awssdk.services.cloudwatch.model.GetMetricStatisticsRequest;
+import software.amazon.awssdk.services.cloudwatch.model.GetMetricStatisticsResponse;
+import software.amazon.awssdk.services.cloudwatch.model.Statistic;
+import software.amazon.awssdk.services.ec2.Ec2Client;
+import software.amazon.awssdk.services.ec2.model.DescribeInstancesRequest;
+import software.amazon.awssdk.services.ec2.model.DescribeInstancesResponse;
+import software.amazon.awssdk.services.ec2.model.Ec2Exception;
+import software.amazon.awssdk.services.ec2.model.Instance;
+import software.amazon.awssdk.services.ec2.model.Reservation;
+import software.amazon.awssdk.services.sts.model.StsException;
+
+/** 실제 AWS 대신 Mockito로 SDK 클라이언트를 대체한다. */
+class AwsCustomerAdapterTest {
+
+    private final Ec2Client ec2 = mock(Ec2Client.class);
+    private final CloudWatchClient cloudWatch = mock(CloudWatchClient.class);
+    private final AwsCustomerSession session = new AwsCustomerSession(Region.AP_NORTHEAST_2, ec2, cloudWatch);
+
+    @Test
+    void DescribeInstances_모든_페이지를_읽고_저장_허용_필드만_꺼낸다() {
+        Instance spot = Instance.builder()
+                .instanceId("i-0abc")
+                .instanceType("t3.micro")
+                .state(s -> s.name("running"))
+                .launchTime(Instant.parse("2026-10-01T00:00:00Z"))
+                .platformDetails("Linux/UNIX")
+                .placement(p -> p.availabilityZone("ap-northeast-2a").tenancy("default"))
+                .instanceLifecycle("spot")
+                .monitoring(m -> m.state("disabled"))
+                .privateIpAddress("10.0.0.1")
+                .keyName("my-key")
+                .tags(t -> t.key("Name").value("dev-api"), t -> t.key("Owner").value("someone"))
+                .build();
+        Instance plain = Instance.builder().instanceId("i-0def").instanceType("m5.large")
+                .state(s -> s.name("stopped")).build();
+        when(ec2.describeInstances(any(DescribeInstancesRequest.class)))
+                .thenReturn(DescribeInstancesResponse.builder()
+                        .reservations(Reservation.builder().instances(spot).build())
+                        .nextToken("page-2")
+                        .build())
+                .thenReturn(DescribeInstancesResponse.builder()
+                        .reservations(Reservation.builder().instances(plain).build())
+                        .build());
+
+        DescribeResult result = session.describeInstances();
+
+        assertThat(result.requestCount()).isEqualTo(2);
+        assertThat(result.instances()).hasSize(2);
+        Ec2Instance first = result.instances().getFirst();
+        assertThat(first).isEqualTo(new Ec2Instance("i-0abc", "dev-api", "t3.micro", "ap-northeast-2",
+                "ap-northeast-2a", "running", Instant.parse("2026-10-01T00:00:00Z"), "Linux/UNIX", "default", true, false));
+        assertThat(first.toString()).doesNotContain("10.0.0.1").doesNotContain("my-key").doesNotContain("someone");
+    }
+
+    @Test
+    void GetMetricStatistics는_CPUUtilization_SampleCount_3600초로_요청한다() {
+        when(cloudWatch.getMetricStatistics(any(GetMetricStatisticsRequest.class)))
+                .thenReturn(GetMetricStatisticsResponse.builder()
+                        .datapoints(
+                                Datapoint.builder().timestamp(Instant.parse("2026-10-07T01:00:00Z")).sampleCount(12.0).build(),
+                                Datapoint.builder().timestamp(Instant.parse("2026-10-07T00:00:00Z")).sampleCount(6.0).build())
+                        .build());
+        Instant start = Instant.parse("2026-10-07T00:00:00Z");
+        Instant end = Instant.parse("2026-10-08T00:00:00Z");
+
+        List<HourlySample> samples = session.hourlySampleCounts("i-0abc", start, end);
+
+        ArgumentCaptor<GetMetricStatisticsRequest> captor = ArgumentCaptor.forClass(GetMetricStatisticsRequest.class);
+        org.mockito.Mockito.verify(cloudWatch).getMetricStatistics(captor.capture());
+        GetMetricStatisticsRequest request = captor.getValue();
+        assertThat(request.namespace()).isEqualTo("AWS/EC2");
+        assertThat(request.metricName()).isEqualTo("CPUUtilization");
+        assertThat(request.period()).isEqualTo(3600);
+        assertThat(request.statistics()).containsExactly(Statistic.SAMPLE_COUNT);
+        assertThat(request.dimensions().getFirst().value()).isEqualTo("i-0abc");
+        assertThat(request.startTime()).isEqualTo(start);
+        assertThat(request.endTime()).isEqualTo(end);
+        assertThat(samples).extracting(HourlySample::hourStart)
+                .containsExactly(Instant.parse("2026-10-07T00:00:00Z"), Instant.parse("2026-10-07T01:00:00Z"));
+    }
+
+    @Test
+    void 권한_부족은_필요한_IAM_액션과_함께_한국어로_알린다() {
+        when(cloudWatch.getMetricStatistics(any(GetMetricStatisticsRequest.class)))
+                .thenThrow(CloudWatchException.builder().statusCode(403)
+                        .awsErrorDetails(AwsErrorDetails.builder().errorCode("AccessDenied")
+                                .errorMessage("User: arn:aws:sts::123456789012:assumed-role/X is not authorized").build())
+                        .build());
+
+        assertThatThrownBy(() -> session.hourlySampleCounts("i-0abc", Instant.EPOCH, Instant.EPOCH.plusSeconds(3600)))
+                .isInstanceOfSatisfying(AwsAccessException.class, e -> {
+                    assertThat(e.category()).isEqualTo(Category.PERMISSION_DENIED);
+                    assertThat(e.getMessage()).startsWith("AccessDenied: cloudwatch:GetMetricStatistics 권한이 없습니다")
+                            .doesNotContain("arn:aws:sts");
+                });
+
+        when(ec2.describeInstances(any(DescribeInstancesRequest.class)))
+                .thenThrow(Ec2Exception.builder().statusCode(403)
+                        .awsErrorDetails(AwsErrorDetails.builder().errorCode("UnauthorizedOperation").build()).build());
+        assertThatThrownBy(session::verifyAccess)
+                .isInstanceOfSatisfying(AwsAccessException.class, e ->
+                        assertThat(e.getMessage()).startsWith("UnauthorizedOperation: ec2:DescribeInstances 권한이 없습니다"));
+    }
+
+    @Test
+    void AssumeRole_오류_분류() {
+        AwsAccessException denied = CustomerAwsErrors.translate(StsException.builder().statusCode(403)
+                .awsErrorDetails(AwsErrorDetails.builder().errorCode("AccessDenied").build()).build(), "sts:AssumeRole");
+        assertThat(denied.category()).isEqualTo(Category.ASSUME_ROLE_DENIED);
+        assertThat(denied.getMessage()).contains("External ID");
+
+        AwsAccessException backend = CustomerAwsErrors.translate(StsException.builder().statusCode(403)
+                .awsErrorDetails(AwsErrorDetails.builder().errorCode("InvalidClientTokenId").build()).build(), "sts:AssumeRole");
+        assertThat(backend.category()).isEqualTo(Category.BACKEND_CREDENTIALS_MISSING);
+
+        AwsAccessException noCreds = CustomerAwsErrors.translate(
+                SdkClientException.create("Unable to load credentials from any of the providers in the chain"), "sts:AssumeRole");
+        assertThat(noCreds.category()).isEqualTo(Category.BACKEND_CREDENTIALS_MISSING);
+        assertThat(noCreds.getMessage()).contains("사용자 설정 문제가 아닙니다");
+
+        AwsAccessException network = CustomerAwsErrors.translate(
+                SdkClientException.create("Connect timed out"), "ec2:DescribeInstances");
+        assertThat(network.category()).isEqualTo(Category.UNAVAILABLE);
+
+        AwsAccessException throttled = CustomerAwsErrors.translate(Ec2Exception.builder().statusCode(503)
+                .awsErrorDetails(AwsErrorDetails.builder().errorCode("RequestLimitExceeded").build()).build(),
+                "ec2:DescribeInstances");
+        assertThat(throttled.category()).isEqualTo(Category.THROTTLED);
+    }
+}

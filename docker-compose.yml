@@ -1,0 +1,24 @@
+# 로컬 개발용 PostgreSQL. 사용: docker compose up -d db
+# 비밀번호 기본값 cci는 로컬 컨테이너 전용이다. 배포 환경은 Parameter Store 등에서 DB_PASSWORD를 주입한다.
+# 프로젝트 이름을 고정한다. 폴더 이름(BE)을 쓰면 같은 이름의 다른 Compose 프로젝트와 컨테이너가 섞인다.
+name: cloudcost-insight
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-cci}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-cci}
+      POSTGRES_DB: cci
+    ports:
+      - "5432:5432"
+    volumes:
+      - cci-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-cci} -d cci"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  cci-pgdata:
