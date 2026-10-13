@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.cloudcost.application.StackCallbackService;
 import com.cloudcost.fakes.FakeCustomerAwsGateway;
+import com.cloudcost.fakes.FakeExchangeRateSource;
 import com.cloudcost.fakes.FakeGoogleIdentityVerifier;
 import com.cloudcost.fakes.FakeStackCallbackResponder;
 import com.cloudcost.fakes.FakePriceCatalog;
@@ -49,6 +50,7 @@ public abstract class IntegrationTestBase {
     @Autowired protected FakePriceCatalog priceCatalog;
     @Autowired protected MutableClock clock;
     @Autowired protected FakeStackCallbackResponder cfnResponses;
+    @Autowired protected FakeExchangeRateSource exchangeRates;
 
     protected String owner;
 
@@ -80,6 +82,12 @@ public abstract class IntegrationTestBase {
 
         @Bean
         @Primary
+        FakeExchangeRateSource fakeExchangeRateSource() {
+            return new FakeExchangeRateSource();
+        }
+
+        @Bean
+        @Primary
         FakeStackCallbackResponder fakeStackCallbackResponder() {
             return new FakeStackCallbackResponder();
         }
@@ -96,6 +104,7 @@ public abstract class IntegrationTestBase {
         aws.reset();
         priceCatalog.reset();
         cfnResponses.responses.clear();
+        exchangeRates.reset();
         clock.set(NOW);
         owner = "user-" + UUID.randomUUID().toString().substring(0, 8);
     }

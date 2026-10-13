@@ -35,11 +35,11 @@ class UsageRefreshTest extends IntegrationTestBase {
     }
 
     private JsonNode instances() throws Exception {
-        return body(getJson("/api/v1/aws/accounts/" + accountId + "/instances").andExpect(status().isOk()));
+        return body(getJson("/api/v1/aws/accounts/" + accountId + "/instances?currency=USD").andExpect(status().isOk()));
     }
 
     private JsonNode daily(String from, String to) throws Exception {
-        return body(getJson("/api/v1/aws/accounts/" + accountId + "/costs/daily?from=" + from + "&to=" + to)
+        return body(getJson("/api/v1/aws/accounts/" + accountId + "/costs/daily?currency=USD&from=" + from + "&to=" + to)
                 .andExpect(status().isOk()));
     }
 
@@ -135,16 +135,16 @@ class UsageRefreshTest extends IntegrationTestBase {
 
     @Test
     void 기간을_넣지_않으면_기본_기간으로_응답한다() throws Exception {
-        JsonNode summary = body(getJson("/api/v1/aws/accounts/" + accountId + "/costs").andExpect(status().isOk()));
+        JsonNode summary = body(getJson("/api/v1/aws/accounts/" + accountId + "/costs?currency=USD").andExpect(status().isOk()));
         assertThat(summary.at("/from").asText()).isEqualTo("2026-10-01");
         assertThat(summary.at("/to").asText()).isEqualTo("2026-10-08");
         assertThat(summary.at("/usageHours").decimalValue()).isEqualByComparingTo("13.17");
         assertThat(summary.at("/instances")).hasSize(2);
 
-        JsonNode daily = body(getJson("/api/v1/aws/accounts/" + accountId + "/costs/daily").andExpect(status().isOk()));
+        JsonNode daily = body(getJson("/api/v1/aws/accounts/" + accountId + "/costs/daily?currency=USD").andExpect(status().isOk()));
         assertThat(daily.at("/days")).hasSize(30);
 
-        JsonNode monthly = body(getJson("/api/v1/aws/accounts/" + accountId + "/costs/monthly").andExpect(status().isOk()));
+        JsonNode monthly = body(getJson("/api/v1/aws/accounts/" + accountId + "/costs/monthly?currency=USD").andExpect(status().isOk()));
         assertThat(monthly.at("/from").asText()).isEqualTo("2026-08");
         assertThat(monthly.at("/months")).hasSize(3);
         assertThat(monthly.at("/months/2/month").asText()).isEqualTo("2026-10");
