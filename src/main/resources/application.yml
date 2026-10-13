@@ -1,0 +1,69 @@
+spring:
+  application:
+    name: cloudcost-insight
+  profiles:
+    default: local
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/cci}
+    username: ${DB_USERNAME:cci}
+    password: ${DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+
+server:
+  port: ${PORT:8080}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    persist-authorization: true
+  default-produces-media-type: application/json
+
+cci:
+  app-env: ${APP_ENV:local}
+  auth:
+    mode: ${AUTH_MODE:dev}
+    dev-default-owner: ${DEV_OWNER_ID:local-dev-user}
+    # Google 로그인 (docs/decisions/004). 클라이언트 ID는 공개 값, JWT_SECRET은 비밀 (32바이트 이상)
+    google-client-id: ${GOOGLE_CLIENT_ID:}
+    jwt-secret: ${JWT_SECRET:}
+    token-ttl: 1h
+  aws:
+    # 고객 Trust Policy의 Principal. 실제 값은 환경변수로만 넣는다 (예시: arn:aws:iam::111122223333:role/CloudCostInsightBackendRole)
+    backend-role-arn: ${CCI_BACKEND_ROLE_ARN:}
+    # 빠른 생성 링크 + 스택 신호 (docs/AWS_SETUP_GUIDE.md 3절, 관리자가 1번 준비)
+    template-url: ${CCI_TEMPLATE_URL:}
+    callback-topic-arn: ${CCI_CALLBACK_TOPIC_ARN:}
+    callback-queue-url: ${CCI_CALLBACK_QUEUE_URL:}
+    verify-attempts: 6
+    verify-interval: 10s
+    assume-role-duration-seconds: 900
+    pricing-region: us-east-1
+  usage:
+    instance-ttl: ${CCI_INSTANCE_TTL:10m}
+    usage-ttl: ${CCI_USAGE_TTL:1h}
+    backfill: ${CCI_USAGE_BACKFILL:90d}
+    overlap: 2h
+    max-cw-requests-per-refresh: ${CCI_MAX_CW_REQUESTS:500}
+    zone: Asia/Seoul
+    price-ttl: 7d
+    missing-price-ttl: 1d
+
+# 자격증명·요청 원문이 남지 않도록 AWS SDK 와이어/인증 로그는 DEBUG로 켜지 않는다 (docs/SECURITY.md)
+logging:
+  level:
+    root: INFO
+    software.amazon.awssdk: WARN
+    software.amazon.awssdk.request: WARN
+    software.amazon.awssdk.auth: WARN
+    org.apache.http.wire: OFF
+    org.apache.http.headers: OFF

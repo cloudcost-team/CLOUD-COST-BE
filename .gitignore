@@ -1,0 +1,12 @@
+.gradle/
+build/
+out/
+.idea/
+*.iml
+.DS_Store
+.env
+.env.local
+*.log
+deploy/app.jar
+deploy/.env
+*.pem
