@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CloudCost Insight 로그인</title>
+  <!-- 로그인 테스트 페이지: Google로 로그인하고 받은 액세스 토큰을 Swagger Authorize에 붙여 넣는다. 프론트가 붙으면 그쪽 화면으로 대체한다. -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    :root { --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #5b6475; --line: #dfe3ea; --accent: #2563eb; --ok: #15803d; --err: #b91c1c; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #111418; --card: #1a1f26; --text: #e7ebf0; --muted: #9aa4b2; --line: #2b323c; --accent: #6ea0ff; --ok: #4ade80; --err: #f87171; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+    main { max-width: 560px; margin: 48px auto; padding: 0 16px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 28px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    p.sub { color: var(--muted); margin: 0 0 20px; }
+    ul.facts { margin: 0 0 24px; padding: 0; list-style: none; }
+    ul.facts li { padding: 4px 0; }
+    ul.facts li::before { content: "✔ "; color: var(--ok); }
+    ul.facts li.no::before { content: "✘ "; color: var(--err); }
+    #button { min-height: 44px; }
+    #status { margin-top: 16px; color: var(--muted); }
+    #status.err { color: var(--err); }
+    #result { display: none; margin-top: 20px; }
+    textarea { width: 100%; height: 110px; font: 12px/1.4 ui-monospace, Menlo, monospace; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
+    button.copy, a.btn { display: inline-block; margin-top: 8px; margin-right: 8px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; text-decoration: none; cursor: pointer; font-size: 14px; }
+    a.btn.secondary { background: transparent; color: var(--accent); }
+  </style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>CloudCost Insight</h1>
+    <p class="sub">Google 계정으로 로그인하면 처음에는 자동으로 가입됩니다.</p>
+    <ul class="facts">
+      <li>Google에서 받는 정보: 이메일, 이름 (로그인 확인용)</li>
+      <li class="no">비밀번호·전화번호·결제 정보는 받지 않습니다</li>
+      <li class="no">Gmail·드라이브 등 다른 Google 데이터에 접근하지 않습니다</li>
+      <li class="no">AWS Access Key는 받지 않습니다 (AWS는 읽기 전용 Role로만 연결)</li>
+    </ul>
+    <div id="button"></div>
+    <div id="status">로그인 설정을 불러오는 중…</div>
+    <div id="result">
+      <div>로그인됨: <strong id="who"></strong> <span id="newUser"></span></div>
+      <div style="margin-top:8px;color:var(--muted)">액세스 토큰 (유효: <span id="exp"></span>까지)</div>
+      <textarea id="token" readonly></textarea>
+      <button class="copy" id="copy">토큰 복사</button>
+      <a class="btn secondary" href="/swagger-ui.html" target="_blank" rel="noopener">Swagger 열기</a>
+      <div style="margin-top:8px;color:var(--muted);font-size:13px">Swagger 오른쪽 위 Authorize → bearerAuth에 붙여 넣으세요.</div>
+    </div>
+  </div>
+</main>
+<script>
+  const statusEl = document.getElementById('status');
+  function setStatus(text, isError) {
+    statusEl.textContent = text;
+    statusEl.className = isError ? 'err' : '';
+  }
+
+  async function onCredential(response) {
+    setStatus('확인 중…');
+    try {
+      const res = await fetch('/api/v1/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: response.credential })
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setStatus((body.error && body.error.message) || '로그인에 실패했습니다.', true);
+        return;
+      }
+      document.getElementById('who').textContent = body.user.email || body.user.id;
+      document.getElementById('newUser').textContent = body.newUser ? '(새로 가입됨)' : '';
+      document.getElementById('exp').textContent = new Date(body.expiresAt).toLocaleString();
+      document.getElementById('token').value = body.accessToken;
+      document.getElementById('result').style.display = 'block';
+      setStatus('');
+    } catch (e) {
+      setStatus('서버에 연결하지 못했습니다.', true);
+    }
+  }
+
+  document.getElementById('copy').addEventListener('click', async () => {
+    const token = document.getElementById('token');
+    try {
+      await navigator.clipboard.writeText(token.value);
+    } catch (e) {
+      token.select();
+      document.execCommand('copy');
+    }
+    document.getElementById('copy').textContent = '복사됨';
+  });
+
+  async function init() {
+    let config;
+    try {
+      config = await (await fetch('/api/v1/auth/config')).json();
+    } catch (e) {
+      setStatus('서버에 연결하지 못했습니다.', true);
+      return;
+    }
+    if (!config.googleClientId) {
+      setStatus('서버에 GOOGLE_CLIENT_ID가 설정되지 않았습니다 (관리자 설정 필요).', true);
+      return;
+    }
+    const start = () => {
+      if (!window.google || !google.accounts) { setTimeout(start, 100); return; }
+      google.accounts.id.initialize({ client_id: config.googleClientId, callback: onCredential });
+      google.accounts.id.renderButton(document.getElementById('button'),
+        { theme: 'outline', size: 'large', text: 'continue_with', locale: 'ko', width: 300 });
+      setStatus('');
+    };
+    start();
+  }
+  init();
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+# 로컬 개발 전용 (docker-compose의 개발용 PostgreSQL). 배포 환경에서는 DB_PASSWORD를 환경변수/Parameter Store로 준다.
+spring:
+  datasource:
+    password: ${DB_PASSWORD:cci}

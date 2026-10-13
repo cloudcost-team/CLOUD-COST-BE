@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  CloudCost Insight read-only role. Allows only ec2:DescribeInstances and cloudwatch:GetMetricStatistics.
+  CloudCost Insight never creates, modifies, or deletes resources in this account.
+  Delete this stack to revoke access.
+
+# 이 파일이 고객용 템플릿의 원본이다. 관리자가 S3에 한 번 올리고, 빠른 생성 링크가 이 파일을 가리킨다.
+# 허용 액션은 scripts/customer-role-allowlist.txt, CustomerRolePolicy.ALLOWED_ACTIONS와 같아야 한다 (테스트로 확인).
+# 파라미터 값은 CloudCost Insight가 링크에 넣어 준다. 사용자는 고치지 않는다.
+
+Parameters:
+  ExternalId:
+    Type: String
+    AllowedPattern: "^cci-[0-9a-f]{24}$"
+    Description: CloudCost Insight가 이 연결에 발급한 External ID (수정하지 마세요)
+  TrustedPrincipalArn:
+    Type: String
+    AllowedPattern: "^arn:aws:iam::\\d{12}:role/[\\w+=,.@/-]+$"
+    Description: CloudCost Insight 백엔드 Role ARN (수정하지 마세요)
+  ConnectionId:
+    Type: String
+    AllowedPattern: "^[0-9a-f-]{36}$"
+    Description: CloudCost Insight 연결 ID (수정하지 마세요)
+  CallbackTopicArn:
+    Type: String
+    AllowedPattern: "^arn:aws:sns:[a-z0-9-]+:\\d{12}:[\\w-]+$"
+    Description: Role 생성·삭제를 CloudCost Insight에 알리는 SNS 토픽 (수정하지 마세요)
+  MonitoredRegion:
+    Type: String
+    Default: ap-northeast-2
+    Description: EC2·CloudWatch를 조회할 리전
+  RoleName:
+    Type: String
+    Default: CloudCostReadOnlyRole
+    AllowedPattern: "^CloudCost[\\w+=,.@-]*$"
+    Description: 만들 IAM Role 이름 (CloudCost로 시작해야 합니다)
+
+Resources:
+  ReadOnlyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: CloudCost Insight read-only access (EC2 usage)
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref TrustedPrincipalArn
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref ExternalId
+      Policies:
+        - PolicyName: CloudCostInsightReadEc2Usage
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CloudCostInsightReadEc2Usage
+                Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - cloudwatch:GetMetricStatistics
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref MonitoredRegion
+
+  # Role이 만들어지거나 지워지면 CloudCost Insight의 SNS 토픽에 알린다 (Lambda 없음).
+  # CloudCost Insight는 이 신호를 받은 뒤 실제 AssumeRole로 검증하고 결과를 CloudFormation에 돌려준다.
+  ConnectionNotice:
+    Type: Custom::CloudCostInsightConnection
+    Properties:
+      ServiceToken: !Ref CallbackTopicArn
+      ConnectionId: !Ref ConnectionId
+      ExternalId: !Ref ExternalId
+      RoleArn: !GetAtt ReadOnlyRole.Arn
+
+Outputs:
+  RoleArn:
+    Description: CloudCost Insight가 맡는 Role ARN
+    Value: !GetAtt ReadOnlyRole.Arn

@@ -1,0 +1,72 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.16'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.cloudcost'
+version = '0.1.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencyManagement {
+    imports {
+        mavenBom 'software.amazon.awssdk:bom:2.55.12'
+    }
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.17'
+
+    // AWS SDK for Java v2 — adapter 패키지에서만 사용 (ArchUnit으로 강제)
+    implementation 'software.amazon.awssdk:sts'
+    implementation 'software.amazon.awssdk:ec2'
+    implementation 'software.amazon.awssdk:cloudwatch'
+    implementation 'software.amazon.awssdk:pricing'
+    implementation 'software.amazon.awssdk:sqs'
+
+    // Google ID 토큰 검증(RS256, Google 공개키) + 자체 JWT 발급(HS256) — adapter/auth에서만 사용
+    implementation 'com.nimbusds:nimbus-jose-jwt:10.10'
+
+    runtimeOnly 'org.postgresql:postgresql'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.5.1'
+    testRuntimeOnly 'com.h2database:h2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-parameters'
+}
+
+tasks.named('test') {
+    useJUnitPlatform {
+        // 실제 AWS를 호출하는 테스트는 기본 실행에서 제외한다: ./gradlew awsTest
+        excludeTags 'aws'
+    }
+}
+
+tasks.register('awsTest', Test) {
+    description = '실제 AWS 계정을 호출하는 테스트 (CCI_IT_ROLE_ARN 등 환경변수 필요)'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'aws'
+    }
+}
