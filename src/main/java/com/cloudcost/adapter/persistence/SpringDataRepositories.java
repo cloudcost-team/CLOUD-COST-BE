@@ -66,6 +66,15 @@ final class SpringDataRepositories {
         List<SyncJobEntity> findByOwnerIdAndAccountIdOrderByStartedAtDesc(String ownerId, UUID accountId, Limit limit);
     }
 
+    /** 공개 환율 캐시 (owner 없음) */
+    interface ExchangeRateJpa extends Repository<ExchangeRateEntity, UUID> {
+        ExchangeRateEntity save(ExchangeRateEntity entity);
+
+        Optional<ExchangeRateEntity> findFirstByBaseAndQuoteOrderByFetchedAtDesc(String base, String quote);
+
+        Optional<ExchangeRateEntity> findByBaseAndQuoteAndRateDate(String base, String quote, java.time.LocalDate rateDate);
+    }
+
     /**
      * 공개 단가 캐시 — owner가 없는 유일한 테이블
      */

@@ -80,5 +80,9 @@ UNIQUE `(region, instance_type, operating_system, tenancy, license_model, pre_in
 `users`에 컬럼 추가: `email`, `display_name`, `auth_provider`(google | NULL=로컬 DevAuth), `provider_subject`(Google sub), `last_login_at`.
 UNIQUE `(auth_provider, provider_subject)`. 비밀번호 컬럼은 없다. `users.id`(UUID 문자열)가 owner_id다.
 
+## V4 (2026-10-13) — 환율 캐시 (ADR-005)
+`exchange_rates`: base, quote, rate NUMERIC(18,6), rate_date, source, fetched_at. UNIQUE `(base, quote, rate_date)`. 공개 데이터라 owner 없음.
+6시간 안에 받은 값이 있으면 외부 API를 부르지 않는다.
+
 ## 보존 (백로그)
 ec2_usage_hourly는 455일, sync_jobs는 90일 정도로 정리하는 작업이 필요하다.

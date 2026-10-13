@@ -1,7 +1,9 @@
 package com.cloudcost.entrypoint.api;
 
+import com.cloudcost.application.CurrencyService;
 import com.cloudcost.application.Ec2UsageQueryService;
 import com.cloudcost.application.UsageSettings;
+import com.cloudcost.domain.cost.DisplayCurrency.Currency;
 import com.cloudcost.entrypoint.api.auth.CurrentOwner;
 import com.cloudcost.entrypoint.api.dto.UsageDtos.CostSummaryResponse;
 import com.cloudcost.entrypoint.api.dto.UsageDtos.DailyCostResponse;
@@ -28,10 +30,12 @@ import org.springframework.web.bind.annotation.RestController;
 class Ec2UsageController {
 
     private final Ec2UsageQueryService queries;
+    private final CurrencyService currencies;
     private final String timezone;
 
-    Ec2UsageController(Ec2UsageQueryService queries, UsageSettings settings) {
+    Ec2UsageController(Ec2UsageQueryService queries, CurrencyService currencies, UsageSettings settings) {
         this.queries = queries;
+        this.currencies = currencies;
         this.timezone = settings.zone().getId();
     }
 
@@ -39,8 +43,12 @@ class Ec2UsageController {
     @Operation(
         summary = "EC2 인스턴스 목록 (상태 · 현재 실행 구간 · 시간당 단가)",
         description = "DescribeInstances 결과를 DB에 저장하고 보여 준다. 실행 중이면 LaunchTime부터의 현재 실행 구간 시간을 함께 준다.")
-    InstancesResponse instances(@CurrentOwner String owner, @PathVariable UUID accountId) {
-        return InstancesResponse.of(queries.instances(owner, accountId));
+    InstancesResponse instances(
+            @CurrentOwner String owner,
+            @PathVariable UUID accountId,
+            @Parameter(description = "금액 통화: KRW(기본, 원화 환산) 또는 USD")
+                    @RequestParam(defaultValue = "KRW") Currency currency) {
+        return InstancesResponse.of(queries.instances(owner, accountId), currencies.resolve(currency));
     }
 
     @GetMapping("/costs")
@@ -51,8 +59,10 @@ class Ec2UsageController {
         @Parameter(description = "시작일 (포함, Asia/Seoul 기준)", example = "2026-10-01")
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
         @Parameter(description = "종료일 (포함)", example = "2026-10-07")
-        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return CostSummaryResponse.of(queries.summary(owner, accountId, from, to), timezone);
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @Parameter(description = "금액 통화: KRW(기본, 원화 환산) 또는 USD")
+                    @RequestParam(defaultValue = "KRW") Currency currency) {
+        return CostSummaryResponse.of(queries.summary(owner, accountId, from, to), timezone, currencies.resolve(currency));
     }
 
     @GetMapping("/costs/daily")
@@ -61,8 +71,10 @@ class Ec2UsageController {
         @CurrentOwner String owner,
         @PathVariable UUID accountId,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return DailyCostResponse.of(queries.daily(owner, accountId, from, to), timezone);
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @Parameter(description = "금액 통화: KRW(기본, 원화 환산) 또는 USD")
+                    @RequestParam(defaultValue = "KRW") Currency currency) {
+        return DailyCostResponse.of(queries.daily(owner, accountId, from, to), timezone, currencies.resolve(currency));
     }
 
     @GetMapping("/costs/monthly")
@@ -73,7 +85,9 @@ class Ec2UsageController {
         @Parameter(description = "시작 월 (YYYY-MM)", example = "2026-08")
         @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM") YearMonth from,
         @Parameter(description = "종료 월 (YYYY-MM)", example = "2026-10")
-        @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM") YearMonth to) {
-        return MonthlyCostResponse.of(queries.monthly(owner, accountId, from, to), timezone);
+        @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM") YearMonth to,
+            @Parameter(description = "금액 통화: KRW(기본, 원화 환산) 또는 USD")
+                    @RequestParam(defaultValue = "KRW") Currency currency) {
+        return MonthlyCostResponse.of(queries.monthly(owner, accountId, from, to), timezone, currencies.resolve(currency));
     }
 }

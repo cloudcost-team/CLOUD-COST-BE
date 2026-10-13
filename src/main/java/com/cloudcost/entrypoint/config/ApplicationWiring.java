@@ -2,6 +2,7 @@ package com.cloudcost.entrypoint.config;
 
 import com.cloudcost.application.AuthService;
 import com.cloudcost.application.AwsAccountService;
+import com.cloudcost.application.CurrencyService;
 import com.cloudcost.application.Ec2DataRefresher;
 import com.cloudcost.application.Ec2UsageQueryService;
 import com.cloudcost.application.PriceService;
@@ -12,6 +13,8 @@ import com.cloudcost.application.port.AwsAccountRepository;
 import com.cloudcost.application.port.CustomerAwsGateway;
 import com.cloudcost.application.port.Ec2InstanceRepository;
 import com.cloudcost.application.port.Ec2UsageRepository;
+import com.cloudcost.application.port.ExchangeRateRepository;
+import com.cloudcost.application.port.ExchangeRateSource;
 import com.cloudcost.application.port.GoogleIdentityVerifier;
 import com.cloudcost.application.port.PriceCacheRepository;
 import com.cloudcost.application.port.PriceCatalog;
@@ -20,6 +23,8 @@ import com.cloudcost.application.port.SyncJobRepository;
 import com.cloudcost.application.port.UnitOfWork;
 import com.cloudcost.application.port.UserRepository;
 import java.time.Clock;
+import java.time.Duration;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -111,6 +116,15 @@ class ApplicationWiring {
             StackCallbackService.Pauser pauser) {
         return new StackCallbackService(
                 accounts, accountService, responder, clock, properties.connectionSettings(), pauser);
+    }
+
+    @Bean
+    CurrencyService currencyService(
+            ExchangeRateSource source,
+            ExchangeRateRepository cache,
+            Clock clock,
+            @Value("${cci.fx.refresh-interval:6h}") Duration refreshInterval) {
+        return new CurrencyService(source, cache, clock, refreshInterval);
     }
 
     @Bean

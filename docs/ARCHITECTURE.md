@@ -12,7 +12,8 @@ application
    ├─ StackCallbackService   고객 스택 신호 처리 → 검증(재시도) → CloudFormation 응답 / 삭제 시 DISCONNECTED
    ├─ Ec2UsageQueryService   인스턴스 · 기간 합계 · 일별 · 월별
    │     └─ Ec2DataRefresher  캐시 확인 → 필요할 때만 AWS 호출 → DB 저장 (계정 단위 잠금)
-   └─ PriceService           온디맨드 단가 (DB 캐시 7일)
+   ├─ PriceService           온디맨드 단가 (DB 캐시 7일)
+   └─ CurrencyService        원화 환산 환율 (Frankfurter, DB 캐시 6시간, ADR-005)
    ▼ ports
 adapter/awscustomer  ── STS AssumeRole → EC2 DescribeInstances, CloudWatch GetMetricStatistics  [고객 계정]
 adapter/awsinternal  ── Price List GetProducts (us-east-1), SQS 신호 수신, CloudFormation 응답 PUT  [우리 계정]
@@ -76,6 +77,7 @@ StackCallbackPoller → StackCallbackService: 연결 ID·External ID 확인 → 
 | `AWS_PROFILE` | | 백엔드 자격증명 프로필 (로컬) |
 | `CCI_INSTANCE_TTL` / `CCI_USAGE_TTL` / `CCI_USAGE_BACKFILL` | 10m / 1h / 90d | |
 | `CCI_MAX_CW_REQUESTS` | 500 | 수집 1회 CloudWatch 호출 상한 |
+| `cci.fx.url` / `cci.fx.refresh-interval` | Frankfurter USD→KRW / 6h | 환율 API·재조회 간격 |
 
 ## 아직 없는 것 (기획서 대비)
 - 사용량 예약 수집(조회가 있을 때만 수집), 이메일+비밀번호 로그인, 리프레시 토큰, demo 데이터 API, 프론트 연동.
