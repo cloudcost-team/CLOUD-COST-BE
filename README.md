@@ -18,6 +18,9 @@ AWS_PROFILE=cci-backend CCI_BACKEND_ROLE_ARN=<백엔드 Role ARN> GOOGLE_CLIENT_
 - Swagger: http://localhost:8080/swagger-ui.html
 - 로그인 테스트: http://localhost:8080/login.html
 
+## 브랜치·배포
+기능 브랜치 → **PR to `dev`** (CI: `./gradlew test`) → 머지되면 **자동 배포** (CD). 자세한 내용: [docs/DEPLOY.md](docs/DEPLOY.md) 10절
+
 ## 문서
 | 문서 | 내용 |
 |---|---|
