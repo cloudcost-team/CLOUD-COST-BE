@@ -30,7 +30,7 @@ import org.junit.jupiter.api.Test;
 class UsageDomainTest {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
-    private static final BigDecimal FULL = BigDecimal.valueOf(12);
+    private static final BigDecimal FULL = BigDecimal.valueOf(60);
 
     private static HourlySample sample(String id, String hourUtc, double count) {
         return new HourlySample(id, Instant.parse(hourUtc), BigDecimal.valueOf(count));
@@ -40,35 +40,26 @@ class UsageDomainTest {
     class 사용_시간_계산 {
 
         @Test
-        void 데이터_포인트가_꽉_찬_시간은_60분() {
-            assertThat(UsageCalculator.usedMinutes(FULL, FULL)).isEqualTo(60);
+        void 꽉_찬_한_시간은_SampleCount_60이고_60분() {
+            assertThat(UsageCalculator.usedMinutes(FULL)).isEqualTo(60);
         }
 
         @Test
-        void 일부만_켜진_시간은_샘플_비율로_분_단위_근사() {
-            assertThat(UsageCalculator.usedMinutes(BigDecimal.valueOf(2), FULL)).isEqualTo(10);
-            assertThat(UsageCalculator.usedMinutes(BigDecimal.valueOf(6), FULL)).isEqualTo(30);
+        void 일부만_켜진_시간은_SampleCount가_곧_사용_분() {
+            // 실제 계정 QA: 05:00~05:12 실행 → SampleCount 13
+            assertThat(UsageCalculator.usedMinutes(BigDecimal.valueOf(13))).isEqualTo(13);
+            assertThat(UsageCalculator.usedMinutes(BigDecimal.valueOf(59))).isEqualTo(59);
         }
 
         @Test
         void 데이터_포인트가_없으면_0분() {
-            assertThat(UsageCalculator.usedMinutes(BigDecimal.ZERO, FULL)).isZero();
-            assertThat(UsageCalculator.usedMinutes(null, FULL)).isZero();
+            assertThat(UsageCalculator.usedMinutes(BigDecimal.ZERO)).isZero();
+            assertThat(UsageCalculator.usedMinutes(null)).isZero();
         }
 
         @Test
-        void 꽉_찬_시간을_모르면_데이터_포인트가_있는_시간을_1시간으로_센다() {
-            assertThat(UsageCalculator.usedMinutes(BigDecimal.valueOf(3), null)).isEqualTo(60);
-            assertThat(UsageCalculator.usedMinutes(BigDecimal.valueOf(3), BigDecimal.valueOf(2))).isEqualTo(60);
-        }
-
-        @Test
-        void 인스턴스별_최대_샘플_수가_꽉_찬_시간_기준이_된다() {
-            Map<String, BigDecimal> full = UsageCalculator.fullHourSamples(List.of(
-                    sample("i-a", "2026-10-01T00:00:00Z", 12),
-                    sample("i-a", "2026-10-01T01:00:00Z", 3),
-                    sample("i-b", "2026-10-01T00:00:00Z", 60)));
-            assertThat(full).containsEntry("i-a", BigDecimal.valueOf(12.0)).containsEntry("i-b", BigDecimal.valueOf(60.0));
+        void 오차로_60을_넘으면_60분으로_자른다() {
+            assertThat(UsageCalculator.usedMinutes(BigDecimal.valueOf(61))).isEqualTo(60);
         }
     }
 
@@ -79,12 +70,12 @@ class UsageDomainTest {
         void KST_날짜_경계로_일별_사용_분을_나누고_빈_날짜도_포함한다() {
             // 2026-10-06T14:00Z = KST 10/06 23:00, 15:00Z = KST 10/07 00:00
             List<HourlySample> samples = List.of(
-                    sample("i-a", "2026-10-06T14:00:00Z", 12),
-                    sample("i-a", "2026-10-06T15:00:00Z", 12),
-                    sample("i-a", "2026-10-06T16:00:00Z", 6),
-                    sample("i-b", "2026-10-06T15:00:00Z", 12));
+                    sample("i-a", "2026-10-06T14:00:00Z", 60),
+                    sample("i-a", "2026-10-06T15:00:00Z", 60),
+                    sample("i-a", "2026-10-06T16:00:00Z", 30),
+                    sample("i-b", "2026-10-06T15:00:00Z", 60));
             Map<LocalDate, Map<String, Long>> daily = UsageAggregator.dailyMinutes(
-                    samples, UsageCalculator.fullHourSamples(samples), KST,
+                    samples, KST,
                     LocalDate.of(2026, 10, 5), LocalDate.of(2026, 10, 7));
 
             assertThat(daily).containsOnlyKeys(
@@ -96,18 +87,18 @@ class UsageDomainTest {
 
         @Test
         void 기간_밖의_데이터는_무시한다() {
-            List<HourlySample> samples = List.of(sample("i-a", "2026-09-01T00:00:00Z", 12));
-            var daily = UsageAggregator.dailyMinutes(samples, Map.of(), KST, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 1));
+            List<HourlySample> samples = List.of(sample("i-a", "2026-09-01T00:00:00Z", 60));
+            var daily = UsageAggregator.dailyMinutes(samples, KST, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 1));
             assertThat(daily.get(LocalDate.of(2026, 10, 1))).isEmpty();
         }
 
         @Test
         void 월별은_일별_합산이다() {
             List<HourlySample> samples = new ArrayList<>();
-            samples.add(sample("i-a", "2026-09-30T00:00:00Z", 12)); // KST 9/30
-            samples.add(sample("i-a", "2026-09-30T15:00:00Z", 12)); // KST 10/01 00:00
-            samples.add(sample("i-a", "2026-10-02T00:00:00Z", 12));
-            var daily = UsageAggregator.dailyMinutes(samples, UsageCalculator.fullHourSamples(samples), KST,
+            samples.add(sample("i-a", "2026-09-30T00:00:00Z", 60)); // KST 9/30
+            samples.add(sample("i-a", "2026-09-30T15:00:00Z", 60)); // KST 10/01 00:00
+            samples.add(sample("i-a", "2026-10-02T00:00:00Z", 60));
+            var daily = UsageAggregator.dailyMinutes(samples, KST,
                     LocalDate.of(2026, 9, 1), LocalDate.of(2026, 10, 31));
             Map<YearMonth, Map<String, Long>> monthly = UsageAggregator.monthlyMinutes(daily);
 

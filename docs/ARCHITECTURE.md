@@ -43,7 +43,7 @@ StackCallbackPoller → StackCallbackService: 연결 ID·External ID 확인 → 
 ## 계산 (domain, 순수 Java)
 | 클래스 | 하는 일 |
 |---|---|
-| `UsageCalculator` | 시간별 SampleCount → 사용 분. 그 인스턴스의 최대 SampleCount를 "꽉 찬 한 시간"으로 보고 비율로 근사(최대 60분) |
+| `UsageCalculator` | 시간별 SampleCount → 사용 분. CPUUtilization은 켜져 있는 동안 1분마다 샘플을 남기므로 SampleCount = 사용 분 (최대 60) |
 | `UsageAggregator` | 시간별 → 일별(Asia/Seoul 날짜 경계) → 월별(일별 합산) |
 | `CostEstimator` | 사용 시간 × 온디맨드 단가 = 추정 비용. 단가 없으면 null |
 | `CollectionWindows` | CloudWatch 조회 구간: 30일 단위, 최대 455일 |

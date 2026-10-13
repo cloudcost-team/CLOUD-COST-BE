@@ -18,9 +18,4 @@ public interface Ec2UsageRepository {
      * hourStart ∈ [start, end)
      */
     List<HourlySample> findHourly(String ownerId, UUID accountId, Instant start, Instant end);
-
-    /**
-     * 인스턴스별 최대 SampleCount ("꽉 찬 한 시간" 기준값)
-     */
-    Map<String, BigDecimal> maxSampleCountByInstance(String ownerId, UUID accountId);
 }

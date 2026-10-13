@@ -110,15 +110,6 @@ class Ec2PersistenceAdapter implements Ec2InstanceRepository, Ec2UsageRepository
             .toList();
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public Map<String, BigDecimal> maxSampleCountByInstance(String ownerId, UUID accountId) {
-        Map<String, BigDecimal> result = new HashMap<>();
-        for (Object[] row : usage.maxSampleCountByInstance(ownerId, accountId)) {
-            result.put((String) row[0], (BigDecimal) row[1]);
-        }
-        return result;
-    }
 
     private static TrackedInstance toDomain(Ec2InstanceEntity e) {
         Ec2Instance info = new Ec2Instance(

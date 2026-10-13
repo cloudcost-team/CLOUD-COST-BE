@@ -1,6 +1,5 @@
 package com.cloudcost.domain.usage;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
@@ -22,7 +21,6 @@ public final class UsageAggregator {
     /** @return 날짜 → (instanceId → 사용 분). 사용이 없는 인스턴스는 넣지 않는다. */
     public static Map<LocalDate, Map<String, Long>> dailyMinutes(
             Collection<HourlySample> samples,
-            Map<String, BigDecimal> fullHourSamples,
             ZoneId zone,
             LocalDate from,
             LocalDate to) {
@@ -36,7 +34,7 @@ public final class UsageAggregator {
             if (bucket == null) {
                 continue;
             }
-            long minutes = UsageCalculator.usedMinutes(s.sampleCount(), fullHourSamples.get(s.instanceId()));
+            long minutes = UsageCalculator.usedMinutes(s.sampleCount());
             if (minutes > 0) {
                 bucket.merge(s.instanceId(), minutes, Long::sum);
             }

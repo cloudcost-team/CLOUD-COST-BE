@@ -13,7 +13,7 @@ public final class CostNotes {
     public static final String EXCLUDED =
         "Reserved Instance·Savings Plans·Spot 할인, EBS, 데이터 전송 비용은 포함하지 않습니다.";
     public static final String USAGE_METHOD =
-        "사용 시간은 CloudWatch에 지표(CPUUtilization)가 기록된 시간으로 계산합니다 (5분 단위 근사).";
+        "사용 시간은 CloudWatch에 지표(CPUUtilization)가 기록된 시간으로 계산합니다 (1분 단위).";
     public static final String HISTORY_LIMIT =
         "CloudCost Insight 연결 시점에 이미 삭제된 인스턴스와 소급 수집 기간 이전의 사용량은 조회할 수 없습니다.";
     public static final String PRICE_NOT_FOUND = "해당 인스턴스의 온디맨드 단가를 조회할 수 없습니다.";

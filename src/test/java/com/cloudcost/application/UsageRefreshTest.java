@@ -26,11 +26,11 @@ class UsageRefreshTest extends IntegrationTestBase {
         accountId = activeAccount();
         // i-run: 실행 중 (KST 10/07 09:00~18:59 = 10시간 꽉 참, 10/06 14:00 대에 10분)
         aws.instances.add(Fixtures.instance("i-run", "t3.medium", "running", Instant.parse("2026-10-07T00:00:00Z")));
-        aws.addHours("i-run", Instant.parse("2026-10-07T00:00:00Z"), 10, 12);
-        aws.addHours("i-run", Instant.parse("2026-10-06T05:00:00Z"), 1, 2);
+        aws.addHours("i-run", Instant.parse("2026-10-07T00:00:00Z"), 10, 60);
+        aws.addHours("i-run", Instant.parse("2026-10-06T05:00:00Z"), 1, 10);
         // i-stop: 정지 상태 (KST 10/05 09:00~11:59 = 3시간)
         aws.instances.add(Fixtures.instance("i-stop", "t3.medium", "stopped", Instant.parse("2026-10-05T00:00:00Z")));
-        aws.addHours("i-stop", Instant.parse("2026-10-05T00:00:00Z"), 3, 12);
+        aws.addHours("i-stop", Instant.parse("2026-10-05T00:00:00Z"), 3, 60);
         priceCatalog.hourlyByType.put("t3.medium", new BigDecimal("0.0416"));
     }
 
@@ -155,7 +155,7 @@ class UsageRefreshTest extends IntegrationTestBase {
     @Test
     void 단가를_찾지_못한_인스턴스는_금액이_null이고_안내를_붙인다() throws Exception {
         aws.instances.add(Fixtures.instance("i-odd", "x9.unknown", "running", Instant.parse("2026-10-07T00:00:00Z")));
-        aws.addHours("i-odd", Instant.parse("2026-10-07T00:00:00Z"), 2, 12);
+        aws.addHours("i-odd", Instant.parse("2026-10-07T00:00:00Z"), 2, 60);
 
         JsonNode body = daily("2026-10-07", "2026-10-07");
         JsonNode odd = null;

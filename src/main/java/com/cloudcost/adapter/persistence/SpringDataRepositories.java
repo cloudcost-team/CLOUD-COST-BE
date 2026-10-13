@@ -58,10 +58,6 @@ final class SpringDataRepositories {
 
         List<Ec2UsageHourlyEntity> findByOwnerIdAndAccountIdAndHourStartGreaterThanEqualAndHourStartLessThan(
             String ownerId, UUID accountId, Instant start, Instant end);
-
-        @Query("select u.instanceId, max(u.sampleCount) from Ec2UsageHourlyEntity u "
-            + "where u.ownerId = :ownerId and u.accountId = :accountId group by u.instanceId")
-        List<Object[]> maxSampleCountByInstance(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);
     }
 
     interface SyncJobJpa extends Repository<SyncJobEntity, UUID> {

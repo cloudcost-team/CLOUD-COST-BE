@@ -137,9 +137,8 @@ public class Ec2UsageQueryService {
 
         List<HourlySample> samples =
             usage.findHourly(ownerId, accountId, range.startInclusive(zone), range.endExclusive(zone));
-        Map<String, BigDecimal> fullHour = usage.maxSampleCountByInstance(ownerId, accountId);
         Map<LocalDate, Map<String, Long>> daily =
-            UsageAggregator.dailyMinutes(samples, fullHour, zone, range.from(), range.to());
+            UsageAggregator.dailyMinutes(samples, zone, range.from(), range.to());
 
         Map<String, TrackedInstance> tracked = instances.findAllByOwnerIdAndAccountId(ownerId, accountId).stream()
             .collect(Collectors.toMap(TrackedInstance::instanceId, Function.identity()));
