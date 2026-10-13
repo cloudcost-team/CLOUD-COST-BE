@@ -78,6 +78,18 @@ StackCallbackPoller → StackCallbackService: 연결 ID·External ID 확인 → 
 | `CCI_INSTANCE_TTL` / `CCI_USAGE_TTL` / `CCI_USAGE_BACKFILL` | 10m / 1h / 90d | |
 | `CCI_MAX_CW_REQUESTS` | 500 | 수집 1회 CloudWatch 호출 상한 |
 | `cci.fx.url` / `cci.fx.refresh-interval` | Frankfurter USD→KRW / 6h | 환율 API·재조회 간격 |
+| `MANAGEMENT_PORT` | 8081 | Actuator(`/actuator/health`, `/actuator/prometheus`) 전용 포트. 외부(Caddy)로 열지 않는다 |
+| `COMPOSE_PROFILES` | (없음) | 서버에서 `monitoring`이면 Alloy 에이전트 실행 |
+| `GRAFANA_CLOUD_PROM_URL` / `GRAFANA_CLOUD_PROM_USER` / `GRAFANA_CLOUD_API_KEY` | (없음) | Alloy가 지표를 보낼 Grafana Cloud 주소·인스턴스 ID·토큰. 서버 `.env`에만 |
+
+## 모니터링
+서버 안의 Grafana Alloy 컨테이너가 1분마다 지표를 모아 Grafana Cloud로 **보내기만** 한다 (들어오는 포트 없음).
+| 대상 | 수집 방법 | job |
+|---|---|---|
+| VM (CPU·메모리·디스크·네트워크) | Alloy 내장 node exporter, 호스트 `/proc`·`/sys`·`/` 읽기 전용 | `integrations/node_exporter` |
+| PostgreSQL (연결·크기·트랜잭션) | Alloy 내장 postgres exporter → `127.0.0.1:5432` | `integrations/postgres_exporter` |
+| 앱 (HTTP 응답 시간·오류·JVM·커넥션 풀) | `127.0.0.1:8081/actuator/prometheus` | `cloudcost-app` |
+서버가 죽어도 대시보드·알림은 Grafana Cloud에 남아 있어 장애를 밖에서 알 수 있다. 설정 파일: `deploy/alloy/config.alloy`.
 
 ## 아직 없는 것 (기획서 대비)
 - 사용량 예약 수집(조회가 있을 때만 수집), 이메일+비밀번호 로그인, 리프레시 토큰, demo 데이터 API, 프론트 연동.
