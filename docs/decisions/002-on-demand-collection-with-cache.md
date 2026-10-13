@@ -10,7 +10,7 @@
 
 ## 결정
 - 출처는 CloudWatch `GetMetricStatistics`(AWS/EC2 CPUUtilization, Period 3600, Statistic SampleCount)로 한다.
-  시간당 SampleCount를 그 인스턴스의 "꽉 찬 한 시간" 샘플 수와 비교해 분 단위로 근사한다.
+  시간당 SampleCount가 곧 켜져 있던 분이다 (1분 샘플, 꽉 찬 1시간 = 60). 2026-10-13 실제 계정 QA에서 확인: 59·60·13 → 132분, 실제 실행 131.8분.
 - 조회 API가 호출되면 캐시 기간을 확인한다.
   - 인스턴스 정보(DescribeInstances, 무료): 10분
   - CloudWatch: **계정당 1시간에 1회**. 그 안의 재조회는 DB에 저장된 시간별 값으로 응답한다.
