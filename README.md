@@ -7,7 +7,8 @@
 <br />
 
 ## Architecture
-<img src="assets/architecture.svg" alt="CloudCost 아키텍처" width="100%" />
+<img width="3200" height="1840" alt="image" src="https://github.com/user-attachments/assets/7aa056c2-5b5c-4115-aa29-fd0a16b986a0" />
+
 
 <br />
 
