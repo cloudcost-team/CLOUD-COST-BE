@@ -45,7 +45,8 @@ class StackCallbackTest extends IntegrationTestBase {
 
         assertThat(link).startsWith("https://ap-northeast-2.console.aws.amazon.com/cloudformation/home?region=ap-northeast-2#/stacks/quickcreate?")
                 .contains("templateURL=https://cci-templates-111122223333.s3.ap-northeast-2.amazonaws.com/customer-readonly-role.yaml")
-                .contains("stackName=CloudCostInsight")
+                .contains("stackName=CloudCostInsight-" + id.substring(0, 8))
+                .contains("param_RoleName=CloudCostReadOnlyRole-" + id.substring(0, 8))
                 .contains("param_ExternalId=" + externalId)
                 .contains("param_ConnectionId=" + id)
                 .contains("param_TrustedPrincipalArn=arn:aws:iam::111122223333:role/CloudCostInsightBackendRole")

@@ -180,7 +180,7 @@ public class AwsAccountService {
             warnings.add("서버에 CCI_TEMPLATE_URL 또는 CCI_CALLBACK_TOPIC_ARN이 설정되지 않아 빠른 생성 링크를 만들지 못했습니다 "
                 + "(관리자 설정 필요). 그동안은 trustPolicy·permissionPolicy로 Role을 직접 만들고 PUT .../role로 등록하세요.");
         } else if (!settings.backendRoleArn().isEmpty()) {
-            link = QuickCreateLink.build(settings.templateUrl(), topicRegion, parameters);
+            link = QuickCreateLink.build(settings.templateUrl(), topicRegion, QuickCreateLink.stackName(account), parameters);
         }
         return new AccountSetup(
             account,
