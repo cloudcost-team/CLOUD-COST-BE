@@ -62,12 +62,27 @@ class QuickCreateTemplateTest {
     }
 
     @Test
+    void 스택과_Role_이름은_연결마다_달라서_기존_Role이나_두_번째_연결과_겹치지_않는다() {
+        AwsAccount first = AwsAccount.createPending(UUID.fromString("1a2b3c4d-0000-4000-8000-000000000001"), "o",
+                new AwsRegion("ap-northeast-2"), Instant.EPOCH);
+        AwsAccount second = AwsAccount.createPending(UUID.randomUUID(), "o", new AwsRegion("ap-northeast-2"), Instant.EPOCH);
+
+        assertThat(QuickCreateLink.stackName(first)).isEqualTo("CloudCostInsight-1a2b3c4d");
+        assertThat(QuickCreateLink.roleName(first)).isEqualTo("CloudCostReadOnlyRole-1a2b3c4d")
+                .isNotEqualTo("CloudCostReadOnlyRole")
+                .matches("^CloudCost[\\w+=,.@-]*$")
+                .hasSizeLessThanOrEqualTo(64);
+        assertThat(QuickCreateLink.roleName(second)).isNotEqualTo(QuickCreateLink.roleName(first));
+    }
+
+    @Test
     void 스택_리전은_SNS_토픽_리전이다() {
         assertThat(QuickCreateLink.topicRegion("arn:aws:sns:us-east-1:111122223333:cci")).isEqualTo("us-east-1");
         assertThat(QuickCreateLink.topicRegion("")).isNull();
-        assertThat(QuickCreateLink.build("https://b.s3.amazonaws.com/t.yaml", "us-east-1", Map.of("A", "x y")))
+        assertThat(QuickCreateLink.build("https://b.s3.amazonaws.com/t.yaml", "us-east-1", "CloudCostInsight-1a2b3c4d", Map.of("A", "x y")))
                 .startsWith("https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/quickcreate?")
                 .contains("templateURL=https%3A%2F%2Fb.s3.amazonaws.com%2Ft.yaml")
+                .contains("&stackName=CloudCostInsight-1a2b3c4d")
                 .endsWith("&param_A=x+y");
     }
 }

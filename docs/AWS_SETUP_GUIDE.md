@@ -102,7 +102,7 @@ export CCI_CALLBACK_QUEUE_URL=https://sqs.ap-northeast-2.amazonaws.com/<A>/cloud
 4. Swagger `GET /api/v1/aws/accounts/{accountId}` → `status: ACTIVE` 확인
 5. `GET .../instances` → `GET .../costs/daily` → `GET .../sync-jobs`(cwRequestCount 확인)
 
-**연결 끊기**: 계정 B → CloudFormation → `CloudCostInsight` 스택 삭제 → Role이 지워지고 연결이 자동으로 `DISCONNECTED`가 된다.
+**연결 끊기**: 계정 B → CloudFormation → `CloudCostInsight-<연결 ID 앞 8자리>` 스택 삭제 → Role이 지워지고 연결이 자동으로 `DISCONNECTED`가 된다.
 
 **예비 방법** (1~2절 준비 전): 응답의 `trustPolicy`·`permissionPolicy`로 IAM에서 `CloudCostReadOnlyRole`을 직접 만들고
 `PUT /api/v1/aws/accounts/{accountId}/role`로 ARN을 등록한다.
@@ -115,7 +115,7 @@ export CCI_CALLBACK_QUEUE_URL=https://sqs.ap-northeast-2.amazonaws.com/<A>/cloud
 | 스택이 `ConnectionNotice`에서 오래 멈춤 | 서버가 꺼져 있거나 `CCI_CALLBACK_QUEUE_URL` 없음, SNS→SQS 구독 없음 | 서버 실행, 2.3-4 확인. 1시간이 지나면 스택이 실패하므로 삭제 후 링크를 다시 연다 |
 | 스택이 FAILED + "Role을 확인하지 못했습니다" | Principal(백엔드 Role ARN) 불일치, 백엔드 Role 권한 누락 | 3절 확인 후 스택 삭제·재생성 |
 | 스택이 FAILED + "연결을 찾을 수 없습니다" | 다른 연결의 링크를 재사용 | 연결을 새로 시작하고 새 링크 사용 |
-| `CloudCostReadOnlyRole already exists` | 같은 계정에 이전 스택이 남아 있음 | 이전 `CloudCostInsight` 스택 삭제 후 다시 |
+| `CloudCostReadOnlyRole-… already exists` | 같은 연결로 만든 스택이 이미 있음 | 새 연결(`POST /accounts`)로 받은 링크를 쓰거나 이전 스택 삭제 후 다시 |
 | 503 `BACKEND_AWS_NOT_CONFIGURED` | 서버 AWS 자격증명 없음 | `AWS_PROFILE=cci-backend` |
 | `freshness.warnings`에 CloudWatch 권한 없음 | 스택 정책이 수정됨 | 스택 재생성. 1시간 뒤 자동 재시도 |
 | 사용 시간이 0 | 인스턴스가 꺼져 있었거나 막 만들어짐 | CloudWatch 데이터는 실행 몇 분 뒤 생긴다. 1시간 캐시 뒤 다시 조회 |
@@ -126,4 +126,4 @@ export CCI_CALLBACK_QUEUE_URL=https://sqs.ap-northeast-2.amazonaws.com/<A>/cloud
 - 테스트용 EC2를 만들었다면 끝나고 직접 중지·종료한다 (CloudCost Insight는 아무것도 바꾸지 않는다).
 
 ## 7. 정리
-계정 B의 `CloudCostInsight` 스택을 지우면 접근 권한이 완전히 회수된다. 개발이 끝나면 `cci-dev` 액세스 키를 비활성화한다.
+계정 B의 `CloudCostInsight-…` 스택을 지우면 접근 권한이 완전히 회수된다. 개발이 끝나면 `cci-dev` 액세스 키를 비활성화한다.

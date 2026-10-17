@@ -85,7 +85,7 @@ public final class AccountDtos {
                     "1. quickCreateUrl을 열어 연결할 AWS 계정으로 로그인한다.",
                     "2. 맨 아래 'AWS CloudFormation에서 IAM 리소스를 생성할 수 있음을 승인합니다'를 체크하고 [스택 생성]을 누른다.",
                     "3. 1~2분 뒤 GET /api/v1/aws/accounts/{accountId}의 status가 ACTIVE로 바뀐다. 따로 입력할 것은 없다.",
-                    "연결을 끊으려면 AWS 콘솔에서 CloudCostInsight 스택을 삭제한다 (자동으로 DISCONNECTED가 된다).")
+                    "연결을 끊으려면 AWS 콘솔에서 CloudCostInsight-로 시작하는 이 연결의 스택을 삭제한다 (자동으로 DISCONNECTED가 된다).")
                 : List.of(
                     "(예비 방법) 1. IAM → 역할 생성 → 사용자 지정 신뢰 정책에 trustPolicy를 붙여 넣는다.",
                     "2. 역할 이름은 CloudCost로 시작하게 정하고 (예: CloudCostReadOnlyRole), 인라인 정책에 permissionPolicy를 붙여 넣는다.",
