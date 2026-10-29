@@ -10,6 +10,7 @@ import com.cloudcost.domain.usage.HourlySample;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -73,19 +74,26 @@ class Ec2PersistenceAdapter implements Ec2InstanceRepository, Ec2UsageRepository
         }
     }
 
+    /**
+     * 같은 (계정, 인스턴스, 시각)이 있으면 값을 갱신하고 없으면 추가한다. 겹친 구간을 다시 읽어도 행이 늘지 않는다.
+     * 한 번에 들어온 목록 안의 중복 시각은 마지막 값 하나만 쓴다 (UNIQUE 위반 방지).
+     * 같은 계정의 수집은 Ec2DataRefresher가 계정 단위로 잠가 한 번에 하나만 쓴다.
+     */
     @Override
     @Transactional
     public int upsertHourly(String ownerId, UUID accountId, List<HourlySample> samples, Instant collectedAt) {
-        Map<String, List<HourlySample>> byInstance =
-            samples.stream().collect(Collectors.groupingBy(HourlySample::instanceId));
+        Map<String, Map<Instant, HourlySample>> byInstance = new LinkedHashMap<>();
+        for (HourlySample s : samples) {
+            byInstance.computeIfAbsent(s.instanceId(), k -> new LinkedHashMap<>()).put(s.hourStart(), s);
+        }
         int saved = 0;
-        for (Map.Entry<String, List<HourlySample>> group : byInstance.entrySet()) {
+        for (Map.Entry<String, Map<Instant, HourlySample>> group : byInstance.entrySet()) {
             Map<Instant, Ec2UsageHourlyEntity> existing = new HashMap<>();
             usage.findByOwnerIdAndAccountIdAndInstanceIdAndHourStartIn(
                     ownerId, accountId, group.getKey(),
-                    group.getValue().stream().map(HourlySample::hourStart).toList())
+                    List.copyOf(group.getValue().keySet()))
                 .forEach(e -> existing.put(e.hourStart, e));
-            for (HourlySample s : group.getValue()) {
+            for (HourlySample s : group.getValue().values()) {
                 Ec2UsageHourlyEntity e = existing.getOrDefault(s.hourStart(), new Ec2UsageHourlyEntity());
                 e.ownerId = ownerId;
                 e.accountId = accountId;

@@ -37,11 +37,6 @@ public class StackCallbackService {
     private final ConnectionSettings settings;
     private final Pauser pauser;
 
-    /** 재시도 사이에 기다린다 (테스트에서는 기다리지 않는다). */
-    public interface Pauser {
-        void pause(java.time.Duration duration);
-    }
-
     public StackCallbackService(
             AwsAccountRepository accounts,
             AwsAccountService accountService,
@@ -111,8 +106,9 @@ public class StackCallbackService {
 
     private void handleDelete(StackCallback callback) {
         find(callback).ifPresent(account -> {
-            // 생성 실패로 롤백되는 Delete에서는 상태를 바꾸지 않는다 (실패 원인을 남겨 둔다).
-            if (account.isActive()) {
+            // 생성 실패로 롤백되는 Delete(검증된 적 없음)에서는 상태를 바꾸지 않는다 (실패 원인을 남겨 둔다).
+            // 검증된 뒤 ERROR가 된 연결은 스택이 지워졌으므로 DISCONNECTED가 된다.
+            if (account.canDisconnect()) {
                 account.markDisconnected(clock.instant());
                 accounts.save(account);
             }

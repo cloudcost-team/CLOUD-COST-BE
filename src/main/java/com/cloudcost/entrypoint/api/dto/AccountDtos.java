@@ -35,7 +35,8 @@ public final class AccountDtos {
 
     public record AccountResponse(
         UUID accountId,
-        @Schema(description = "PENDING: Role 생성 전 / ACTIVE: 실제 AssumeRole 검증 완료 / ERROR: 검증 실패 / DISCONNECTED: 고객이 스택을 삭제함")
+        @Schema(description = "PENDING: Role 생성 전 / ACTIVE: 실제 AssumeRole 검증 완료 / ERROR: 검증 실패 또는 고쳐야 하는 AWS 오류"
+            + "(lastError 참고, 1시간마다 자동 재확인) / DISCONNECTED: 고객이 스택을 삭제함")
         String status,
         String region,
         @Schema(description = "이 연결 전용 External ID. Trust Policy의 sts:ExternalId 조건에 넣는다.")

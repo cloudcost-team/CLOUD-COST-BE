@@ -140,6 +140,25 @@ class StackCallbackTest extends IntegrationTestBase {
     }
 
     @Test
+    void 검증된_뒤_ERROR가_된_연결도_스택을_삭제하면_DISCONNECTED가_되고_중복_신호는_무시한다() throws Exception {
+        String id = start();
+        String externalId = setup.at("/account/externalId").asText();
+        callbacks.handle(callback(RequestType.CREATE, id, externalId, ROLE_ARN));
+        clock.advance(java.time.Duration.ofMinutes(15));
+        aws.assumeError = new com.cloudcost.application.error.AwsAccessException(
+                com.cloudcost.application.error.AwsAccessException.Category.ASSUME_ROLE_DENIED,
+                "AccessDenied", "sts:AssumeRole", "AccessDenied: Role을 맡을 수 없습니다.");
+        getJson("/api/v1/aws/accounts/" + id + "/instances");
+        getJson("/api/v1/aws/accounts/" + id).andExpect(jsonPath("$.account.status").value("ERROR"));
+
+        callbacks.handle(callback(RequestType.DELETE, id, externalId, ROLE_ARN));
+        callbacks.handle(callback(RequestType.DELETE, id, externalId, ROLE_ARN));
+
+        assertThat(cfnResponses.last().success()).isTrue();
+        getJson("/api/v1/aws/accounts/" + id).andExpect(jsonPath("$.account.status").value("DISCONNECTED"));
+    }
+
+    @Test
     void 모르는_연결의_삭제_신호도_SUCCESS로_응답한다() {
         callbacks.handle(callback(RequestType.DELETE, "11111111-1111-1111-1111-111111111111",
                 "cci-000000000000000000000000", ROLE_ARN));

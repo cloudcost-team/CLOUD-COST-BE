@@ -116,7 +116,7 @@ public class AwsAccountService {
                  gateway.open(roleArn, account.externalId(), account.region(), sessionName(account))) {
             session.verifyAccess();
         } catch (AwsAccessException e) {
-            account.recordError(e.code(), e.getMessage(), clock.instant());
+            account.verificationFailed(e.code(), e.getMessage(), clock.instant());
             accounts.save(account);
             throw e;
         }
@@ -128,6 +128,9 @@ public class AwsAccountService {
         return accounts.findByOwnerIdAndId(ownerId, accountId).orElseThrow(AwsAccountService::notFound);
     }
 
+    /**
+     * 사용량 조회가 가능한 연결: ACTIVE, 또는 한 번 검증된 뒤 오류가 난 ERROR (저장된 데이터 + 오류 원인을 보여 주고 자동 재확인한다).
+     */
     public AwsAccount getActive(String ownerId, UUID accountId) {
         AwsAccount account = get(ownerId, accountId);
         if (account.status() == AwsAccount.Status.DISCONNECTED) {
@@ -136,7 +139,7 @@ public class AwsAccountService {
                 "AWS에서 CloudCost Insight 스택(Role)이 삭제되어 연결이 해제되었습니다. 저장된 기록은 남아 있지만 새로 수집하지 않습니다. "
                     + "다시 연결하려면 연결을 새로 시작하세요.");
         }
-        if (!account.isActive()) {
+        if (!account.canCollect()) {
             throw new ConflictException(
                 "ACCOUNT_NOT_ACTIVE",
                 "연결이 아직 완료되지 않았습니다. 연결 시작 응답의 quickCreateUrl로 AWS에서 스택을 만들거나, "

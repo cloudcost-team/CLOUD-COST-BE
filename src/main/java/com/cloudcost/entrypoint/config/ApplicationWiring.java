@@ -5,6 +5,7 @@ import com.cloudcost.application.AwsAccountService;
 import com.cloudcost.application.CurrencyService;
 import com.cloudcost.application.Ec2DataRefresher;
 import com.cloudcost.application.Ec2UsageQueryService;
+import com.cloudcost.application.Pauser;
 import com.cloudcost.application.PriceService;
 import com.cloudcost.application.StackCallbackService;
 import com.cloudcost.application.UsageSettings;
@@ -91,12 +92,14 @@ class ApplicationWiring {
             CustomerAwsGateway gateway,
             UnitOfWork unitOfWork,
             Clock clock,
-            UsageSettings settings) {
-        return new Ec2DataRefresher(accounts, instances, usage, syncJobs, gateway, unitOfWork, clock, settings);
+            UsageSettings settings,
+            Pauser pauser) {
+        return new Ec2DataRefresher(
+                accounts, instances, usage, syncJobs, gateway, unitOfWork, clock, settings, pauser);
     }
 
     @Bean
-    StackCallbackService.Pauser pauser() {
+    Pauser pauser() {
         return duration -> {
             try {
                 Thread.sleep(duration);
@@ -113,7 +116,7 @@ class ApplicationWiring {
             StackCallbackResponder responder,
             Clock clock,
             CloudCostProperties properties,
-            StackCallbackService.Pauser pauser) {
+            Pauser pauser) {
         return new StackCallbackService(
                 accounts, accountService, responder, clock, properties.connectionSettings(), pauser);
     }
