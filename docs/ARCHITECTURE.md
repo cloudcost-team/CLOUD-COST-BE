@@ -64,6 +64,8 @@ DISCONNECTED: 수집하지 않음. 새 스택으로 실제 검증에 성공할 �
 ```
 - 검증된 뒤 ERROR가 된 연결은 조회할 수 있다(저장된 데이터 + 원인 경고). AWS는 1시간에 한 번만 다시 부른다.
 - 허용되지 않은 전이(PENDING에서 수집 성공 처리, DISCONNECTED에서 수집 등)는 `IllegalStatusTransitionException`.
+- 연결 삭제(어느 상태에서나, ADR-007)는 상태 전이가 아니라 행 삭제다. 연결과 수집 기록을 지우고, 고객 스택은 사용자가 직접 지운다.
+  이후 그 스택의 신호는 연결을 찾지 못한다: Delete → SUCCESS(무시), Create/Update → FAILED(롤백).
 
 ## 계산 (domain, 순수 Java)
 | 클래스 | 하는 일 |
