@@ -7,8 +7,15 @@ import java.util.UUID;
 /**
  * CloudCost Insight에 연결한 고객 AWS 계정 (연결 1건).
  *
- * <p>상태 흐름: PENDING(External ID 발급) → Role 생성 신호 또는 Role ARN 등록 + 실제 AssumeRole 검증 → ACTIVE / ERROR.
- * 고객이 CloudFormation 스택을 지우면 DISCONNECTED. 자격증명은 이 객체에 절대 들어오지 않는다.
+ * <p>상태 흐름 (허용되지 않은 전이는 {@link IllegalStatusTransitionException}으로 막는다):
+ * <pre>
+ * PENDING      ─검증 성공→ ACTIVE    ─검증 실패→ ERROR
+ * ACTIVE       ─수집 중 연결 오류(Role 거부·권한 없음·리전 비활성)→ ERROR   ─스택 삭제→ DISCONNECTED
+ * ERROR        ─이후 수집 성공 또는 재검증 성공→ ACTIVE (복구)   ─스택 삭제(검증된 적 있을 때)→ DISCONNECTED
+ * DISCONNECTED ─새 스택으로 실제 검증 성공→ ACTIVE / 검증 실패→ ERROR. 수집은 하지 않는다.
+ * </pre>
+ * 일시적인 수집 실패(요청 제한·AWS 장애·서버 설정)는 상태를 바꾸지 않고 lastError만 남긴다.
+ * 자격증명은 이 객체에 절대 들어오지 않는다.
  */
 public final class AwsAccount {
 
@@ -75,10 +82,11 @@ public final class AwsAccount {
     }
 
     /**
-     * ACTIVE였던 연결에 다른 AWS 계정의 Role을 붙이면 이전 계정 데이터와 섞이므로 막는다.
+     * 한 번이라도 검증된 연결에 다른 AWS 계정의 Role을 붙이면 이전 계정 데이터와 섞이므로 막는다
+     * (ACTIVE뿐 아니라 ERROR·DISCONNECTED가 된 연결도 마찬가지다).
      */
     public boolean wouldSwitchAwsAccount(RoleArn candidate) {
-        return roleArn != null && status == Status.ACTIVE && !roleArn.accountId().equals(candidate.accountId());
+        return roleArn != null && verifiedAt != null && !roleArn.accountId().equals(candidate.accountId());
     }
 
     public void attachRole(RoleArn arn, Instant now) {
@@ -86,7 +94,11 @@ public final class AwsAccount {
         this.updatedAt = now;
     }
 
+    /** 실제 AssumeRole + DescribeInstances 성공. 어떤 상태에서도 ACTIVE가 된다 (Role이 붙어 있어야 한다). */
     public void markVerified(Instant now) {
+        if (roleArn == null) {
+            throw new IllegalStatusTransitionException(status, Status.ACTIVE, "Role이 등록되지 않았습니다.");
+        }
         this.status = Status.ACTIVE;
         this.verifiedAt = now;
         this.disconnectedAt = null;
@@ -95,16 +107,39 @@ public final class AwsAccount {
         this.updatedAt = now;
     }
 
+    /** 연결 검증(Role 등록·스택 신호) 실패. 지금 붙은 Role로는 접근할 수 없으므로 ERROR가 된다. */
+    public void verificationFailed(String code, String message, Instant now) {
+        this.status = Status.ERROR;
+        this.lastErrorCode = code;
+        this.lastErrorMessage = message;
+        this.updatedAt = now;
+    }
+
     /**
-     * 검증 실패. ACTIVE 연결이 이후 조회에서 실패한 경우에는 상태를 유지하고 오류만 기록한다.
+     * 수집 중 AWS 호출 실패.
+     *
+     * @param connectionBroken true면 사용자가 고쳐야 하는 오류(Role 거부·권한 없음·리전 비활성)라 ERROR가 된다.
+     *                         false면 일시적인 오류라 상태는 그대로 두고 원인만 남긴다.
      */
-    public void recordError(String code, String message, Instant now) {
-        if (status != Status.ACTIVE) {
+    public void collectionFailed(String code, String message, boolean connectionBroken, Instant now) {
+        requireCollectable(connectionBroken ? Status.ERROR : status);
+        if (connectionBroken) {
             this.status = Status.ERROR;
         }
         this.lastErrorCode = code;
         this.lastErrorMessage = message;
         this.updatedAt = now;
+    }
+
+    /** 수집 전체 성공. 남은 오류를 지우고, ERROR였으면 ACTIVE로 복구한다. */
+    public void collectionSucceeded(Instant now) {
+        requireCollectable(Status.ACTIVE);
+        if (status != Status.ACTIVE || lastErrorCode != null) {
+            this.status = Status.ACTIVE;
+            this.lastErrorCode = null;
+            this.lastErrorMessage = null;
+            this.updatedAt = now;
+        }
     }
 
     /** 고객 계정에서 CloudCost Insight 스택(Role)을 만든 CloudFormation 스택 ARN. */
@@ -113,18 +148,35 @@ public final class AwsAccount {
         this.updatedAt = now;
     }
 
-    /** 고객이 스택(Role)을 지웠다. 수집 기록은 남기고 더 이상 AWS를 부르지 않는다. */
+    /**
+     * 고객이 스택(Role)을 지웠다. 수집 기록은 남기고 더 이상 AWS를 부르지 않는다.
+     * 이미 DISCONNECTED면 아무것도 하지 않는다 (신호가 중복으로 올 수 있다).
+     */
     public void markDisconnected(Instant now) {
+        if (status == Status.DISCONNECTED) {
+            return;
+        }
+        if (!canDisconnect()) {
+            throw new IllegalStatusTransitionException(status, Status.DISCONNECTED, "검증된 적이 없는 연결입니다.");
+        }
         this.status = Status.DISCONNECTED;
         this.disconnectedAt = now;
         this.updatedAt = now;
     }
 
-    public void clearError(Instant now) {
-        if (lastErrorCode != null) {
-            this.lastErrorCode = null;
-            this.lastErrorMessage = null;
-            this.updatedAt = now;
+    /** 스택 삭제 신호로 끊을 수 있는지. 생성 실패로 롤백되는 삭제(검증된 적 없음)는 제외한다. */
+    public boolean canDisconnect() {
+        return verifiedAt != null && (status == Status.ACTIVE || status == Status.ERROR);
+    }
+
+    /** AWS 수집 대상인지: ACTIVE, 또는 한 번 검증된 뒤 오류가 난 ERROR (자동으로 다시 확인해 복구한다). */
+    public boolean canCollect() {
+        return status == Status.ACTIVE || (status == Status.ERROR && verifiedAt != null);
+    }
+
+    private void requireCollectable(Status target) {
+        if (!canCollect()) {
+            throw new IllegalStatusTransitionException(status, target, "수집 대상 연결이 아닙니다.");
         }
     }
 

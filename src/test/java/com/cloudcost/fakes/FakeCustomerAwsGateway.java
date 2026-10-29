@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /** 실제 AWS 대신 쓰는 가짜 고객 계정. 호출 수를 세어 캐시 동작을 검증한다. */
 public class FakeCustomerAwsGateway implements CustomerAwsGateway {
@@ -24,6 +25,8 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
     public int assumeFailuresBeforeSuccess = -1;
     public AwsAccessException describeError;
     public AwsAccessException cloudWatchError;
+    /** 요청("instanceId@start~end")별로 실패시킬 오류 (null이면 성공). 특정 구간·횟수만 실패시킬 때 쓴다. */
+    public Function<String, AwsAccessException> cloudWatchFailure = request -> null;
 
     public int assumeCalls;
     public int verifyCalls;
@@ -41,6 +44,7 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
         assumeFailuresBeforeSuccess = -1;
         describeError = null;
         cloudWatchError = null;
+        cloudWatchFailure = request -> null;
         assumeCalls = 0;
         verifyCalls = 0;
         describeCalls = 0;
@@ -94,9 +98,14 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
             @Override
             public List<HourlySample> hourlySampleCounts(String instanceId, Instant start, Instant end) {
                 cloudWatchCalls++;
-                cloudWatchRequests.add(instanceId + "@" + start + "~" + end);
+                String request = instanceId + "@" + start + "~" + end;
+                cloudWatchRequests.add(request);
                 if (cloudWatchError != null) {
                     throw cloudWatchError;
+                }
+                AwsAccessException failure = cloudWatchFailure.apply(request);
+                if (failure != null) {
+                    throw failure;
                 }
                 return samples.getOrDefault(instanceId, List.of()).stream()
                         .filter(s -> !s.hourStart().isBefore(start) && s.hourStart().isBefore(end))

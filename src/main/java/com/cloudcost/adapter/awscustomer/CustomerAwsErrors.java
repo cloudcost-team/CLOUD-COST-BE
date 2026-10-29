@@ -16,6 +16,8 @@ final class CustomerAwsErrors {
         "AuthorizationError", "Client.UnauthorizedOperation");
     static final Set<String> BACKEND_CREDENTIAL_CODES = Set.of(
         "InvalidClientTokenId", "SignatureDoesNotMatch", "UnrecognizedClientException", "MissingAuthenticationToken");
+    /** 옵트인 리전이 꺼져 있을 때 EC2·CloudWatch가 돌려주는 코드 */
+    static final Set<String> REGION_CODES = Set.of("OptInRequired", "InvalidClientTokenId", "UnrecognizedClientException");
     static final Set<String> THROTTLING_CODES = Set.of(
         "Throttling", "ThrottlingException", "RequestLimitExceeded", "TooManyRequestsException",
         "LimitExceededException");
@@ -50,15 +52,21 @@ final class CustomerAwsErrors {
             return new AwsAccessException(Category.BACKEND_CREDENTIALS_MISSING, code, action,
                 "서버의 AWS 자격증명이 유효하지 않습니다 (관리자 설정 필요). 사용자 설정 문제가 아닙니다.");
         }
-        if (assumeRole && "RegionDisabledException".equals(code)) {
-            return new AwsAccessException(Category.ASSUME_ROLE_DENIED, code, action,
-                "RegionDisabled: 이 리전에서 STS가 비활성화되어 있습니다. 연결 리전을 확인하세요.");
+        if ("RegionDisabledException".equals(code)) {
+            return new AwsAccessException(Category.REGION_DISABLED, code, action,
+                "RegionDisabled: 연결한 리전이 AWS 계정에서 활성화되어 있지 않습니다 (" + action + "). "
+                    + "AWS 콘솔 → 계정 → AWS 리전에서 리전을 활성화하거나 다른 리전으로 연결하세요.");
+        }
+        if (!assumeRole && REGION_CODES.contains(code)) {
+            return new AwsAccessException(Category.REGION_DISABLED, code, action,
+                code + ": 연결한 리전에서 요청이 거부되었습니다 (" + action + "). "
+                    + "리전이 AWS 계정에서 활성화되어 있는지 확인하세요.");
         }
         if (assumeRole && (PERMISSION_CODES.contains(code) || e.statusCode() == 403)) {
             return new AwsAccessException(Category.ASSUME_ROLE_DENIED, code, action,
                 "AccessDenied: Role을 맡을 수 없습니다. ① Role ARN 오타 ② Trust Policy의 sts:ExternalId가 이 연결의 External ID와 다름"
                     + " ③ Trust Policy의 Principal이 CloudCost Insight 백엔드 Role이 아님 ④ Role 이름이 CloudCost로 시작하지 않음"
-                    + " ⑤ Role이 아직 생성 중인지 확인하세요.");
+                    + " ⑤ Role이 아직 생성 중인지 ⑥ CloudCost Insight 스택이나 Role이 삭제되지 않았는지 확인하세요.");
         }
         if ("AuthFailure".equals(code)) {
             return new AwsAccessException(Category.PERMISSION_DENIED, code, action,
@@ -71,7 +79,7 @@ final class CustomerAwsErrors {
         }
         if (THROTTLING_CODES.contains(code) || e.isThrottlingException()) {
             return new AwsAccessException(Category.THROTTLED, code, action,
-                "AWS 요청이 일시적으로 제한되었습니다 (" + action + "). 잠시 후 다시 시도하세요.");
+                code + ": AWS 요청이 일시적으로 제한되었습니다 (" + action + "). 잠시 후 다시 시도하세요.");
         }
         if (e.statusCode() >= 500) {
             return new AwsAccessException(Category.UNAVAILABLE, code, action,

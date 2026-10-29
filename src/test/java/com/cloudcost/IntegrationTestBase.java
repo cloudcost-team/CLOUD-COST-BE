@@ -5,7 +5,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.cloudcost.application.StackCallbackService;
 import com.cloudcost.fakes.FakeCustomerAwsGateway;
 import com.cloudcost.fakes.FakeExchangeRateSource;
 import com.cloudcost.fakes.FakeGoogleIdentityVerifier;
@@ -13,6 +12,7 @@ import com.cloudcost.fakes.FakeStackCallbackResponder;
 import com.cloudcost.fakes.FakePriceCatalog;
 import com.cloudcost.fakes.Fixtures;
 import com.cloudcost.fakes.MutableClock;
+import com.cloudcost.fakes.RecordingPauser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
@@ -51,6 +51,7 @@ public abstract class IntegrationTestBase {
     @Autowired protected MutableClock clock;
     @Autowired protected FakeStackCallbackResponder cfnResponses;
     @Autowired protected FakeExchangeRateSource exchangeRates;
+    @Autowired protected RecordingPauser pauser;
 
     protected String owner;
 
@@ -94,8 +95,8 @@ public abstract class IntegrationTestBase {
 
         @Bean
         @Primary
-        StackCallbackService.Pauser noWait() {
-            return duration -> { };
+        RecordingPauser recordingPauser() {
+            return new RecordingPauser();
         }
     }
 
@@ -105,6 +106,7 @@ public abstract class IntegrationTestBase {
         priceCatalog.reset();
         cfnResponses.responses.clear();
         exchangeRates.reset();
+        pauser.pauses.clear();
         clock.set(NOW);
         owner = "user-" + UUID.randomUUID().toString().substring(0, 8);
     }

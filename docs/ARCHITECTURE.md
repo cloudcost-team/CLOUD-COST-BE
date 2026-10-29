@@ -41,6 +41,30 @@ StackCallbackPoller → StackCallbackService: 연결 ID·External ID 확인 → 
 - 지난 수집 이후 켜진 적이 없는 인스턴스는 CloudWatch를 부르지 않는다.
 - AWS 호출이 실패해도 이전 데이터가 있으면 그 데이터와 `freshness.warnings`를 준다. 처음이면 오류로 응답한다.
 
+### 정합성 · 오류 처리 (ADR-006)
+- 시간별 사용량은 `(account_id, instance_id, hour_start)` upsert라 2시간 겹침이나 재수집으로 중복되지 않는다.
+- 인스턴스별 `usage_collected_until`은 성공한 구간 끝까지만 옮긴다. 일부 구간·인스턴스가 실패해도 성공분은 저장되고,
+  실패한 구간은 다음 수집(1시간 뒤)에서 다시 읽는다. 결과는 `sync_jobs.status=PARTIAL` + `error`(한국어 원인).
+- 재시도(`AwsRetry`): 요청 제한·일시 장애만 1초·2초 백오프로 최대 3회. SDK 자체 재시도는 꺼서 호출 수를 정확히 센다.
+
+| 오류 분류 | 예 | 연결 상태 | 이번 수집 |
+|---|---|---|---|
+| `ASSUME_ROLE_DENIED` | Role 삭제, External ID·Trust Policy 불일치 | ERROR | 중단 |
+| `PERMISSION_DENIED` | AccessDenied, UnauthorizedOperation | ERROR | 중단 |
+| `REGION_DISABLED` | RegionDisabledException, OptInRequired | ERROR | 중단 |
+| `THROTTLED` | Throttling, RequestLimitExceeded | 유지 (`lastError`만) | 재시도 후 중단 |
+| `UNAVAILABLE`, `UNKNOWN` | 5xx, 네트워크 | 유지 (`lastError`만) | 재시도 후 그 인스턴스만 건너뜀 |
+| `BACKEND_CREDENTIALS_MISSING` | 서버 자격증명 없음 | 유지 | 중단 |
+
+### 연결 상태 전이 (`AwsAccount`가 강제)
+```
+PENDING ──검증 성공──▶ ACTIVE ──고쳐야 하는 오류──▶ ERROR ──1시간 뒤 재확인 성공──▶ ACTIVE
+   └──검증 실패──▶ ERROR          └──스택 삭제 신호──▶ DISCONNECTED ◀──스택 삭제 신호(검증된 적 있는 ERROR)
+DISCONNECTED: 수집하지 않음. 새 스택으로 실제 검증에 성공할 때만 ACTIVE
+```
+- 검증된 뒤 ERROR가 된 연결은 조회할 수 있다(저장된 데이터 + 원인 경고). AWS는 1시간에 한 번만 다시 부른다.
+- 허용되지 않은 전이(PENDING에서 수집 성공 처리, DISCONNECTED에서 수집 등)는 `IllegalStatusTransitionException`.
+
 ## 계산 (domain, 순수 Java)
 | 클래스 | 하는 일 |
 |---|---|

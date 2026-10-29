@@ -150,4 +150,33 @@ class AwsCustomerAdapterTest {
                 "ec2:DescribeInstances");
         assertThat(throttled.category()).isEqualTo(Category.THROTTLED);
     }
+
+    @Test
+    void 리전_비활성과_요청_제한_오류_분류() {
+        AwsAccessException stsRegion = CustomerAwsErrors.translate(StsException.builder().statusCode(403)
+                .awsErrorDetails(AwsErrorDetails.builder().errorCode("RegionDisabledException")
+                        .errorMessage("STS is not activated in this region for account:123456789012").build()).build(),
+                "sts:AssumeRole");
+        assertThat(stsRegion.category()).isEqualTo(Category.REGION_DISABLED);
+        assertThat(stsRegion.breaksConnection()).isTrue();
+        assertThat(stsRegion.getMessage()).contains("리전").doesNotContain("123456789012");
+
+        AwsAccessException optIn = CustomerAwsErrors.translate(Ec2Exception.builder().statusCode(401)
+                .awsErrorDetails(AwsErrorDetails.builder().errorCode("OptInRequired").build()).build(),
+                "ec2:DescribeInstances");
+        assertThat(optIn.category()).isEqualTo(Category.REGION_DISABLED);
+        assertThat(optIn.getMessage()).startsWith("OptInRequired: 연결한 리전에서 요청이 거부되었습니다");
+
+        AwsAccessException cwThrottle = CustomerAwsErrors.translate(CloudWatchException.builder().statusCode(400)
+                .awsErrorDetails(AwsErrorDetails.builder().errorCode("Throttling").build()).build(),
+                "cloudwatch:GetMetricStatistics");
+        assertThat(cwThrottle.category()).isEqualTo(Category.THROTTLED);
+        assertThat(cwThrottle.retryable()).isTrue();
+        assertThat(cwThrottle.getMessage()).startsWith("Throttling: AWS 요청이 일시적으로 제한되었습니다");
+
+        AwsAccessException assumeDenied = CustomerAwsErrors.translate(StsException.builder().statusCode(403)
+                .awsErrorDetails(AwsErrorDetails.builder().errorCode("AccessDenied").build()).build(), "sts:AssumeRole");
+        assertThat(assumeDenied.getMessage()).as("Role·스택 삭제 가능성도 안내한다").contains("삭제되지 않았는지");
+        assertThat(assumeDenied.retryable()).isFalse();
+    }
 }

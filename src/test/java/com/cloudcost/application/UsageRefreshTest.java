@@ -173,20 +173,29 @@ class UsageRefreshTest extends IntegrationTestBase {
     }
 
     @Test
-    void CloudWatch_권한이_없으면_인스턴스는_보여_주고_경고하며_1시간_안에_다시_부르지_않는다() throws Exception {
+    void CloudWatch_권한이_없으면_인스턴스는_보여_주고_연결을_ERROR로_바꾸며_1시간_안에_다시_부르지_않는다() throws Exception {
         aws.cloudWatchError = new AwsAccessException(Category.PERMISSION_DENIED, "AccessDenied",
                 "cloudwatch:GetMetricStatistics", "AccessDenied: cloudwatch:GetMetricStatistics 권한이 없습니다.");
 
         JsonNode body = daily("2026-10-07", "2026-10-07");
         assertThat(body.at("/freshness/warnings").toString()).contains("cloudwatch:GetMetricStatistics 권한이 없습니다");
-        assertThat(aws.cloudWatchCalls).isEqualTo(1);
+        assertThat(aws.cloudWatchCalls).as("권한 오류는 재시도하지 않고 다른 인스턴스도 부르지 않는다").isEqualTo(1);
+        JsonNode account = body(getJson("/api/v1/aws/accounts/" + accountId)).at("/account");
+        assertThat(account.at("/status").asText()).isEqualTo("ERROR");
+        assertThat(account.at("/lastError/code").asText()).isEqualTo("PERMISSION_DENIED");
+        assertThat(account.at("/lastError/message").asText()).contains("cloudwatch:GetMetricStatistics 권한이 없습니다");
 
         clock.advance(Duration.ofMinutes(20));
-        daily("2026-10-07", "2026-10-07");
+        JsonNode cached = daily("2026-10-07", "2026-10-07");
         assertThat(aws.cloudWatchCalls).as("실패해도 1시간 1회 제한을 지킨다").isEqualTo(1);
+        assertThat(aws.assumeCalls).as("ERROR 연결은 1시간 안에 AssumeRole도 다시 하지 않는다").isEqualTo(1);
+        assertThat(cached.at("/freshness/warnings").toString()).contains("권한이 없습니다");
 
         JsonNode jobs = body(getJson("/api/v1/aws/accounts/" + accountId + "/sync-jobs"));
-        assertThat(jobs.get(1).at("/status").asText()).isEqualTo("PARTIAL");
+        assertThat(jobs).hasSize(1);
+        assertThat(jobs.get(0).at("/status").asText()).isEqualTo("PARTIAL");
+        assertThat(jobs.get(0).at("/instancesRefreshed").asBoolean()).isTrue();
+        assertThat(jobs.get(0).at("/error/code").asText()).isEqualTo("PERMISSION_DENIED");
     }
 
     @Test
