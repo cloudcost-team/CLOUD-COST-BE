@@ -5,7 +5,9 @@ import com.cloudcost.entrypoint.api.auth.CurrentOwner;
 import com.cloudcost.entrypoint.api.dto.AccountDtos.AccountResponse;
 import com.cloudcost.entrypoint.api.dto.AccountDtos.AccountSetupResponse;
 import com.cloudcost.entrypoint.api.dto.AccountDtos.CreateAccountRequest;
+import com.cloudcost.entrypoint.api.dto.AccountDtos.DeleteAccountResponse;
 import com.cloudcost.entrypoint.api.dto.AccountDtos.RegisterRoleRequest;
+import com.cloudcost.entrypoint.api.dto.AccountDtos.RenameAccountRequest;
 import com.cloudcost.entrypoint.api.dto.AccountDtos.SyncJobResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -13,7 +15,9 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -39,10 +43,31 @@ class AwsAccountController {
     @Operation(
         summary = "① 연결 시작: External ID와 IAM 정책 발급",
         description = "서버가 SecureRandom으로 이 연결 전용 External ID를 만들고, 고객 계정 IAM에 그대로 붙여 넣을 "
-            + "Trust Policy와 권한 정책(ec2:DescribeInstances, cloudwatch:GetMetricStatistics)을 돌려준다. 상태는 PENDING.")
+            + "Trust Policy와 권한 정책(ec2:DescribeInstances, cloudwatch:GetMetricStatistics)을 돌려준다. 상태는 PENDING. "
+            + "alias(연결 이름, 선택)를 함께 보낼 수 있다.")
     AccountSetupResponse create(@CurrentOwner String owner,
                                 @RequestBody(required = false) CreateAccountRequest request) {
-        return AccountSetupResponse.of(accounts.create(owner, request == null ? null : request.region()));
+        return AccountSetupResponse.of(request == null
+            ? accounts.create(owner, null)
+            : accounts.create(owner, request.region(), request.alias()));
+    }
+
+    @PatchMapping("/{accountId}")
+    @Operation(
+        summary = "연결 이름 변경",
+        description = "alias를 바꾼다 (앞뒤 공백 제거, 40자 이하). 빈 값이면 이름을 지운다. AWS에는 아무것도 보내지 않는다.")
+    AccountResponse rename(
+        @CurrentOwner String owner, @PathVariable UUID accountId, @RequestBody RenameAccountRequest request) {
+        return AccountResponse.of(accounts.rename(owner, accountId, request.alias()));
+    }
+
+    @DeleteMapping("/{accountId}")
+    @Operation(
+        summary = "연결 취소 · 삭제",
+        description = "연결과 이 연결로 모은 인스턴스·사용량·수집 기록을 모두 지운다. 고객 AWS 계정은 건드리지 않는다(READ ONLY). "
+            + "awsCleanupNeeded가 true면 AWS 콘솔 CloudFormation에서 stackName 스택을 직접 삭제해야 접근 권한이 완전히 사라진다.")
+    DeleteAccountResponse delete(@CurrentOwner String owner, @PathVariable UUID accountId) {
+        return DeleteAccountResponse.of(accounts.delete(owner, accountId));
     }
 
     @PutMapping("/{accountId}/role")
@@ -56,9 +81,12 @@ class AwsAccountController {
     }
 
     @GetMapping
-    @Operation(summary = "내 AWS 연결 목록")
-    List<AccountResponse> list(@CurrentOwner String owner) {
-        return accounts.list(owner).stream().map(AccountResponse::of).toList();
+    @Operation(
+        summary = "내 AWS 연결 목록",
+        description = "기본으로 시작만 하고 1시간 넘게 PENDING인 연결은 숨긴다. includePending=true면 모두 보여 준다.")
+    List<AccountResponse> list(
+        @CurrentOwner String owner, @RequestParam(defaultValue = "false") boolean includePending) {
+        return accounts.list(owner, includePending).stream().map(AccountResponse::of).toList();
     }
 
     @GetMapping("/{accountId}")

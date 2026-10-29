@@ -73,6 +73,12 @@ class SyncAndPricePersistenceAdapter implements SyncJobRepository, PriceCacheRep
     }
 
     @Override
+    @Transactional
+    public int deleteAllByOwnerIdAndAccountId(String ownerId, UUID accountId) {
+        return jobs.deleteByOwnerIdAndAccountId(ownerId, accountId);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public Optional<CachedPrice> find(PriceQuery q) {
         return lookup(q).map(e -> new CachedPrice(e.usdPerHour, e.fetchedAt));

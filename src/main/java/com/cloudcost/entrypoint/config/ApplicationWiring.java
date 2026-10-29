@@ -74,13 +74,16 @@ class ApplicationWiring {
     AwsAccountService awsAccountService(
             AwsAccountRepository accounts,
             UserRepository users,
+            Ec2InstanceRepository instances,
+            Ec2UsageRepository usage,
             SyncJobRepository syncJobs,
             CustomerAwsGateway gateway,
             UnitOfWork unitOfWork,
             Clock clock,
             CloudCostProperties properties) {
         return new AwsAccountService(
-                accounts, users, syncJobs, gateway, unitOfWork, clock, properties.connectionSettings());
+                accounts, users, instances, usage, syncJobs, gateway, unitOfWork, clock,
+                properties.connectionSettings());
     }
 
     @Bean

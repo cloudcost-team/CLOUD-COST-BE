@@ -118,6 +118,17 @@ class Ec2PersistenceAdapter implements Ec2InstanceRepository, Ec2UsageRepository
             .toList();
     }
 
+    @Override
+    @Transactional
+    public int deleteInstancesByOwnerIdAndAccountId(String ownerId, UUID accountId) {
+        return instances.deleteByOwnerIdAndAccountId(ownerId, accountId);
+    }
+
+    @Override
+    @Transactional
+    public int deleteUsageByOwnerIdAndAccountId(String ownerId, UUID accountId) {
+        return usage.deleteByOwnerIdAndAccountId(ownerId, accountId);
+    }
 
     private static TrackedInstance toDomain(Ec2InstanceEntity e) {
         Ec2Instance info = new Ec2Instance(

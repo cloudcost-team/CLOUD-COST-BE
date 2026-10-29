@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Limit;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
@@ -42,12 +43,20 @@ final class SpringDataRepositories {
 
         boolean existsByOwnerIdAndAwsAccountIdAndRegionAndStatusAndIdNot(
             String ownerId, String awsAccountId, String region, String status, UUID id);
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("delete from AwsAccountEntity a where a.ownerId = :ownerId and a.id = :id")
+        int deleteByOwnerIdAndId(@Param("ownerId") String ownerId, @Param("id") UUID id);
     }
 
     interface Ec2InstanceJpa extends Repository<Ec2InstanceEntity, UUID> {
         Ec2InstanceEntity save(Ec2InstanceEntity entity);
 
         List<Ec2InstanceEntity> findByOwnerIdAndAccountId(String ownerId, UUID accountId);
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("delete from Ec2InstanceEntity e where e.ownerId = :ownerId and e.accountId = :accountId")
+        int deleteByOwnerIdAndAccountId(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);
     }
 
     interface Ec2UsageHourlyJpa extends Repository<Ec2UsageHourlyEntity, Long> {
@@ -58,12 +67,20 @@ final class SpringDataRepositories {
 
         List<Ec2UsageHourlyEntity> findByOwnerIdAndAccountIdAndHourStartGreaterThanEqualAndHourStartLessThan(
             String ownerId, UUID accountId, Instant start, Instant end);
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("delete from Ec2UsageHourlyEntity e where e.ownerId = :ownerId and e.accountId = :accountId")
+        int deleteByOwnerIdAndAccountId(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);
     }
 
     interface SyncJobJpa extends Repository<SyncJobEntity, UUID> {
         SyncJobEntity save(SyncJobEntity entity);
 
         List<SyncJobEntity> findByOwnerIdAndAccountIdOrderByStartedAtDesc(String ownerId, UUID accountId, Limit limit);
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("delete from SyncJobEntity e where e.ownerId = :ownerId and e.accountId = :accountId")
+        int deleteByOwnerIdAndAccountId(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);
     }
 
     /** 공개 환율 캐시 (owner 없음) */

@@ -1,5 +1,6 @@
 package com.cloudcost.domain.account;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
@@ -26,11 +27,15 @@ public final class AwsAccount {
         DISCONNECTED
     }
 
+    /** 이 시간이 지나도록 PENDING인 연결은 시작만 하고 그만둔 것으로 보고 목록에서 숨긴다. */
+    public static final Duration ABANDONED_PENDING_AFTER = Duration.ofHours(1);
+
     private final UUID id;
     private final String ownerId;
     private final AwsRegion region;
     private final ExternalId externalId;
     private final Instant createdAt;
+    private String alias;
     private RoleArn roleArn;
     private Status status;
     private String lastErrorCode;
@@ -47,6 +52,7 @@ public final class AwsAccount {
         String ownerId,
         AwsRegion region,
         ExternalId externalId,
+        String alias,
         RoleArn roleArn,
         Status status,
         String lastErrorCode,
@@ -62,6 +68,7 @@ public final class AwsAccount {
         this.ownerId = Objects.requireNonNull(ownerId);
         this.region = Objects.requireNonNull(region);
         this.externalId = Objects.requireNonNull(externalId);
+        this.alias = alias;
         this.roleArn = roleArn;
         this.status = Objects.requireNonNull(status);
         this.lastErrorCode = lastErrorCode;
@@ -77,8 +84,27 @@ public final class AwsAccount {
 
     public static AwsAccount createPending(UUID id, String ownerId, AwsRegion region, Instant now) {
         return new AwsAccount(
-            id, ownerId, region, ExternalId.generate(), null, Status.PENDING, null, null, null,
+            id, ownerId, region, ExternalId.generate(), null, null, Status.PENDING, null, null, null,
             null, null, null, null, now, now);
+    }
+
+    /** 연결 이름을 바꾼다. 비어 있으면 이름을 지운다 ({@link ConnectionAlias#normalize}). */
+    public void rename(String newAlias, Instant now) {
+        this.alias = ConnectionAlias.normalize(newAlias);
+        this.updatedAt = now;
+    }
+
+    /** PENDING인 채로 {@link #ABANDONED_PENDING_AFTER}가 지났는지 (연결 시작 후 스택을 만들지 않음). */
+    public boolean isAbandonedPending(Instant now) {
+        return status == Status.PENDING && !createdAt.plus(ABANDONED_PENDING_AFTER).isAfter(now);
+    }
+
+    /**
+     * 삭제 후에도 고객 계정에 우리 Role(스택)이 남아 있을 수 있는지. 검증된 적이 있고 스택 삭제 신호를 받지 않았으면 남아 있다.
+     * 우리는 READ ONLY라 고객 스택을 지울 수 없으므로, 이때는 고객에게 직접 지우라고 안내한다.
+     */
+    public boolean mayStillHaveCustomerRole() {
+        return verifiedAt != null && status != Status.DISCONNECTED;
     }
 
     /**
@@ -211,6 +237,11 @@ public final class AwsAccount {
 
     public ExternalId externalId() {
         return externalId;
+    }
+
+    /** 사용자가 붙인 연결 이름 (없으면 null) */
+    public String alias() {
+        return alias;
     }
 
     public RoleArn roleArn() {
