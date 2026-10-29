@@ -154,7 +154,7 @@ class ConnectionManagementTest extends IntegrationTestBase {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.previousStatus").value("PENDING"))
                 .andExpect(jsonPath("$.awsCleanupNeeded").value(false))
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.startsWith("연결 시작을 취소했습니다")));
+                .andExpect(jsonPath("$.message").value("연결을 취소했습니다."));
     }
 
     @Test

@@ -139,13 +139,12 @@ public class AwsAccountService {
         boolean cleanup = account.mayStillHaveCustomerRole();
         String message;
         if (cleanup) {
-            message = "CloudCost Insight에서 연결과 수집 기록을 삭제했습니다. 이제 이 계정을 조회하지 않습니다. "
-                + "접근 권한을 완전히 없애려면 AWS 콘솔 → CloudFormation에서 '" + stackName + "' 스택을 삭제하세요. "
-                + "CloudCost Insight는 읽기 전용 서비스라 고객 계정의 스택을 대신 지울 수 없습니다.";
+            // 우리는 읽기 전용이라 고객 스택을 지울 수 없다. 짧게 다음 할 일만 알려 준다.
+            message = "삭제했습니다. AWS 쪽도 끊으려면 AWS 콘솔 → CloudFormation에서 '" + stackName + "' 스택을 삭제하세요.";
         } else if (account.status() == AwsAccount.Status.PENDING) {
-            message = "연결 시작을 취소했습니다. AWS에서 '" + stackName + "' 스택을 이미 만들었다면 CloudFormation에서 삭제하세요.";
+            message = "연결을 취소했습니다.";
         } else {
-            message = "CloudCost Insight에서 연결과 수집 기록을 삭제했습니다.";
+            message = "삭제했습니다.";
         }
         return new Deletion(accountId, account.status(), stackName, cleanup, message);
     }

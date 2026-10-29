@@ -56,19 +56,17 @@
 <main>
   <div class="card">
     <h1>CloudCost Insight</h1>
-    <p class="sub">Google 계정으로 로그인하면 처음에는 자동으로 가입됩니다.</p>
+    <p class="sub">Google 계정으로 시작하세요.</p>
     <ul class="facts">
-      <li>Google에서 받는 정보: 이메일, 이름 (로그인 확인용)</li>
-      <li class="no">비밀번호·전화번호·결제 정보는 받지 않습니다</li>
-      <li class="no">Gmail·드라이브 등 다른 Google 데이터에 접근하지 않습니다</li>
-      <li class="no">AWS Access Key는 받지 않습니다 (AWS는 읽기 전용 Role로만 연결)</li>
+      <li>이메일과 이름만 받습니다</li>
+      <li class="no">AWS 비밀번호·키는 받지 않습니다 (보기만 합니다)</li>
     </ul>
     <div id="button"></div>
     <div id="status" class="status">로그인 설정을 불러오는 중…</div>
     <div id="result">
       <div>로그인됨: <strong id="who"></strong> <span id="newUser"></span></div>
       <details style="margin-top:8px">
-        <summary class="muted">Swagger용 액세스 토큰 (유효: <span id="exp"></span>까지)</summary>
+        <summary class="muted">개발자용 (<span id="exp"></span>까지)</summary>
         <textarea id="token" readonly></textarea>
         <button id="copy">토큰 복사</button>
         <a class="btn secondary" href="/swagger-ui.html" target="_blank" rel="noopener">Swagger 열기</a>
@@ -78,30 +76,28 @@
 
   <div class="card" id="aws">
     <h2>AWS 연결</h2>
-    <p class="sub">AWS 콘솔에서 체크 한 번, 버튼 한 번이면 읽기 전용으로 연결됩니다.</p>
+    <p class="sub">내 AWS 비용을 보려면 계정을 연결하세요.</p>
     <div id="accounts"></div>
     <div id="accountsStatus" class="status"></div>
     <div style="margin-top:12px">
-      <label class="muted" for="alias">연결 이름 (선택)</label>
-      <input type="text" id="alias" maxlength="40" placeholder="예: 개인 계정">
-      <label class="muted" for="region">조회할 리전</label>
-      <select id="region">
-        <option value="ap-northeast-2">서울 (ap-northeast-2)</option>
-        <option value="ap-northeast-1">도쿄 (ap-northeast-1)</option>
-        <option value="us-east-1">버지니아 북부 (us-east-1)</option>
-        <option value="us-west-2">오레곤 (us-west-2)</option>
+      <input type="text" id="alias" maxlength="40" placeholder="이름 (예: 개인 계정)" aria-label="연결 이름">
+      <select id="region" aria-label="지역">
+        <option value="ap-northeast-2">서울</option>
+        <option value="ap-northeast-1">도쿄</option>
+        <option value="us-east-1">버지니아 북부</option>
+        <option value="us-west-2">오레곤</option>
       </select>
-      <button id="connect">새 AWS 계정 연결</button>
+      <button id="connect">연결하기</button>
     </div>
     <div id="connectBox">
       <a class="btn big" id="quickLink" target="_blank" rel="noopener">AWS에서 연결하기 ↗</a>
       <ol class="steps">
-        <li>새 탭에서 연결할 AWS 계정으로 로그인합니다.</li>
-        <li>값은 모두 채워져 있습니다. 맨 아래 <b>IAM 리소스 생성 승인</b> 체크박스를 누릅니다.</li>
-        <li><b>[스택 생성]</b>을 누르고 이 탭으로 돌아오면 1~2분 안에 연결됨으로 바뀝니다.</li>
+        <li>위 버튼을 누르고 AWS에 로그인합니다.</li>
+        <li>맨 아래 <b>체크박스</b>를 누르고 <b>[스택 생성]</b>을 누릅니다.</li>
+        <li>이 화면으로 돌아와 1~2분 기다립니다.</li>
       </ol>
       <div id="connectStatus" class="status"></div>
-      <button id="cancelConnect" class="danger" style="display:none">이 연결 시작 취소</button>
+      <button id="cancelConnect" class="danger" style="display:none">취소</button>
     </div>
     <div id="costs"></div>
   </div>
@@ -111,9 +107,8 @@
   let pollTimer = null;
   let connectingId = null;
   const $ = id => document.getElementById(id);
-  const STATUS_TEXT = { PENDING: '대기 중', ACTIVE: '연결됨', ERROR: '오류', DISCONNECTED: '연결 해제됨' };
+  const STATUS_TEXT = { PENDING: '연결 중', ACTIVE: '연결됨', ERROR: '문제 있음', DISCONNECTED: '끊김' };
   const nameOf = a => a.alias || '이름 없는 연결';
-  const masked = id => id && id.length === 12 ? id.slice(0, 4) + '****' + id.slice(8) : null;
 
   function setStatus(el, text, kind) {
     el.textContent = text;
@@ -174,7 +169,7 @@
       const accounts = (await api('/api/v1/aws/accounts')).filter(a => a.status !== 'PENDING');
       box.replaceChildren();
       if (!accounts.length) {
-        box.append(el('p', { class: 'muted' }, '아직 연결된 AWS 계정이 없습니다.'));
+        box.append(el('p', { class: 'muted' }, '아직 연결한 계정이 없습니다.'));
         return;
       }
       accounts.forEach(a => box.append(accountRow(a)));
@@ -187,20 +182,20 @@
     const title = el('div', { class: 'title' }, nameOf(a));
     const meta = el('div', { class: 'muted' },
       el('span', { class: 'badge ' + a.status }, STATUS_TEXT[a.status] || a.status), ' ', a.regionLabel || a.region);
-    if (masked(a.awsAccountId)) meta.append(' · AWS 계정 ' + masked(a.awsAccountId));
+    if (a.status === 'DISCONNECTED') meta.append(' · AWS에서 연결을 끊었습니다');
     const info = el('div', { class: 'grow' }, title, meta);
     if (a.lastError && (a.status === 'ERROR' || a.status === 'DISCONNECTED')) {
       info.append(el('div', { class: 'status err' }, a.lastError.message));
     }
     const row = el('div', { class: 'row' }, info);
     if (a.status === 'ACTIVE' || (a.status === 'ERROR' && a.verifiedAt)) {
-      const btn = el('button', { class: 'secondary' }, '이번 달 사용량');
+      const btn = el('button', { class: 'secondary' }, '이번 달 비용');
       btn.addEventListener('click', () => loadCosts(a.accountId, btn));
       row.append(btn);
     }
     const renameBtn = el('button', { class: 'secondary' }, '이름 변경');
     renameBtn.addEventListener('click', () => startRename(a, title));
-    const deleteBtn = el('button', { class: 'danger' }, '연결 삭제');
+    const deleteBtn = el('button', { class: 'danger' }, '삭제');
     deleteBtn.addEventListener('click', () => deleteAccount(a, deleteBtn));
     row.append(renameBtn, deleteBtn);
     return row;
@@ -233,11 +228,9 @@
   async function deleteAccount(a, btn) {
     const verified = a.verifiedAt && a.status !== 'DISCONNECTED';
     const question = verified
-      ? `'${nameOf(a)}' 연결과 수집 기록을 삭제할까요?\n\n` +
-        `삭제 후에도 AWS 계정에는 읽기 전용 Role이 남아 있습니다. 접근 권한을 완전히 없애려면 ` +
-        `AWS 콘솔 → CloudFormation에서 '${a.stackName}' 스택을 직접 삭제하세요. ` +
-        `(CloudCost Insight는 읽기 전용이라 대신 지울 수 없습니다.)`
-      : `'${nameOf(a)}' 연결과 수집 기록을 삭제할까요?`;
+      ? `'${nameOf(a)}'을(를) 삭제할까요?\n\n` +
+        `AWS 쪽도 끊으려면 삭제 후 AWS 콘솔 → CloudFormation에서\n'${a.stackName}'을(를) 삭제하세요.`
+      : `'${nameOf(a)}'을(를) 삭제할까요?`;
     if (!confirm(question)) return;
     btn.disabled = true;
     const status = $('accountsStatus');
@@ -253,7 +246,7 @@
   }
 
   $('cancelConnect').addEventListener('click', async () => {
-    if (!connectingId || !confirm('이 연결 시작을 취소할까요?')) return;
+    if (!connectingId || !confirm('연결을 취소할까요?')) return;
     const status = $('connectStatus');
     try {
       const result = await api('/api/v1/aws/accounts/' + connectingId, { method: 'DELETE' });
@@ -288,7 +281,7 @@
       $('quickLink').href = link;
       $('quickLink').style.display = 'inline-block';
       $('alias').value = '';
-      setStatus(status, `'${nameOf(setup.account)}' · ${setup.account.regionLabel}: AWS에서 스택을 만들면 자동으로 확인합니다…`);
+      setStatus(status, '기다리는 중…');
       poll(connectingId);
     } catch (e) {
       setStatus(status, e.message, 'err');
@@ -308,7 +301,7 @@
           clearInterval(pollTimer);
           connectingId = null;
           $('cancelConnect').style.display = 'none';
-          setStatus(status, `'${nameOf(a)}' 연결됐습니다. 위 목록에서 이번 달 사용량을 확인하세요.`, 'ok');
+          setStatus(status, `'${nameOf(a)}' 연결됐습니다.`, 'ok');
           loadAccounts();
         } else if (a.status === 'ERROR') {
           clearInterval(pollTimer);
@@ -316,10 +309,10 @@
           loadAccounts();
         } else if (Date.now() - startedAt > 10 * 60 * 1000) {
           clearInterval(pollTimer);
-          setStatus(status, '10분 동안 신호가 없습니다. AWS 콘솔에서 스택 상태를 확인하세요.', 'err');
+          setStatus(status, '10분이 지나도 연결되지 않았습니다. 취소하고 다시 시도하세요.', 'err');
         } else {
           const sec = Math.round((Date.now() - startedAt) / 1000);
-          setStatus(status, `AWS에서 스택을 만들면 자동으로 확인합니다… (${sec}초)`);
+          setStatus(status, `기다리는 중… (${sec}초)`);
         }
       } catch (e) {
         clearInterval(pollTimer);
@@ -331,21 +324,21 @@
   async function loadCosts(accountId, btn) {
     const box = $('costs');
     box.style.display = 'block';
-    box.replaceChildren(el('p', { class: 'muted' }, 'AWS에서 가져오는 중… (처음 조회는 최근 90일을 소급해서 몇 초 걸립니다)'));
+    box.replaceChildren(el('p', { class: 'muted' }, '불러오는 중… (처음에는 몇 초 걸립니다)'));
     btn.disabled = true;
     try {
       const c = await api(`/api/v1/aws/accounts/${accountId}/costs`);
       const won = v => v == null ? '단가 없음' : Number(v).toLocaleString('ko-KR') + (c.currency === 'KRW' ? '원' : ' USD');
       const table = el('table', {},
-        el('tr', {}, el('th', {}, '인스턴스'), el('th', {}, '타입'), el('th', { class: 'num' }, '사용 시간'), el('th', { class: 'num' }, '추정 비용')));
+        el('tr', {}, el('th', {}, '서버'), el('th', {}, '종류'), el('th', { class: 'num' }, '켜진 시간'), el('th', { class: 'num' }, '예상 비용')));
       c.instances.forEach(i => table.append(el('tr', {},
         el('td', {}, i.name || i.instanceId), el('td', { class: 'mono' }, i.instanceType),
         el('td', { class: 'num' }, i.usageHours + '시간'), el('td', { class: 'num' }, won(i.estimatedCost)))));
       box.replaceChildren(
         el('h2', {}, `${c.from} ~ ${c.to}`),
         el('div', { class: 'big-num' }, won(c.estimatedCost)),
-        el('div', { class: 'muted' }, `사용 ${c.usageHours}시간 · 추정 비용 (온디맨드 기준, 청구서 금액 아님)`),
-        c.instances.length ? table : el('p', { class: 'muted' }, '이 기간에 사용한 EC2 인스턴스가 없습니다.'));
+        el('div', { class: 'muted' }, '예상 금액 (실제 청구서와 다를 수 있음)'),
+        c.instances.length ? table : el('p', { class: 'muted' }, '이 기간에 켠 서버가 없습니다.'));
     } catch (e) {
       box.replaceChildren(el('p', { class: 'status err' }, e.message));
     } finally {
