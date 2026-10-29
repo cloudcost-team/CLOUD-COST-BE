@@ -234,7 +234,9 @@
   const nameOf = a => (a && a.alias) || '이름 없는 연결';
 
   /** 서버가 보낸 한국어 안내만 화면에 쓴다. 그 밖의 오류(코드 오류 등)는 일반 문구로 바꾼다. */
-  class ApiError extends Error {}
+  class ApiError extends Error {
+    constructor(message, code) { super(message); this.code = code || null; }
+  }
   const friendly = e => e instanceof ApiError ? e.message : FALLBACK;
 
   function el(tag, attrs, ...children) {
@@ -266,7 +268,7 @@
     }
     const body = await res.json().catch(() => null);
     if (res.status === 401) throw new ApiError('로그인이 만료됐어요. 새로고침 후 다시 로그인해 주세요.');
-    if (!res.ok) throw new ApiError((body && body.error && body.error.message) || FALLBACK);
+    if (!res.ok) throw new ApiError((body && body.error && body.error.message) || FALLBACK, body && body.error && body.error.code);
     if (body == null) throw new ApiError(FALLBACK);
     return body;
   }
@@ -547,9 +549,15 @@
       }
       box.replaceChildren(...content);
     } catch (e) {
-      box.replaceChildren(el('h2', {}, nameOf(a)), el('p', { class: 'small', style: 'color:var(--crit);margin-top:8px' }, friendly(e)));
+      // AWS 오류 원문(점검 목록 등)은 길고 어려우므로 쉬운 설명을 먼저 보여 주고 원문은 접어 둔다.
+      const aws = e instanceof ApiError && e.code && e.code.startsWith('AWS_');
+      const problem = el('div', { class: 'acct-problem', style: 'margin-top:12px' },
+        aws ? 'AWS에서 정보를 가져오지 못했어요. 연결 권한을 확인한 뒤 다시 시도해 주세요.' : friendly(e));
+      if (aws) problem.append(el('details', {}, el('summary', {}, '자세히'), el('div', {}, e.message)));
+      box.replaceChildren(el('h2', {}, nameOf(a)), problem);
     } finally {
       btn.disabled = false;
+      loadAccounts(); // 수집 결과로 연결 상태(연결됨 ↔ 확인 필요)가 바뀌었을 수 있다
     }
   }
 
