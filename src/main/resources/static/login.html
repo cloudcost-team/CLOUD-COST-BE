@@ -91,8 +91,7 @@
     .acct-actions { display: flex; gap: 4px; align-items: center; }
     .acct-problem { flex-basis: 100%; background: var(--crit-soft); color: var(--crit); border-radius: 8px; padding: 10px 12px; font-size: 13.5px; }
     .acct-problem.neutral { background: var(--sunken); color: var(--muted); }
-    .acct-problem details { margin-top: 4px; color: var(--muted); }
-    .acct-problem summary { cursor: pointer; font-size: 12.5px; }
+    .acct-problem strong { display: block; margin-bottom: 2px; }
     .rename { display: flex; gap: 6px; align-items: center; }
     .rename input { max-width: 240px; padding: 6px 10px; }
     .empty { text-align: center; padding: 28px 12px; }
@@ -203,7 +202,7 @@
 
     <section class="card" id="costs" hidden></section>
 
-    <details class="dev">
+    <details class="dev" id="devBox" hidden>
       <summary>개발자용</summary>
       <p style="margin-top:6px">Swagger용 토큰 (<span id="exp"></span>까지) · <a href="/swagger-ui.html" target="_blank" rel="noopener">Swagger 열기</a></p>
       <textarea id="token" readonly></textarea>
@@ -233,11 +232,54 @@
   };
   const nameOf = a => (a && a.alias) || '이름 없는 연결';
 
+  /**
+   * AWS 오류는 서버 원문(점검 목록 등)이 어려우므로 코드별로 "무슨 일인지 + 할 일"만 보여 준다.
+   * 키는 연결의 lastError.code(분류)와 API 오류 code 둘 다.
+   */
+  const RECONNECT = '이 연결을 삭제하고 다시 연결해 주세요.';
+  const AWS_PROBLEMS = {
+    ASSUME_ROLE_DENIED: ['AWS 연결이 끊어졌어요', 'AWS에서 연결 설정이 지워졌거나 바뀐 것 같아요. ' + RECONNECT, true],
+    PERMISSION_DENIED: ['AWS가 비용 정보를 보여 주지 않아요', '연결할 때 준 권한이 바뀐 것 같아요. ' + RECONNECT, true],
+    REGION_DISABLED: ['이 지역은 내 AWS 계정에서 꺼져 있어요', '다른 지역을 골라 새로 연결해 주세요.', true],
+    BACKEND_CREDENTIALS_MISSING: ['저희 서비스 쪽 문제예요', '잠시 후 다시 시도해 주세요. 계속되면 관리자에게 알려 주세요.', false],
+    THROTTLED: ['AWS가 잠시 바빠요', '1~2분 뒤에 다시 시도해 주세요.', false],
+    UNAVAILABLE: ['AWS에 잠시 연결되지 않아요', '잠시 후 다시 시도해 주세요.', false],
+    UNKNOWN: ['AWS에서 정보를 가져오지 못했어요', '잠시 후 다시 시도해 주세요.', false]
+  };
+  const API_TO_PROBLEM = {
+    AWS_ASSUME_ROLE_FAILED: 'ASSUME_ROLE_DENIED', AWS_PERMISSION_DENIED: 'PERMISSION_DENIED', AWS_REGION_DISABLED: 'REGION_DISABLED',
+    BACKEND_AWS_NOT_CONFIGURED: 'BACKEND_CREDENTIALS_MISSING', AWS_THROTTLED: 'THROTTLED', AWS_UNAVAILABLE: 'UNAVAILABLE', AWS_ERROR: 'UNKNOWN'
+  };
+  const problemOf = code => AWS_PROBLEMS[API_TO_PROBLEM[code] || code] || null;
+  /** 서버 안내 중 화면에 그대로 쓰기 어려운 것만 쉬운 말로 바꾼다. */
+  const PLAIN = {
+    ACCOUNT_NOT_FOUND: '이 연결을 찾을 수 없어요. 새로고침해 주세요.',
+    ACCOUNT_DISCONNECTED: 'AWS에서 연결이 끊긴 계정이에요. 새로 연결해 주세요.',
+    ACCOUNT_NOT_ACTIVE: '아직 연결이 끝나지 않았어요.'
+  };
+
   /** 서버가 보낸 한국어 안내만 화면에 쓴다. 그 밖의 오류(코드 오류 등)는 일반 문구로 바꾼다. */
   class ApiError extends Error {
     constructor(message, code) { super(message); this.code = code || null; }
   }
-  const friendly = e => e instanceof ApiError ? e.message : FALLBACK;
+  const friendly = e => {
+    if (!(e instanceof ApiError)) return FALLBACK;
+    const p = problemOf(e.code);
+    if (p) return p[0] + '. ' + p[1];
+    return PLAIN[e.code] || e.message;
+  };
+
+  /** 쉬운 설명 상자. 다시 연결해야 하는 경우에는 [다시 연결하기] 버튼을 붙인다. */
+  function problemBox(code) {
+    const [title, action, reconnect] = problemOf(code) || AWS_PROBLEMS.UNKNOWN;
+    const box = el('div', { class: 'acct-problem' }, el('strong', {}, title), el('div', {}, action));
+    if (reconnect) {
+      const btn = el('button', { class: 'btn sm', style: 'margin-top:8px' }, '다시 연결하기');
+      btn.addEventListener('click', openConnect);
+      box.append(btn);
+    }
+    return box;
+  }
 
   function el(tag, attrs, ...children) {
     const node = document.createElement(tag);
@@ -295,6 +337,7 @@
       $('whoEmail').textContent = (body.user && (body.user.email || body.user.id)) || '';
       $('exp').textContent = body.expiresAt ? new Date(body.expiresAt).toLocaleString() : '-';
       $('token').value = body.accessToken;
+      $('devBox').hidden = !new URLSearchParams(location.search).has('dev'); // 개발자만: login.html?dev
       $('who').hidden = false;
       $('loginView').hidden = true;
       $('appView').hidden = false;
@@ -349,11 +392,7 @@
 
     const row = el('div', { class: 'acct' }, icon, main, actions);
     if (a.status === 'ERROR') {
-      const problem = el('div', { class: 'acct-problem' }, 'AWS에서 정보를 읽지 못하고 있어요. 권한이 바뀌었는지 확인해 주세요.');
-      if (a.lastError && a.lastError.message) {
-        problem.append(el('details', {}, el('summary', {}, '자세히'), el('div', {}, a.lastError.message)));
-      }
-      row.append(problem);
+      row.append(problemBox(a.lastError && a.lastError.code));
     } else if (a.status === 'DISCONNECTED') {
       row.append(el('div', { class: 'acct-problem neutral' },
         'AWS에서 연결을 끊었어요. 지금까지 모은 기록만 남아 있어요. 다시 보려면 새로 연결하세요.'));
@@ -505,7 +544,7 @@
         } else if (a.status === 'ERROR') {
           clearInterval(pollTimer);
           connectingId = null;
-          setWait('연결하지 못했어요. AWS에서 만든 스택을 삭제하고 다시 시도해 주세요.', 'crit');
+          setWait('연결하지 못했어요. 이 창을 닫고 처음부터 다시 연결해 주세요.', 'crit');
         } else if (Date.now() - startedAt > 10 * 60 * 1000) {
           clearInterval(pollTimer);
           setWait('10분이 지나도 연결되지 않았어요. 취소하고 다시 시도해 주세요.', 'crit');
@@ -536,6 +575,11 @@
         el('div', { class: 'hero-val' }, money(c.estimatedCost)),
         el('div', { class: 'small muted', style: 'margin-top:6px' }, '실제 청구서와 다를 수 있어요')
       ];
+      if (a.status === 'ERROR') {
+        // 오류 상태에서는 저장해 둔 기록만 보여 준다 (ADR-006). 0원이 "안 썼다"로 읽히지 않게 알려 준다.
+        content.push(el('div', { class: 'acct-problem', style: 'margin-top:14px' },
+          '지금은 AWS에 연결되지 않아, 마지막으로 가져온 정보까지만 보여요.'));
+      }
       if (rows.length) {
         const table = el('table', {}, el('tr', {},
           el('th', {}, '서버'), el('th', { class: 'num' }, '켜진 시간'), el('th', { class: 'num' }, '예상 비용')));
@@ -549,12 +593,15 @@
       }
       box.replaceChildren(...content);
     } catch (e) {
-      // AWS 오류 원문(점검 목록 등)은 길고 어려우므로 쉬운 설명을 먼저 보여 주고 원문은 접어 둔다.
-      const aws = e instanceof ApiError && e.code && e.code.startsWith('AWS_');
-      const problem = el('div', { class: 'acct-problem', style: 'margin-top:12px' },
-        aws ? 'AWS에서 정보를 가져오지 못했어요. 연결 권한을 확인한 뒤 다시 시도해 주세요.' : friendly(e));
-      if (aws) problem.append(el('details', {}, el('summary', {}, '자세히'), el('div', {}, e.message)));
-      box.replaceChildren(el('h2', {}, nameOf(a)), problem);
+      const p = e instanceof ApiError && problemOf(e.code);
+      if (p) {
+        // 같은 안내가 계정 줄에도 나오므로(목록을 다시 불러옴) 비용 칸은 닫고 알림만 띄운다.
+        box.hidden = true;
+        toast(p[0]);
+      } else {
+        box.replaceChildren(el('h2', {}, nameOf(a)),
+          el('div', { class: 'acct-problem', style: 'margin-top:12px' }, friendly(e)));
+      }
     } finally {
       btn.disabled = false;
       loadAccounts(); // 수집 결과로 연결 상태(연결됨 ↔ 확인 필요)가 바뀌었을 수 있다
