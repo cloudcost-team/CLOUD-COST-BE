@@ -25,8 +25,8 @@
 | 401 | `UNAUTHORIZED` | X-Owner-Id 형식 오류 |
 | 404 | `ACCOUNT_NOT_FOUND` | 없거나 남의 연결 |
 | 409 | `ACCOUNT_NOT_ACTIVE`, `ACCOUNT_DISCONNECTED`, `ACCOUNT_ALREADY_CONNECTED`, `ROLE_ACCOUNT_CHANGED` | 상태 충돌 |
-| 422 | `AWS_ASSUME_ROLE_FAILED`, `AWS_PERMISSION_DENIED` | 고객 Role 설정 문제 |
-| 429 | `AWS_THROTTLED` | |
+| 422 | `AWS_ASSUME_ROLE_FAILED`, `AWS_PERMISSION_DENIED`, `AWS_REGION_DISABLED` | 고객 Role·계정 설정 문제 (연결은 `ERROR`) |
+| 429 | `AWS_THROTTLED` | 백오프로 3회 시도해도 요청 제한 |
 | 502 | `AWS_UNAVAILABLE`, `AWS_ERROR` | AWS 연결 실패 |
 | 503 | `BACKEND_AWS_NOT_CONFIGURED` | 서버 AWS 자격증명 없음 (사용자 잘못 아님) |
 
@@ -55,8 +55,13 @@
 실제 AssumeRole + DescribeInstances 1건. 성공하면 `status: ACTIVE`. 실패하면 422/502/503 + 연결은 `ERROR`.
 ### `GET /aws/accounts` · `GET /aws/accounts/{accountId}`
 목록 / 상세(+ `roleSetup`).
+연결 `status`: `PENDING`(Role 전) / `ACTIVE` / `ERROR`(고쳐야 하는 오류, `lastError`에 한국어 원인) / `DISCONNECTED`(스택 삭제).
+일시적인 AWS 오류(요청 제한·장애)는 `ACTIVE`를 유지하고 `lastError`만 채운다. 수집이 모두 성공하면 `lastError: null`.
+검증된 뒤 `ERROR`가 된 연결은 1시간에 한 번 자동으로 다시 확인해 성공하면 `ACTIVE`로 돌아온다 (바로 확인: `PUT .../role`).
 ### `GET /aws/accounts/{accountId}/sync-jobs?limit=20`
 `[ { jobId, trigger, status, instancesRefreshed, usageRefreshed, ec2RequestCount, cwRequestCount, instanceCount, usageRows, error, warning, startedAt, finishedAt } ]`
+- `status`: `SUCCEEDED` / `PARTIAL`(일부만 저장. `error`에 첫 실패 원인, 실패한 구간은 다음 수집에서 다시 읽음) / `FAILED`(저장 없음).
+- `cwRequestCount`는 재시도를 포함한 실제 호출 수다.
 
 ## 2. EC2 사용량·추정 비용 (ADR-002, 통화는 ADR-005)
 모든 조회에 `currency=KRW|USD` (기본 **KRW**). 원화는 응답의 `exchangeRate`로 환산한 추정치다.
@@ -74,7 +79,8 @@
                "usageRefreshedAt": "2026-10-08T03:00:00Z", "usageFromCache": true,
                "nextUsageRefreshAt": "2026-10-08T04:00:00Z", "warnings": [] }
 ```
-`ACTIVE`가 아니면 409.
+`ACTIVE`이거나 검증된 뒤 `ERROR`가 된 연결이면 조회할 수 있다 (ERROR면 저장된 데이터 + `freshness.warnings`에 원인). 그 밖은 409.
+일부 수집이 실패하면 받은 부분은 저장되고 `freshness.warnings`에 안내가 붙는다.
 
 ### `GET /aws/accounts/{accountId}/instances`
 ```json

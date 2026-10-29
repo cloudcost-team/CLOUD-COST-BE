@@ -32,11 +32,11 @@ ec2_price_cache (공개 단가, owner 없음)
 | region | VARCHAR(32) | 조회 리전 |
 | external_id | VARCHAR(64) UNIQUE | `cci-` + hex 24자 |
 | role_arn, aws_account_id | | Role 등록 후 |
-| status | PENDING / ACTIVE / ERROR | |
-| last_error_code, last_error_message | | 정제한 한국어 메시지 |
+| status | PENDING / ACTIVE / ERROR / DISCONNECTED | 전이 규칙은 ARCHITECTURE.md "연결 상태 전이" (ADR-006) |
+| last_error_code, last_error_message | | 마지막 AWS 오류 분류(예: `PERMISSION_DENIED`)와 정제한 한국어 메시지. 수집이 모두 성공하면 지운다 |
 | verified_at | | 실제 AssumeRole 검증 성공 시각 |
 | instances_refreshed_at | | 마지막 DescribeInstances (10분 캐시 기준) |
-| usage_refreshed_at | | 마지막 CloudWatch 호출 시각, 성공·실패 무관 (1시간 1회 기준) |
+| usage_refreshed_at | | 마지막 사용량 수집 시도 시각, 성공·실패 무관 (1시간 1회 기준). ERROR 연결은 이 시각 + 1시간에 다시 확인한다 |
 
 ### ec2_instances — 저장 허용 필드만
 UNIQUE `(account_id, instance_id)` — 같은 인스턴스는 갱신만 한다.
@@ -45,11 +45,11 @@ UNIQUE `(account_id, instance_id)` — 같은 인스턴스는 갱신만 한다.
 | instance_id, name(Name 태그), instance_type, region, availability_zone, state, launch_time, platform_details, tenancy, spot, detailed_monitoring | DescribeInstances |
 | present | 마지막 DescribeInstances에 있었는지. 삭제돼도 행은 남긴다 |
 | active_since_usage_sync | 지난 CloudWatch 수집 이후 켜진 모습을 봤는지 (꺼져 있던 인스턴스는 다시 조회하지 않기 위해) |
-| usage_collected_until | 이 시각 전까지 CloudWatch를 수집함. NULL이면 소급 전 |
+| usage_collected_until | 이 시각 전까지 CloudWatch를 수집함. NULL이면 소급 전. 성공한 구간 끝까지만 옮기므로 실패한 구간은 다음 수집에서 다시 읽는다 |
 | first_seen_at, last_seen_at | |
 
 ### ec2_usage_hourly — CloudWatch 원본 (시간 단위)
-UNIQUE `(account_id, instance_id, hour_start)` — 다시 읽으면 갱신한다.
+UNIQUE `(account_id, instance_id, hour_start)` — 다시 읽으면 갱신한다(upsert). 2시간 겹침·실패 구간 재수집에도 행이 늘지 않는다.
 | 컬럼 | 설명 |
 |---|---|
 | hour_start | 데이터 포인트 시각 (UTC 정시) |
@@ -60,11 +60,11 @@ UNIQUE `(account_id, instance_id, hour_start)` — 다시 읽으면 갱신한다
 | 컬럼 | 설명 |
 |---|---|
 | trigger_type | QUERY (조회 시점 수집) / MANUAL (예약) |
-| status | RUNNING / SUCCEEDED / PARTIAL / FAILED |
+| status | RUNNING / SUCCEEDED / PARTIAL(일부만 저장) / FAILED(아무것도 저장 못 함) |
 | instances_refreshed, usage_refreshed | 이번에 갱신한 것 |
-| ec2_request_count, **cw_request_count** | 호출 수 (CloudWatch 무료 한도 추적) |
+| ec2_request_count, **cw_request_count** | 호출 수 (CloudWatch 무료 한도 추적). 재시도도 센다 |
 | instance_count, usage_rows | |
-| error_code, error_message, warning | 자격증명·AWS 원문 금지 |
+| error_code, error_message, warning | FAILED·PARTIAL의 첫 원인(한국어)과 나머지 안내. 자격증명·AWS 원문 금지 |
 
 ### ec2_price_cache — 공개 단가 (owner 없음)
 UNIQUE `(region, instance_type, operating_system, tenancy, license_model, pre_installed_sw)`.
@@ -83,6 +83,9 @@ UNIQUE `(auth_provider, provider_subject)`. 비밀번호 컬럼은 없다. `user
 ## V4 (2026-10-13) — 환율 캐시 (ADR-005)
 `exchange_rates`: base, quote, rate NUMERIC(18,6), rate_date, source, fetched_at. UNIQUE `(base, quote, rate_date)`. 공개 데이터라 owner 없음.
 6시간 안에 받은 값이 있으면 외부 API를 부르지 않는다.
+
+## 마이그레이션 없음 (2026-10-30) — 수집 정합성 (ADR-006)
+기존 컬럼만 쓴다: PARTIAL의 실패 원인은 `sync_jobs.error_code`·`error_message`, 연결의 마지막 오류는 `aws_accounts.last_error_*`.
 
 ## 보존 (백로그)
 ec2_usage_hourly는 455일, sync_jobs는 90일 정도로 정리하는 작업이 필요하다.
