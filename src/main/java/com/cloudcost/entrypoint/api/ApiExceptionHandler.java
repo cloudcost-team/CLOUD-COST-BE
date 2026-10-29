@@ -69,6 +69,10 @@ class ApiExceptionHandler {
                 status = HttpStatus.UNPROCESSABLE_ENTITY;
                 code = "AWS_PERMISSION_DENIED";
             }
+            case REGION_DISABLED -> {
+                status = HttpStatus.UNPROCESSABLE_ENTITY;
+                code = "AWS_REGION_DISABLED";
+            }
             case BACKEND_CREDENTIALS_MISSING -> {
                 status = HttpStatus.SERVICE_UNAVAILABLE;
                 code = "BACKEND_AWS_NOT_CONFIGURED";

@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.awscore.retry.AwsRetryStrategy;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sts.StsClient;
@@ -36,6 +37,8 @@ class AwsCustomerGateway implements CustomerAwsGateway, AutoCloseable {
         this.clientConfig = ClientOverrideConfiguration.builder()
             .apiCallTimeout(Duration.ofSeconds(30))
             .apiCallAttemptTimeout(Duration.ofSeconds(10))
+            // 재시도는 application(AwsRetry)에서 한다: 요청 제한만 백오프로 다시 보내고 고객 계정 호출 수를 정확히 센다.
+            .retryStrategy(AwsRetryStrategy.doNotRetry())
             .build();
     }
 

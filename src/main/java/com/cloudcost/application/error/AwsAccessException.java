@@ -17,6 +17,10 @@ public class AwsAccessException extends RuntimeException {
          */
         PERMISSION_DENIED,
         /**
+         * 연결 리전이 고객 계정에서 활성화되지 않음 (옵트인 리전)
+         */
+        REGION_DISABLED,
+        /**
          * 우리 서버의 AWS 자격증명이 설정되지 않음 (사용자 잘못이 아님)
          */
         BACKEND_CREDENTIALS_MISSING,
@@ -52,6 +56,22 @@ public class AwsAccessException extends RuntimeException {
 
     public String action() {
         return action;
+    }
+
+    /**
+     * 사용자가 고객 계정에서 고쳐야 하는 오류인지 (연결을 ERROR로 바꾼다). 나머지는 다시 시도하면 풀릴 수 있다.
+     */
+    public boolean breaksConnection() {
+        return category == Category.ASSUME_ROLE_DENIED
+            || category == Category.PERMISSION_DENIED
+            || category == Category.REGION_DISABLED;
+    }
+
+    /**
+     * 잠시 후 같은 요청을 다시 보내면 성공할 수 있는지 (요청 제한·일시 장애).
+     */
+    public boolean retryable() {
+        return category == Category.THROTTLED || category == Category.UNAVAILABLE;
     }
 
     /**
