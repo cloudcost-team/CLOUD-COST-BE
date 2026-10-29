@@ -66,12 +66,29 @@ class AccountPersistenceAdapter implements AwsAccountRepository, UserRepository 
 
     @Override
     @Transactional
+    public AwsAccount add(AwsAccount account) {
+        return toDomain(accounts.save(copy(account, new AwsAccountEntity())));
+    }
+
+    @Override
+    @Transactional
     public AwsAccount save(AwsAccount account) {
-        AwsAccountEntity e = accounts.findByOwnerIdAndId(account.ownerId(), account.id())
-            .orElseGet(AwsAccountEntity::new);
+        return accounts.findByOwnerIdAndId(account.ownerId(), account.id())
+            .map(e -> toDomain(accounts.save(copy(account, e))))
+            .orElse(account);
+    }
+
+    @Override
+    @Transactional
+    public boolean deleteByOwnerIdAndId(String ownerId, UUID id) {
+        return accounts.deleteByOwnerIdAndId(ownerId, id) > 0;
+    }
+
+    private static AwsAccountEntity copy(AwsAccount account, AwsAccountEntity e) {
         e.id = account.id();
         e.ownerId = account.ownerId();
         e.region = account.region().value();
+        e.alias = account.alias();
         e.externalId = account.externalId().value();
         e.roleArn = account.roleArn() == null ? null : account.roleArn().value();
         e.awsAccountId = account.roleArn() == null ? null : account.roleArn().accountId();
@@ -85,7 +102,7 @@ class AccountPersistenceAdapter implements AwsAccountRepository, UserRepository 
         e.disconnectedAt = account.disconnectedAt();
         e.createdAt = account.createdAt();
         e.updatedAt = account.updatedAt();
-        return toDomain(accounts.save(e));
+        return e;
     }
 
     @Override
@@ -123,6 +140,7 @@ class AccountPersistenceAdapter implements AwsAccountRepository, UserRepository 
             e.ownerId,
             new AwsRegion(e.region),
             new ExternalId(e.externalId),
+            e.alias,
             e.roleArn == null ? null : RoleArn.parse(e.roleArn),
             AwsAccount.Status.valueOf(e.status),
             e.lastErrorCode,

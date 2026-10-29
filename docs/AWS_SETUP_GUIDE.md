@@ -103,6 +103,7 @@ export CCI_CALLBACK_QUEUE_URL=https://sqs.ap-northeast-2.amazonaws.com/<A>/cloud
 5. `GET .../instances` → `GET .../costs/daily` → `GET .../sync-jobs`(cwRequestCount 확인)
 
 **연결 끊기**: 계정 B → CloudFormation → `CloudCostInsight-<연결 ID 앞 8자리>` 스택 삭제 → Role이 지워지고 연결이 자동으로 `DISCONNECTED`가 된다.
+CloudCost Insight 화면에서 **연결 삭제**를 눌러도 스택(Role)은 남는다(읽기 전용이라 우리가 지우지 못함). 접근 권한까지 없애려면 위처럼 스택을 직접 삭제한다.
 
 **예비 방법** (1~2절 준비 전): 응답의 `trustPolicy`·`permissionPolicy`로 IAM에서 `CloudCostReadOnlyRole`을 직접 만들고
 `PUT /api/v1/aws/accounts/{accountId}/role`로 ARN을 등록한다.

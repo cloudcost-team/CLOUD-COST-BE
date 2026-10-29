@@ -21,7 +21,7 @@
 ```
 | HTTP | code | 상황 |
 |---|---|---|
-| 400 | `VALIDATION_ERROR`, `INVALID_ROLE_ARN`, `INVALID_REGION`, `INVALID_PERIOD` | 형식 오류 (accountId가 UUID가 아님 포함) |
+| 400 | `VALIDATION_ERROR`, `INVALID_ROLE_ARN`, `INVALID_REGION`, `INVALID_PERIOD`, `INVALID_ALIAS` | 형식 오류 (accountId가 UUID가 아님 포함) |
 | 401 | `UNAUTHORIZED` | X-Owner-Id 형식 오류 |
 | 404 | `ACCOUNT_NOT_FOUND` | 없거나 남의 연결 |
 | 409 | `ACCOUNT_NOT_ACTIVE`, `ACCOUNT_DISCONNECTED`, `ACCOUNT_ALREADY_CONNECTED`, `ROLE_ACCOUNT_CHANGED` | 상태 충돌 |
@@ -32,10 +32,11 @@
 
 ## 1. AWS 연결 (ADR-003, 예비: ADR-001)
 ### `POST /aws/accounts` → 201
-요청(선택): `{ "region": "ap-northeast-2" }`
+요청(선택): `{ "region": "ap-northeast-2", "alias": "개인 계정" }` — `alias`는 연결 이름(앞뒤 공백 제거, 40자 이하, 줄바꿈·제어 문자 불가, 비우면 null)
 ```json
-{ "account": { "accountId": "…", "status": "PENDING", "region": "ap-northeast-2", "externalId": "cci-0123456789abcdef01234567",
-               "roleArn": null, "awsAccountId": null, "lastError": null, "verifiedAt": null, "stackId": null, "disconnectedAt": null, … },
+{ "account": { "accountId": "…", "alias": "개인 계정", "status": "PENDING", "region": "ap-northeast-2", "regionLabel": "서울",
+               "externalId": "cci-0123456789abcdef01234567", "roleArn": null, "awsAccountId": null, "lastError": null, "verifiedAt": null,
+               "stackId": null, "stackName": "CloudCostInsight-1a2b3c4d", "disconnectedAt": null, … },
   "roleSetup": { "quickCreateUrl": "https://ap-northeast-2.console.aws.amazon.com/cloudformation/home?region=ap-northeast-2#/stacks/quickcreate?templateURL=…&stackName=CloudCostInsight-1a2b3c4d&param_ExternalId=cci-…&param_ConnectionId=…",
                  "requiredActions": ["ec2:DescribeInstances", "cloudwatch:GetMetricStatistics"],
                  "stackParameters": { "ExternalId": "cci-…", "TrustedPrincipalArn": "…", "ConnectionId": "…", "CallbackTopicArn": "…", "MonitoredRegion": "ap-northeast-2", "RoleName": "CloudCostReadOnlyRole-1a2b3c4d" },
@@ -53,11 +54,32 @@
 ### `PUT /aws/accounts/{accountId}/role` → 200 (예비 경로)
 요청: `{ "roleArn": "arn:aws:iam::123456789012:role/CloudCostReadOnlyRole" }`
 실제 AssumeRole + DescribeInstances 1건. 성공하면 `status: ACTIVE`. 실패하면 422/502/503 + 연결은 `ERROR`.
-### `GET /aws/accounts` · `GET /aws/accounts/{accountId}`
-목록 / 상세(+ `roleSetup`).
+### `GET /aws/accounts?includePending=false` · `GET /aws/accounts/{accountId}`
+목록 / 상세(+ `roleSetup`). 목록 항목은 상세의 `account`와 같은 모양이다.
+- 목록은 기본으로 **시작한 지 1시간이 지나도록 `PENDING`인 연결**(링크만 받고 스택을 만들지 않은 것)을 뺀다. `includePending=true`면 모두 보여 준다.
+  상세 조회와 삭제는 숨겨진 연결에도 그대로 된다.
+- `alias`: 연결 이름 (없으면 null → 화면에서는 "이름 없는 연결").
+- `regionLabel`: 한국어 리전 이름. `ap-northeast-2`→서울, `ap-northeast-1`→도쿄, `us-east-1`→버지니아 북부, `us-west-2`→오레곤, 그 밖은 코드 그대로.
+- `stackName`: 고객 계정에 만들어지는 스택 이름 (`CloudCostInsight-` + 연결 id 앞 8자리).
+
 연결 `status`: `PENDING`(Role 전) / `ACTIVE` / `ERROR`(고쳐야 하는 오류, `lastError`에 한국어 원인) / `DISCONNECTED`(스택 삭제).
 일시적인 AWS 오류(요청 제한·장애)는 `ACTIVE`를 유지하고 `lastError`만 채운다. 수집이 모두 성공하면 `lastError: null`.
 검증된 뒤 `ERROR`가 된 연결은 1시간에 한 번 자동으로 다시 확인해 성공하면 `ACTIVE`로 돌아온다 (바로 확인: `PUT .../role`).
+### `PATCH /aws/accounts/{accountId}` → 200 (연결 이름 변경)
+요청: `{ "alias": "캡스톤 팀 계정" }` (빈 문자열·null이면 이름을 지운다). 응답: 연결(`account`와 같은 모양). AWS에는 아무것도 보내지 않는다.
+400 `INVALID_ALIAS`(40자 초과·제어 문자), 404 `ACCOUNT_NOT_FOUND`(없거나 남의 연결).
+
+### `DELETE /aws/accounts/{accountId}` → 200 (연결 취소 · 삭제)
+연결과 이 연결로 모은 `ec2_instances`·`ec2_usage_hourly`·`sync_jobs`를 **본인 것만** 한 트랜잭션으로 지운다. 남의 연결은 404이고 아무것도 지우지 않는다.
+고객 AWS 계정은 건드리지 않는다 (READ ONLY). 다시 연결하려면 연결을 새로 시작한다.
+```json
+{ "accountId": "…", "previousStatus": "ACTIVE", "stackName": "CloudCostInsight-1a2b3c4d", "awsCleanupNeeded": true,
+  "message": "삭제했습니다. AWS 쪽도 끊으려면 AWS 콘솔 → CloudFormation에서 'CloudCostInsight-1a2b3c4d' 스택을 삭제하세요." }
+```
+- `awsCleanupNeeded`: 한 번이라도 검증됐고 스택 삭제 신호를 받지 않은 연결(`ACTIVE`, 검증된 뒤의 `ERROR`)이면 true. 화면은 `message`를 그대로 보여 준다.
+- 삭제 후 그 스택에서 오는 신호: Delete는 무시하고 SUCCESS로 응답해 고객의 스택 삭제를 막지 않는다.
+  Create/Update는 연결을 찾지 못해 FAILED로 응답하므로 고객 스택이 롤백되어 Role이 남지 않는다.
+
 ### `GET /aws/accounts/{accountId}/sync-jobs?limit=20`
 `[ { jobId, trigger, status, instancesRefreshed, usageRefreshed, ec2RequestCount, cwRequestCount, instanceCount, usageRows, error, warning, startedAt, finishedAt } ]`
 - `status`: `SUCCEEDED` / `PARTIAL`(일부만 저장. `error`에 첫 실패 원인, 실패한 구간은 다음 수집에서 다시 읽음) / `FAILED`(저장 없음).

@@ -18,4 +18,7 @@ public interface Ec2UsageRepository {
      * hourStart ∈ [start, end)
      */
     List<HourlySample> findHourly(String ownerId, UUID accountId, Instant start, Instant end);
+
+    /** 연결 삭제용. @return 지운 행 수 */
+    int deleteUsageByOwnerIdAndAccountId(String ownerId, UUID accountId);
 }

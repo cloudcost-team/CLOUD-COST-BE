@@ -23,6 +23,9 @@ class AwsAccountEntity {
     @Column(nullable = false, length = 32)
     String region;
 
+    @Column(length = 160)
+    String alias;
+
     @Column(name = "external_id", nullable = false, length = 64)
     String externalId;
 

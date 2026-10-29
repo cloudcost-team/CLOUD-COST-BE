@@ -9,4 +9,7 @@ public interface SyncJobRepository {
     SyncJob save(SyncJob job);
 
     List<SyncJob> findRecentByOwnerIdAndAccountId(String ownerId, UUID accountId, int limit);
+
+    /** 연결 삭제용. @return 지운 행 수 */
+    int deleteAllByOwnerIdAndAccountId(String ownerId, UUID accountId);
 }

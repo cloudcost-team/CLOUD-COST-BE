@@ -1,8 +1,10 @@
 package com.cloudcost.entrypoint.api.dto;
 
 import com.cloudcost.application.AwsAccountService.AccountSetup;
+import com.cloudcost.application.AwsAccountService.Deletion;
 import com.cloudcost.domain.account.AwsAccount;
 import com.cloudcost.domain.account.CustomerRolePolicy;
+import com.cloudcost.domain.account.QuickCreateLink;
 import com.cloudcost.domain.sync.SyncJob;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
@@ -20,7 +22,15 @@ public final class AccountDtos {
     @Schema(description = "AWS 연결 시작. Access Key는 받지 않는다.")
     public record CreateAccountRequest(
         @Schema(description = "EC2·CloudWatch를 조회할 리전 (기본 ap-northeast-2)", example = "ap-northeast-2")
-        String region) {
+        String region,
+        @Schema(description = "연결 이름 (선택, 앞뒤 공백 제거 후 40자 이하). 화면에서 연결을 구분하는 용도", example = "개인 계정")
+        String alias) {
+    }
+
+    @Schema(description = "연결 이름 변경. 빈 문자열이나 null이면 이름을 지운다.")
+    public record RenameAccountRequest(
+        @Schema(description = "앞뒤 공백 제거 후 40자 이하", example = "캡스톤 팀 계정")
+        String alias) {
     }
 
     @Schema(description = "고객 계정에 만든 Read Only Role의 ARN")
@@ -35,10 +45,14 @@ public final class AccountDtos {
 
     public record AccountResponse(
         UUID accountId,
+        @Schema(description = "사용자가 붙인 연결 이름 (없으면 null → 화면에서는 '이름 없는 연결')", example = "개인 계정")
+        String alias,
         @Schema(description = "PENDING: Role 생성 전 / ACTIVE: 실제 AssumeRole 검증 완료 / ERROR: 검증 실패 또는 고쳐야 하는 AWS 오류"
             + "(lastError 참고, 1시간마다 자동 재확인) / DISCONNECTED: 고객이 스택을 삭제함")
         String status,
         String region,
+        @Schema(description = "화면 표시용 한국어 리전 이름 (모르는 리전은 코드 그대로)", example = "서울")
+        String regionLabel,
         @Schema(description = "이 연결 전용 External ID. Trust Policy의 sts:ExternalId 조건에 넣는다.")
         String externalId,
         String roleArn,
@@ -48,14 +62,19 @@ public final class AccountDtos {
         Instant instancesRefreshedAt,
         Instant usageRefreshedAt,
         @Schema(description = "Role을 만든 고객 계정의 CloudFormation 스택") String stackId,
+        @Schema(description = "고객 계정에 만들어지는 스택 이름. 연결을 완전히 끊으려면 AWS 콘솔에서 이 스택을 삭제한다",
+            example = "CloudCostInsight-1a2b3c4d")
+        String stackName,
         Instant disconnectedAt,
         Instant createdAt) {
 
         public static AccountResponse of(AwsAccount a) {
             return new AccountResponse(
                 a.id(),
+                a.alias(),
                 a.status().name(),
                 a.region().value(),
+                a.region().koreanLabel(),
                 a.externalId().value(),
                 a.roleArn() == null ? null : a.roleArn().value(),
                 a.roleArn() == null ? null : a.roleArn().accountId(),
@@ -64,6 +83,7 @@ public final class AccountDtos {
                 a.instancesRefreshedAt(),
                 a.usageRefreshedAt(),
                 a.stackId(),
+                QuickCreateLink.stackName(a),
                 a.disconnectedAt(),
                 a.createdAt());
         }
@@ -106,6 +126,21 @@ public final class AccountDtos {
 
         public static AccountSetupResponse of(AccountSetup setup) {
             return new AccountSetupResponse(AccountResponse.of(setup.account()), RoleSetup.of(setup));
+        }
+    }
+
+    public record DeleteAccountResponse(
+        UUID accountId,
+        @Schema(description = "삭제 전 상태") String previousStatus,
+        @Schema(description = "고객 계정에 남아 있을 수 있는 스택 이름", example = "CloudCostInsight-1a2b3c4d") String stackName,
+        @Schema(description = "true면 고객이 AWS 콘솔에서 스택을 직접 삭제해야 접근 권한이 완전히 사라진다 "
+            + "(CloudCost Insight는 읽기 전용이라 대신 지우지 못한다)")
+        boolean awsCleanupNeeded,
+        @Schema(description = "사용자에게 그대로 보여 줄 한국어 안내") String message) {
+
+        public static DeleteAccountResponse of(Deletion d) {
+            return new DeleteAccountResponse(
+                d.accountId(), d.previousStatus().name(), d.stackName(), d.awsCleanupNeeded(), d.message());
         }
     }
 

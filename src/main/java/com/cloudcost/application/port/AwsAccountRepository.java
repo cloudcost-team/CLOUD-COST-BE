@@ -12,7 +12,17 @@ import java.util.UUID;
  */
 public interface AwsAccountRepository {
 
+    /** 새 연결을 저장한다. */
+    AwsAccount add(AwsAccount account);
+
+    /**
+     * 이미 있는 연결을 갱신한다. 그 사이 사용자가 연결을 삭제했으면 되살리지 않고 아무것도 하지 않는다
+     * (진행 중이던 수집·스택 신호 처리가 삭제한 연결을 다시 만들지 않게 하기 위해서다).
+     */
     AwsAccount save(AwsAccount account);
+
+    /** @return 지웠으면 true. 남의 연결이면 false (아무것도 지우지 않는다). */
+    boolean deleteByOwnerIdAndId(String ownerId, UUID id);
 
     Optional<AwsAccount> findByOwnerIdAndId(String ownerId, UUID id);
 

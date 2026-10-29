@@ -2,298 +2,658 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CloudCost Insight 로그인</title>
-  <!-- 간이 테스트 페이지: Google 로그인 → AWS 원클릭 연결 → 이번 달 사용량 확인. 토큰은 이 탭의 메모리에만 둔다. 프론트가 붙으면 그쪽 화면으로 대체한다. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#F2F4F6">
+  <title>CloudCost</title>
+  <!-- 간이 테스트 페이지(모바일 앱 흐름): 로그인 → 홈(계정 목록) → 계정 상세(이번 달 예상 비용) / 연결 3단계.
+       토큰은 이 탭의 메모리에만 둔다. 데이터는 textContent로만 넣는다 (innerHTML 금지). -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
-    :root { --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #5b6475; --line: #dfe3ea; --accent: #2563eb; --ok: #15803d; --warn: #b45309; --err: #b91c1c; }
-    @media (prefers-color-scheme: dark) {
-      :root { --bg: #111418; --card: #1a1f26; --text: #e7ebf0; --muted: #9aa4b2; --line: #2b323c; --accent: #6ea0ff; --ok: #4ade80; --warn: #fbbf24; --err: #f87171; }
+    :root {
+      --bg: #F2F4F6; --surface: #FFFFFF; --press: #F2F4F6; --ink: #191F28; --sub: #4E5968; --faint: #8B95A1; --line: #E5E8EB;
+      --accent: #3182F6; --accent-press: #1B64DA; --accent-soft: #E8F3FF;
+      --good: #03B26C; --good-soft: #E5F8EF; --warn: #F59E0B; --crit: #F04452; --crit-soft: #FFEEEE;
+      --shadow: 0 2px 12px rgba(0, 27, 55, .06);
+      --font: "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
     }
-    * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
-    main { max-width: 640px; margin: 48px auto; padding: 0 16px; display: grid; gap: 16px; }
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 28px; }
-    h1 { font-size: 22px; margin: 0 0 4px; }
-    h2 { font-size: 18px; margin: 0 0 4px; }
-    p.sub { color: var(--muted); margin: 0 0 20px; }
-    ul.facts { margin: 0 0 24px; padding: 0; list-style: none; }
-    ul.facts li { padding: 4px 0; }
-    ul.facts li::before { content: "✔ "; color: var(--ok); }
-    ul.facts li.no::before { content: "✘ "; color: var(--err); }
-    #button { min-height: 44px; }
-    .status { margin-top: 12px; color: var(--muted); }
-    .status.err { color: var(--err); }
-    .status.ok { color: var(--ok); }
-    #result, #aws { display: none; }
-    #result { margin-top: 20px; }
-    textarea { width: 100%; height: 90px; font: 12px/1.4 ui-monospace, Menlo, monospace; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
-    button, a.btn { display: inline-block; margin-top: 8px; margin-right: 8px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; text-decoration: none; cursor: pointer; font: inherit; font-size: 14px; }
-    button.secondary, a.btn.secondary { background: transparent; color: var(--accent); }
-    button:disabled { opacity: .5; cursor: default; }
-    a.btn.big { font-size: 16px; padding: 12px 18px; }
-    select { font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
-    ol.steps { margin: 12px 0 0; padding-left: 20px; color: var(--muted); }
-    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 0; border-top: 1px solid var(--line); }
-    .row:first-child { border-top: none; }
-    .grow { flex: 1; min-width: 180px; }
-    .mono { font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
-    .badge { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; }
-    .badge.ACTIVE { color: var(--ok); } .badge.PENDING { color: var(--warn); } .badge.ERROR, .badge.DISCONNECTED { color: var(--err); }
-    .muted { color: var(--muted); font-size: 13px; }
-    .big-num { font-size: 28px; font-weight: 700; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
-    th, td { text-align: left; padding: 6px 4px; border-top: 1px solid var(--line); }
-    td.num, th.num { text-align: right; }
-    #connectBox, #costs { display: none; margin-top: 16px; }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101318; --surface: #1C2028; --press: #252A33; --ink: #F2F4F6; --sub: #B0B8C1; --faint: #7E8794; --line: #2C323C;
+        --accent: #4D94FF; --accent-press: #2F7CF0; --accent-soft: #1A2B45;
+        --good: #2FCB86; --good-soft: #13302A; --crit: #FF6B76; --crit-soft: #3A1E22;
+        --shadow: none;
+      }
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    [hidden] { display: none !important; }
+    html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+    h1, h2, p { margin: 0; }
+    button { font: inherit; color: inherit; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+
+    .app { max-width: 480px; margin: 0 auto; min-height: 100dvh; position: relative; }
+    .screen { padding: 0 20px 140px; animation: in .22s ease-out; }
+    @keyframes in { from { transform: translateY(8px); } to { transform: none; } } /* 투명도는 건드리지 않는다: 애니메이션이 멈춰도 내용이 보이게 */
+    @media (prefers-reduced-motion: reduce) { .screen, .sheet, .check { animation: none !important; } }
+
+    /* 상단 바 */
+    .nav { height: 56px; display: flex; align-items: center; justify-content: space-between; margin: 0 -8px; }
+    .icon-btn { width: 44px; height: 44px; border: 0; background: none; border-radius: 12px; display: grid; place-items: center; cursor: pointer; color: var(--ink); }
+    .icon-btn:active { background: var(--press); }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; padding-left: 8px; }
+    .brand i { width: 26px; height: 26px; border-radius: 8px; background: var(--accent); display: grid; place-items: center; }
+    .text-btn { border: 0; background: none; color: var(--sub); font-size: 15px; font-weight: 500; padding: 10px 8px; border-radius: 10px; cursor: pointer; }
+    .text-btn.accent { color: var(--accent); font-weight: 600; }
+    .text-btn:active { background: var(--press); }
+
+    /* 글자 */
+    .title { font-size: 26px; font-weight: 700; line-height: 1.38; letter-spacing: -.02em; margin-top: 20px; white-space: pre-line; }
+    .desc { font-size: 17px; color: var(--sub); margin-top: 10px; line-height: 1.55; }
+    .section-label { font-size: 15px; font-weight: 600; color: var(--sub); margin: 32px 4px 10px; }
+
+    /* 카드 · 목록 */
+    .card { background: var(--surface); border-radius: 20px; box-shadow: var(--shadow); }
+    .list { padding: 8px 0; }
+    .row { width: 100%; display: flex; align-items: center; gap: 14px; padding: 14px 20px; border: 0; background: none; text-align: left; cursor: pointer; }
+    .row:active { background: var(--press); }
+    .avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 17px; flex: none; }
+    .row-main { flex: 1; min-width: 0; }
+    .row-title { font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row-sub { font-size: 14px; color: var(--faint); margin-top: 2px; }
+    .row-sub.crit { color: var(--crit); }
+    .row-right { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+    .chev { color: var(--faint); flex: none; }
+
+    /* 버튼 */
+    .cta-bar { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: min(480px, 100%); padding: 16px 20px calc(16px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(to bottom, transparent, var(--bg) 28%); z-index: 5; }
+    .btn { width: 100%; height: 56px; border: 0; border-radius: 16px; font-size: 17px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; transition: transform .1s; }
+    .btn:active { transform: scale(.98); }
+    .btn.primary { background: var(--accent); color: #fff; }
+    .btn.primary:active { background: var(--accent-press); }
+    .btn.soft { background: var(--accent-soft); color: var(--accent); }
+    .btn.gray { background: var(--press); color: var(--sub); }
+    .btn.danger { background: var(--crit); color: #fff; }
+    .btn:disabled { opacity: .4; cursor: default; transform: none; }
+    .btn-row { display: flex; gap: 8px; }
+    .btn + .btn { margin-top: 8px; }
+    .btn-row .btn + .btn { margin-top: 0; }
+
+    /* 로그인 */
+    .hero-art { margin: 56px auto 0; width: 132px; height: 132px; border-radius: 36px; background: var(--accent-soft); display: grid; place-items: center; }
+    #gbtn { display: flex; justify-content: center; min-height: 48px; }
+    .fine { text-align: center; font-size: 13px; color: var(--faint); margin-top: 12px; }
+
+    /* 입력 */
+    .field { margin-top: 36px; }
+    .field input { width: 100%; height: 60px; border: 0; border-bottom: 2px solid var(--line); background: none; font: inherit; font-size: 22px; font-weight: 600; color: var(--ink); padding: 0 2px; border-radius: 0; }
+    .field input:focus { outline: none; border-bottom-color: var(--accent); }
+    .field input::placeholder { color: var(--faint); font-weight: 500; }
+    .counter { text-align: right; font-size: 13px; color: var(--faint); margin-top: 6px; }
+
+    /* 선택지 */
+    .options { display: grid; gap: 10px; margin-top: 32px; }
+    .option { width: 100%; display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-radius: 16px; border: 2px solid transparent; background: var(--surface); box-shadow: var(--shadow); cursor: pointer; text-align: left; }
+    .option[aria-checked="true"] { border-color: var(--accent); }
+    .option .flag { font-size: 24px; }
+    .option .name { font-size: 17px; font-weight: 600; flex: 1; }
+    .option .radio { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; }
+    .option[aria-checked="true"] .radio { border-color: var(--accent); background: var(--accent); }
+
+    /* 단계 안내 */
+    .steps { margin-top: 28px; padding: 8px 0; }
+    .step { display: flex; gap: 14px; padding: 12px 20px; align-items: flex-start; }
+    .step b { width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 14px; display: grid; place-items: center; flex: none; }
+    .step span { font-size: 16px; padding-top: 1px; }
+    .waiting { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 24px; color: var(--sub); font-size: 15px; }
+    .spin { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* 완료 */
+    .check { width: 88px; height: 88px; border-radius: 50%; background: var(--good); display: grid; place-items: center; margin: 72px auto 0; animation: pop .35s cubic-bezier(.2, 1.4, .4, 1); }
+    @keyframes pop { from { transform: scale(.4); } to { transform: none; } }
+    .center { text-align: center; }
+
+    /* 상세 */
+    .amount { font-size: 36px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; margin-top: 6px; }
+    .amount-label { font-size: 16px; color: var(--sub); margin-top: 24px; }
+    .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 999px; margin-top: 10px; }
+    .chip.good { background: var(--good-soft); color: var(--good); }
+    .chip.crit { background: var(--crit-soft); color: var(--crit); }
+    .chip.gray { background: var(--press); color: var(--sub); }
+    .notice { padding: 20px; margin-top: 20px; }
+    .notice h2 { font-size: 17px; font-weight: 700; }
+    .notice p { font-size: 15px; color: var(--sub); margin-top: 6px; }
+    .notice .btn { margin-top: 16px; height: 48px; font-size: 16px; }
+    .notice.crit h2 { color: var(--crit); }
+    .note { font-size: 14px; color: var(--faint); margin-top: 8px; }
+    .empty-art { width: 96px; height: 96px; margin: 64px auto 0; border-radius: 28px; background: var(--surface); box-shadow: var(--shadow); display: grid; place-items: center; }
+
+    /* 스켈레톤 */
+    .sk { background: linear-gradient(90deg, var(--line) 25%, var(--press) 50%, var(--line) 75%); background-size: 200% 100%; animation: sh 1.2s infinite; border-radius: 8px; }
+    @keyframes sh { to { background-position: -200% 0; } }
+    .sk-row { display: flex; gap: 14px; align-items: center; padding: 14px 20px; }
+
+    /* 시트 · 알림 */
+    .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .4); z-index: 20; }
+    .sheet { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: min(480px, 100%); background: var(--surface); border-radius: 24px 24px 0 0; padding: 12px 20px calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 21; animation: up .25s ease-out; }
+    @keyframes up { from { transform: translate(-50%, 100%); } to { transform: translate(-50%, 0); } }
+    .grabber { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 0 auto 16px; }
+    .sheet h2 { font-size: 22px; font-weight: 700; line-height: 1.4; letter-spacing: -.02em; }
+    .sheet p { font-size: 16px; color: var(--sub); margin-top: 8px; }
+    .sheet .menu .row { padding: 16px 4px; font-size: 17px; font-weight: 500; }
+    .sheet .menu .row.crit { color: var(--crit); }
+    .sheet .field { margin-top: 20px; }
+    .sheet .actions { margin-top: 24px; }
+    .tip { margin-top: 32px; padding: 20px; border-radius: 20px; background: var(--surface); box-shadow: var(--shadow); font-size: 15px; color: var(--sub); line-height: 1.6; }
+    .tip b { color: var(--ink); }
+    .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(100px + env(safe-area-inset-bottom, 0px)); width: max-content; max-width: min(440px, calc(100% - 40px)); background: rgba(25, 31, 40, .92); color: #fff; padding: 14px 20px; border-radius: 14px; font-size: 15px; font-weight: 500; z-index: 30; text-align: center; }
+    .dev { margin-top: 40px; font-size: 13px; color: var(--faint); }
+    .dev textarea { width: 100%; height: 72px; margin-top: 6px; font: 12px/1.4 ui-monospace, Menlo, monospace; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); }
   </style>
 </head>
 <body>
-<main>
-  <div class="card">
-    <h1>CloudCost Insight</h1>
-    <p class="sub">Google 계정으로 로그인하면 처음에는 자동으로 가입됩니다.</p>
-    <ul class="facts">
-      <li>Google에서 받는 정보: 이메일, 이름 (로그인 확인용)</li>
-      <li class="no">비밀번호·전화번호·결제 정보는 받지 않습니다</li>
-      <li class="no">Gmail·드라이브 등 다른 Google 데이터에 접근하지 않습니다</li>
-      <li class="no">AWS Access Key는 받지 않습니다 (AWS는 읽기 전용 Role로만 연결)</li>
-    </ul>
-    <div id="button"></div>
-    <div id="status" class="status">로그인 설정을 불러오는 중…</div>
-    <div id="result">
-      <div>로그인됨: <strong id="who"></strong> <span id="newUser"></span></div>
-      <details style="margin-top:8px">
-        <summary class="muted">Swagger용 액세스 토큰 (유효: <span id="exp"></span>까지)</summary>
-        <textarea id="token" readonly></textarea>
-        <button id="copy">토큰 복사</button>
-        <a class="btn secondary" href="/swagger-ui.html" target="_blank" rel="noopener">Swagger 열기</a>
-      </details>
-    </div>
-  </div>
+<div class="app" id="app"></div>
+<div class="toast" id="toast" role="status" hidden></div>
 
-  <div class="card" id="aws">
-    <h2>AWS 연결</h2>
-    <p class="sub">AWS 콘솔에서 체크 한 번, 버튼 한 번이면 읽기 전용으로 연결됩니다.</p>
-    <div id="accounts"></div>
-    <div style="margin-top:12px">
-      <label class="muted" for="region">조회할 리전</label>
-      <select id="region">
-        <option value="ap-northeast-2">서울 (ap-northeast-2)</option>
-        <option value="ap-northeast-1">도쿄 (ap-northeast-1)</option>
-        <option value="us-east-1">버지니아 북부 (us-east-1)</option>
-        <option value="us-west-2">오레곤 (us-west-2)</option>
-      </select>
-      <button id="connect">새 AWS 계정 연결</button>
-    </div>
-    <div id="connectBox">
-      <a class="btn big" id="quickLink" target="_blank" rel="noopener">AWS에서 연결하기 ↗</a>
-      <ol class="steps">
-        <li>새 탭에서 연결할 AWS 계정으로 로그인합니다.</li>
-        <li>값은 모두 채워져 있습니다. 맨 아래 <b>IAM 리소스 생성 승인</b> 체크박스를 누릅니다.</li>
-        <li><b>[스택 생성]</b>을 누르고 이 탭으로 돌아오면 1~2분 안에 연결됨으로 바뀝니다.</li>
-      </ol>
-      <div id="connectStatus" class="status"></div>
-    </div>
-    <div id="costs"></div>
-  </div>
-</main>
 <script>
+  'use strict';
+  // ---------- 상태 ----------
   let accessToken = null;
+  let me = null;
+  let accounts = [];
   let pollTimer = null;
-  const $ = id => document.getElementById(id);
-  const STATUS_TEXT = { PENDING: '대기 중', ACTIVE: '연결됨', ERROR: '오류', DISCONNECTED: '연결 해제됨' };
+  const draft = { alias: '', region: 'ap-northeast-2', accountId: null, link: null };
+  const DEV = new URLSearchParams(location.search).has('dev'); // 개발자만: login.html?dev → Swagger 토큰 표시
 
-  function setStatus(el, text, kind) {
-    el.textContent = text;
-    el.className = 'status' + (kind ? ' ' + kind : '');
+  const REGIONS = [
+    ['ap-northeast-2', '서울', '🇰🇷'], ['ap-northeast-1', '도쿄', '🇯🇵'],
+    ['us-east-1', '버지니아 북부', '🇺🇸'], ['us-west-2', '오레곤', '🇺🇸']
+  ];
+  const nameOf = a => (a && a.alias) || '이름 없는 계정';
+  const regionOf = a => (a && (a.regionLabel || a.region)) || '';
+
+  // ---------- 오류 문구 ----------
+  // AWS 원문(점검 목록 등)은 어렵기 때문에 오류 코드별로 "무슨 일인지 + 할 일"만 보여 준다. 서버 문구는 바꾸지 않는다.
+  const FALLBACK = '잠시 문제가 생겼어요. 다시 시도해 주세요.';
+  const PROBLEMS = {
+    ASSUME_ROLE_DENIED: ['AWS 연결이 끊어졌어요', 'AWS에서 연결 설정이 지워졌거나 바뀌었어요. 다시 연결해 주세요.', true],
+    PERMISSION_DENIED: ['AWS가 정보를 보여 주지 않아요', '연결할 때 준 권한이 바뀌었어요. 다시 연결해 주세요.', true],
+    REGION_DISABLED: ['이 지역은 내 AWS에서 꺼져 있어요', '다른 지역을 골라 다시 연결해 주세요.', true],
+    BACKEND_CREDENTIALS_MISSING: ['저희 쪽에 문제가 생겼어요', '잠시 후 다시 시도해 주세요.', false],
+    THROTTLED: ['AWS가 잠시 바빠요', '1~2분 뒤에 다시 시도해 주세요.', false],
+    UNAVAILABLE: ['AWS에 잠시 연결되지 않아요', '잠시 후 다시 시도해 주세요.', false],
+    UNKNOWN: ['정보를 가져오지 못했어요', '잠시 후 다시 시도해 주세요.', false],
+    DISCONNECTED: ['AWS에서 연결을 끊었어요', '지금까지의 기록만 남아 있어요. 계속 보려면 다시 연결해 주세요.', true]
+  };
+  const API_CODES = {
+    AWS_ASSUME_ROLE_FAILED: 'ASSUME_ROLE_DENIED', AWS_PERMISSION_DENIED: 'PERMISSION_DENIED', AWS_REGION_DISABLED: 'REGION_DISABLED',
+    BACKEND_AWS_NOT_CONFIGURED: 'BACKEND_CREDENTIALS_MISSING', AWS_THROTTLED: 'THROTTLED', AWS_UNAVAILABLE: 'UNAVAILABLE',
+    AWS_ERROR: 'UNKNOWN', ACCOUNT_DISCONNECTED: 'DISCONNECTED'
+  };
+  const problemOf = code => PROBLEMS[API_CODES[code] || code] || null;
+  const PLAIN = { ACCOUNT_NOT_FOUND: '이미 삭제된 계정이에요.', ACCOUNT_NOT_ACTIVE: '아직 연결이 끝나지 않았어요.' };
+
+  class ApiError extends Error {
+    constructor(message, code) { super(message); this.code = code || null; }
   }
+  const friendly = e => {
+    if (!(e instanceof ApiError)) return FALLBACK;
+    const p = problemOf(e.code);
+    return p ? p[0] : (PLAIN[e.code] || e.message);
+  };
 
+  // ---------- 도구 ----------
+  const $ = id => document.getElementById(id);
   function el(tag, attrs, ...children) {
     const node = document.createElement(tag);
-    Object.entries(attrs || {}).forEach(([k, v]) => k === 'class' ? node.className = v : node.setAttribute(k, v));
-    children.forEach(c => node.append(c instanceof Node ? c : document.createTextNode(c ?? '')));
+    Object.entries(attrs || {}).forEach(([k, v]) => {
+      if (k === 'class') node.className = v;
+      else if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
+      else node.setAttribute(k, v);
+    });
+    children.flat().forEach(c => c != null && c !== false && node.append(c instanceof Node ? c : document.createTextNode(c)));
     return node;
+  }
+  function svg(path, size = 24, stroke = 'currentColor', width = 2) {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('width', size); s.setAttribute('height', size); s.setAttribute('viewBox', '0 0 24 24');
+    s.setAttribute('fill', 'none'); s.setAttribute('stroke', stroke); s.setAttribute('stroke-width', width);
+    s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round'); s.setAttribute('aria-hidden', 'true');
+    path.split('|').forEach(d => { const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', d); s.append(p); });
+    return s;
+  }
+  const ICON = {
+    back: 'M15 18l-6-6 6-6', chev: 'M9 18l6-6-6-6', more: 'M12 12h.01|M19 12h.01|M5 12h.01',
+    check: 'M5 12.5l4.5 4.5L19 7', cloud: 'M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 9.5 4.25 4.25 0 0 0 7 18z', plus: 'M12 5v14|M5 12h14'
+  };
+  /** '2026-10-01' → '10월 1일부터 오늘까지' */
+  const sinceText = from => {
+    const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(from || '');
+    return m ? `${Number(m[1])}월 ${Number(m[2])}일부터 오늘까지` : '';
+  };
+  const money = (v, currency) => v == null ? '-' : Number(v).toLocaleString('ko-KR') + (currency === 'KRW' ? '원' : ' USD');
+
+  let toastTimer = null;
+  function toast(text) {
+    const t = $('toast');
+    t.textContent = text;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 3200);
   }
 
   async function api(path, options = {}) {
-    const res = await fetch(path, {
-      ...options,
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + accessToken, ...(options.headers || {}) }
-    });
-    const body = res.status === 204 ? null : await res.json().catch(() => null);
-    if (res.status === 401) throw new Error('로그인이 만료되었습니다. 페이지를 새로고침해 다시 로그인하세요.');
-    if (!res.ok) throw new Error((body && body.error && body.error.message) || `요청 실패 (${res.status})`);
+    let res;
+    try {
+      res = await fetch(path, {
+        ...options,
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + accessToken, ...(options.headers || {}) }
+      });
+    } catch (e) {
+      throw new ApiError('인터넷 연결을 확인해 주세요.');
+    }
+    const body = await res.json().catch(() => null);
+    if (res.status === 401) throw new ApiError('로그인이 만료됐어요. 새로고침해 주세요.');
+    if (!res.ok) throw new ApiError((body && body.error && body.error.message) || FALLBACK, body && body.error && body.error.code);
+    if (body == null) throw new ApiError(FALLBACK);
     return body;
   }
 
+  // ---------- 화면 틀 ----------
+  function render(...children) {
+    closeSheet();
+    const screen = el('div', { class: 'screen' }, ...children);
+    // 하단 버튼은 화면(애니메이션 transform) 밖에 둬야 position: fixed가 창 기준으로 붙는다.
+    const bars = [...screen.querySelectorAll(':scope > .cta-bar')];
+    bars.forEach(b => b.remove());
+    $('app').replaceChildren(screen, ...bars);
+    window.scrollTo(0, 0);
+    return screen;
+  }
+  const nav = (left, right) => el('div', { class: 'nav' }, left || el('span'), right || el('span'));
+  const backBtn = onclick => el('button', { class: 'icon-btn', 'aria-label': '뒤로', onclick }, svg(ICON.back, 26));
+  const cta = (...buttons) => el('div', { class: 'cta-bar' }, ...buttons);
+  const title = text => el('h1', { class: 'title' }, text);
+  const desc = text => el('p', { class: 'desc' }, text);
+
+  // ---------- 1. 로그인 ----------
+  function showLogin(message) {
+    render(
+      nav(el('div', { class: 'brand' }, el('i', {}, svg(ICON.cloud, 16, '#fff', 2.4)), 'CloudCost')),
+      el('div', { class: 'hero-art' }, svg(ICON.cloud, 64, 'var(--accent)', 1.6)),
+      el('div', { class: 'center' }, title('AWS 비용,\n미리 확인하세요'), desc('서버가 켜져 있던 시간으로\n이번 달 예상 비용을 알려 드려요.')),
+      cta(el('div', { id: 'gbtn' }), el('p', { class: 'fine', id: 'loginMsg' }, message || 'AWS 비밀번호는 받지 않아요. 보기만 해요.')));
+    $('app').querySelector('.desc').style.whiteSpace = 'pre-line';
+  }
+
   async function onCredential(response) {
-    const status = $('status');
-    setStatus(status, '확인 중…');
+    $('loginMsg').textContent = '로그인하는 중…';
     try {
       const res = await fetch('/api/v1/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken: response.credential })
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken: response.credential })
       });
-      const body = await res.json();
-      if (!res.ok) {
-        setStatus(status, (body.error && body.error.message) || '로그인에 실패했습니다.', 'err');
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body || !body.accessToken) {
+        $('loginMsg').textContent = '로그인하지 못했어요. 다시 시도해 주세요.';
         return;
       }
       accessToken = body.accessToken;
-      $('who').textContent = body.user.email || body.user.id;
-      $('newUser').textContent = body.newUser ? '(새로 가입됨)' : '';
-      $('exp').textContent = new Date(body.expiresAt).toLocaleString();
-      $('token').value = body.accessToken;
-      $('result').style.display = 'block';
-      $('button').style.display = 'none';
-      setStatus(status, '');
-      $('aws').style.display = 'block';
-      loadAccounts();
+      me = { email: body.user && (body.user.email || body.user.id), expiresAt: body.expiresAt };
+      showHome();
     } catch (e) {
-      setStatus(status, '서버에 연결하지 못했습니다.', 'err');
+      $('loginMsg').textContent = '인터넷 연결을 확인해 주세요.';
     }
   }
 
-  async function loadAccounts() {
-    const box = $('accounts');
+  // ---------- 2. 홈 ----------
+  async function showHome() {
+    stopPolling();
+    const list = el('div', { class: 'card list' },
+      [0, 1].map(() => el('div', { class: 'sk-row' }, el('div', { class: 'sk', style: 'width:44px;height:44px;border-radius:50%' }),
+        el('div', { style: 'flex:1' }, el('div', { class: 'sk', style: 'height:16px;width:50%' }), el('div', { class: 'sk', style: 'height:12px;width:30%;margin-top:8px' })))));
+    const screen = render(
+      nav(el('div', { class: 'brand' }, el('i', {}, svg(ICON.cloud, 16, '#fff', 2.4)), 'CloudCost'),
+        el('button', { class: 'text-btn', onclick: () => openMenuSheet() }, '설정')),
+      title('내 AWS 계정'),
+      el('div', { style: 'margin-top:24px' }, list));
     try {
-      const accounts = await api('/api/v1/aws/accounts');
-      box.replaceChildren();
-      if (!accounts.length) {
-        box.append(el('p', { class: 'muted' }, '아직 연결된 AWS 계정이 없습니다.'));
-        return;
+      const data = await api('/api/v1/aws/accounts');
+      // 연결 중(PENDING)인 것은 연결 화면에서만 다룬다. 오래된 PENDING은 서버가 이미 뺀다.
+      accounts = (Array.isArray(data) ? data : []).filter(a => a && a.status !== 'PENDING');
+    } catch (e) {
+      list.replaceChildren(el('p', { style: 'padding:20px;color:var(--sub)' }, friendly(e)));
+      return;
+    }
+    if (!accounts.length) {
+      render(
+        nav(el('div', { class: 'brand' }, el('i', {}, svg(ICON.cloud, 16, '#fff', 2.4)), 'CloudCost'),
+          el('button', { class: 'text-btn', onclick: () => openMenuSheet() }, '설정')),
+        el('div', { class: 'empty-art' }, svg(ICON.cloud, 48, 'var(--accent)', 1.6)),
+        el('div', { class: 'center' }, title('아직 연결한\nAWS 계정이 없어요'), desc('1분이면 연결할 수 있어요.')),
+        devPanel(),
+        cta(el('button', { class: 'btn primary', onclick: startConnect }, 'AWS 계정 연결하기')));
+      return;
+    }
+    list.replaceChildren(...accounts.map(accountRow));
+    screen.append(
+      el('div', { class: 'card list', style: 'margin-top:12px' },
+        el('button', { class: 'row', onclick: startConnect },
+          el('div', { class: 'avatar', style: 'background:var(--press);color:var(--sub)' }, svg(ICON.plus, 22)),
+          el('div', { class: 'row-main' }, el('div', { class: 'row-title', style: 'color:var(--sub);font-weight:500' }, '계정 추가하기')))));
+    const dev = devPanel();
+    if (dev) screen.append(dev);
+  }
+
+  function statusLine(a) {
+    if (a.status === 'ERROR') return ['연결을 확인해 주세요', 'crit'];
+    if (a.status === 'DISCONNECTED') return ['연결 끊김', 'crit'];
+    return [regionOf(a), ''];
+  }
+
+  function accountRow(a) {
+    const [sub, tone] = statusLine(a);
+    return el('button', { class: 'row', onclick: () => showDetail(a) },
+      el('div', { class: 'avatar' }, Array.from(nameOf(a).trim())[0] || '?'),
+      el('div', { class: 'row-main' },
+        el('div', { class: 'row-title' }, nameOf(a)),
+        el('div', { class: 'row-sub' + (tone ? ' ' + tone : '') }, sub)),
+      el('span', { class: 'chev' }, svg(ICON.chev, 20)));
+  }
+
+  function devPanel() {
+    if (!DEV) return null;
+    return el('details', { class: 'dev' }, el('summary', {}, '개발자용 토큰'),
+      el('p', {}, (me && me.expiresAt ? new Date(me.expiresAt).toLocaleString() + '까지 · ' : ''), el('a', { href: '/swagger-ui.html', target: '_blank', rel: 'noopener' }, 'Swagger')),
+      Object.assign(el('textarea', { readonly: '' }), { value: accessToken || '' }));
+  }
+
+  // ---------- 3. 계정 상세 ----------
+  async function showDetail(a) {
+    const head = el('div', {},
+      el('p', { class: 'amount-label' }, nameOf(a) + ' · 이번 달 예상 비용'),
+      el('div', { class: 'sk', style: 'height:44px;width:60%;margin-top:10px' }));
+    const body = el('div');
+    render(nav(backBtn(showHome), el('button', { class: 'icon-btn', 'aria-label': '더보기', onclick: () => openAccountSheet(a) }, svg(ICON.more, 26, 'currentColor', 3))),
+      head, body);
+
+    if (a.status === 'DISCONNECTED') {
+      head.replaceChildren(title(nameOf(a)), el('span', { class: 'chip gray' }, regionOf(a)));
+      body.replaceChildren(noticeCard('DISCONNECTED'));
+      return;
+    }
+    try {
+      const c = await api(`/api/v1/aws/accounts/${a.accountId}/costs`);
+      const rows = Array.isArray(c.instances) ? c.instances : [];
+      head.replaceChildren(
+        el('p', { class: 'amount-label' }, nameOf(a) + ' · 이번 달 예상 비용'),
+        el('div', { class: 'amount' }, money(c.estimatedCost, c.currency)),
+        el('p', { class: 'note' }, (sinceText(c.from) ? sinceText(c.from) + ' · ' : '') + '실제 청구서와 다를 수 있어요'));
+      const parts = [];
+      if (a.status === 'ERROR') {
+        // 오류 상태에서는 저장해 둔 기록만 보여 준다 (ADR-006). 금액보다 먼저, 최신이 아니라고 알려 준다.
+        head.prepend(noticeCard(a.lastError && a.lastError.code, '지금은 마지막으로 가져온 정보까지만 보여요.'));
       }
-      accounts.forEach(a => {
-        const info = el('div', { class: 'grow' },
-          el('span', { class: 'badge ' + a.status }, STATUS_TEXT[a.status] || a.status), ' ',
-          el('span', { class: 'mono' }, a.awsAccountId ? '계정 ' + a.awsAccountId : '계정 미확인'), ' · ', a.region);
-        if (a.lastError && a.status !== 'ACTIVE') info.append(el('div', { class: 'muted' }, a.lastError.message));
-        const row = el('div', { class: 'row' }, info);
-        if (a.status === 'ACTIVE') {
-          const btn = el('button', { class: 'secondary' }, '이번 달 사용량');
-          btn.addEventListener('click', () => loadCosts(a.accountId, btn));
-          row.append(btn);
-        }
-        box.append(row);
+      parts.push(el('p', { class: 'section-label' }, '서버별'));
+      parts.push(rows.length
+        ? el('div', { class: 'card list' }, rows.map(i => el('div', { class: 'row', style: 'cursor:default' },
+            el('div', { class: 'row-main' },
+              el('div', { class: 'row-title' }, i.name || '이름 없는 서버'),
+              el('div', { class: 'row-sub' }, [i.name ? null : i.instanceId, `${i.usageHours ?? 0}시간 켜짐`].filter(Boolean).join(' · '))),
+            el('div', { class: 'row-right' }, money(i.estimatedCost, c.currency)))))
+        : el('div', { class: 'card', style: 'padding:24px 20px;color:var(--sub)' }, '이번 달에 켠 서버가 없어요.'));
+      body.replaceChildren(...parts);
+    } catch (e) {
+      head.replaceChildren(title(nameOf(a)), el('span', { class: 'chip gray' }, regionOf(a)));
+      body.replaceChildren(e instanceof ApiError && problemOf(e.code)
+        ? noticeCard(e.code)
+        : el('div', { class: 'card notice' }, el('h2', {}, friendly(e)),
+            el('button', { class: 'btn soft', onclick: () => showDetail(a) }, '다시 시도')));
+    }
+    refreshAccount(a.accountId);
+  }
+
+  /** 문제 안내 카드. 다시 연결해야 하는 문제면 [다시 연결하기]를 붙인다. */
+  function noticeCard(code, extra) {
+    const [head, text, reconnect] = problemOf(code) || PROBLEMS.UNKNOWN;
+    return el('div', { class: 'card notice crit' }, el('h2', {}, head), el('p', {}, extra ? text + ' ' + extra : text),
+      reconnect ? el('button', { class: 'btn soft', onclick: startConnect }, '다시 연결하기') : null);
+  }
+
+  /** 비용 조회 결과로 연결 상태가 바뀌었을 수 있으니 목록 캐시를 갱신한다. */
+  async function refreshAccount(id) {
+    try {
+      const fresh = (await api('/api/v1/aws/accounts/' + id)).account;
+      if (fresh) accounts = accounts.map(x => x.accountId === id ? fresh : x);
+    } catch (e) { /* 다음 홈 진입 때 다시 불러온다 */ }
+  }
+
+  // ---------- 4. 시트 (이름 바꾸기 · 삭제 · 설정) ----------
+  function openSheet(...children) {
+    closeSheet();
+    $('toast').hidden = true; // 알림이 시트 버튼을 가리지 않게
+    const backdrop = el('div', { class: 'backdrop', id: 'backdrop', onclick: closeSheet });
+    const sheet = el('div', { class: 'sheet', id: 'sheet', role: 'dialog', 'aria-modal': 'true' }, el('div', { class: 'grabber' }), ...children);
+    document.body.append(backdrop, sheet);
+    return sheet;
+  }
+  function closeSheet() {
+    ['sheet', 'backdrop'].forEach(id => $(id) && $(id).remove());
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+
+  function openAccountSheet(a) {
+    openSheet(el('div', { class: 'menu' },
+      el('button', { class: 'row', onclick: () => openRenameSheet(a) }, '이름 바꾸기'),
+      el('button', { class: 'row crit', onclick: () => openDeleteSheet(a) }, '계정 연결 삭제')));
+  }
+
+  function openRenameSheet(a) {
+    const input = el('input', { type: 'text', maxlength: '40', placeholder: '예: 개인 계정', 'aria-label': '계정 이름' });
+    input.value = a.alias || '';
+    const save = el('button', { class: 'btn primary' }, '저장');
+    const submit = async () => {
+      save.disabled = true;
+      try {
+        const updated = await api('/api/v1/aws/accounts/' + a.accountId, { method: 'PATCH', body: JSON.stringify({ alias: input.value }) });
+        Object.assign(a, updated);
+        toast('이름을 바꿨어요');
+        showDetail(a);
+      } catch (e) {
+        toast(friendly(e));
+        save.disabled = false;
+      }
+    };
+    save.addEventListener('click', submit);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    openSheet(el('h2', {}, '어떤 이름으로 부를까요?'), el('div', { class: 'field' }, input), el('div', { class: 'actions' }, save));
+    input.focus();
+  }
+
+  function openDeleteSheet(a) {
+    const awsSide = a.verifiedAt && a.status !== 'DISCONNECTED';
+    const yes = el('button', { class: 'btn danger' }, '삭제하기');
+    yes.addEventListener('click', async () => {
+      yes.disabled = true;
+      try {
+        const result = await api('/api/v1/aws/accounts/' + a.accountId, { method: 'DELETE' });
+        if (result.awsCleanupNeeded) showDeleted(a, result.stackName || a.stackName);
+        else { toast('삭제했어요'); showHome(); }
+      } catch (e) {
+        toast(friendly(e));
+        yes.disabled = false;
+      }
+    });
+    openSheet(
+      el('h2', {}, `'${nameOf(a)}' 연결을\n삭제할까요?`),
+      el('p', {}, awsSide ? '이 계정의 비용 기록도 함께 지워져요.' : '이 계정의 기록도 함께 지워져요.'),
+      el('div', { class: 'actions btn-row' }, el('button', { class: 'btn gray', onclick: closeSheet }, '취소'), yes));
+    $('sheet').querySelector('h2').style.whiteSpace = 'pre-line';
+  }
+
+  /** 검증된 연결을 지운 뒤: 고객 AWS에 남은 Role은 우리가 지울 수 없으므로(READ ONLY) 직접 지우는 방법을 한 화면으로 안내한다. */
+  function showDeleted(a, stackName) {
+    render(nav(),
+      el('div', { class: 'check' }, svg(ICON.check, 44, '#fff', 3)),
+      el('div', { class: 'center' }, title(`'${nameOf(a)}' 연결을\n삭제했어요`), desc('이제 이 계정의 정보를 가져오지 않아요.')),
+      el('div', { class: 'tip' },
+        el('b', {}, 'AWS 쪽도 정리하려면'), el('br'),
+        'AWS 콘솔 → CloudFormation에서 ', el('b', {}, stackName), ' 스택을 삭제하세요. 저희는 내 AWS를 바꿀 수 없어서 직접 지워 주셔야 해요.'),
+      cta(el('a', { class: 'btn soft', href: 'https://console.aws.amazon.com/cloudformation/home', target: '_blank', rel: 'noopener' }, 'AWS 콘솔 열기'),
+        el('button', { class: 'btn primary', onclick: showHome }, '확인')));
+  }
+
+  function openMenuSheet() {
+    openSheet(
+      el('p', { style: 'margin:0 4px 8px' }, me && me.email ? me.email : ''),
+      el('div', { class: 'menu' }, el('button', { class: 'row', onclick: () => location.reload() }, '로그아웃')));
+  }
+
+  // ---------- 5. 연결 (이름 → 지역 → AWS 승인 → 완료) ----------
+  function startConnect() {
+    stopPolling();
+    draft.alias = '';
+    draft.region = 'ap-northeast-2';
+    draft.accountId = null;
+    showConnectName();
+  }
+
+  function showConnectName() {
+    const input = el('input', { type: 'text', maxlength: '40', placeholder: '예: 개인 계정', 'aria-label': '계정 이름' });
+    input.value = draft.alias;
+    const counter = el('p', { class: 'counter' }, `${input.value.length}/40`);
+    input.addEventListener('input', () => { counter.textContent = `${input.value.length}/40`; });
+    const next = () => { draft.alias = input.value.trim(); showConnectRegion(); };
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') next(); });
+    render(nav(backBtn(showHome)),
+      title('연결할 AWS 계정을\n어떤 이름으로 부를까요?'), desc('나중에 바꿀 수 있어요.'),
+      el('div', { class: 'field' }, input, counter),
+      cta(el('button', { class: 'btn primary', onclick: next }, '다음')));
+    input.focus();
+  }
+
+  function showConnectRegion() {
+    const options = REGIONS.map(([code, label, flag]) => {
+      const opt = el('button', { class: 'option', role: 'radio', 'aria-checked': String(draft.region === code) },
+        el('span', { class: 'flag', 'aria-hidden': 'true' }, flag), el('span', { class: 'name' }, label),
+        el('span', { class: 'radio' }, svg(ICON.check, 14, '#fff', 3.2)));
+      opt.addEventListener('click', () => {
+        draft.region = code;
+        options.forEach(o => o.setAttribute('aria-checked', String(o === opt)));
       });
-    } catch (e) {
-      box.replaceChildren(el('p', { class: 'status err' }, e.message));
-    }
+      return opt;
+    });
+    const go = el('button', { class: 'btn primary' }, '다음');
+    go.addEventListener('click', async () => {
+      go.disabled = true;
+      try {
+        const setup = await api('/api/v1/aws/accounts', { method: 'POST', body: JSON.stringify({ region: draft.region, alias: draft.alias }) });
+        if (!setup.account || !setup.account.accountId) throw new ApiError(FALLBACK);
+        draft.accountId = setup.account.accountId;
+        draft.link = setup.roleSetup && setup.roleSetup.quickCreateUrl;
+        showConnectApprove();
+      } catch (e) {
+        toast(friendly(e));
+        go.disabled = false;
+      }
+    });
+    render(nav(backBtn(showConnectName)),
+      title('어느 지역의 서버를\n볼까요?'), desc('서버를 만든 AWS 지역을 골라 주세요.'),
+      el('div', { class: 'options', role: 'radiogroup' }, options),
+      cta(go));
   }
 
-  $('connect').addEventListener('click', async () => {
-    const btn = $('connect');
-    const status = $('connectStatus');
-    btn.disabled = true;
-    $('connectBox').style.display = 'block';
-    $('quickLink').style.display = 'none';
-    setStatus(status, '연결을 준비하는 중…');
-    try {
-      const setup = await api('/api/v1/aws/accounts', { method: 'POST', body: JSON.stringify({ region: $('region').value }) });
-      const link = setup.roleSetup.quickCreateUrl;
-      if (!link) {
-        setStatus(status, (setup.roleSetup.warnings || []).join(' ') || '원클릭 링크를 만들지 못했습니다.', 'err');
-        return;
-      }
-      $('quickLink').href = link;
-      $('quickLink').style.display = 'inline-block';
-      setStatus(status, 'AWS에서 스택을 만들면 자동으로 확인합니다…');
-      loadAccounts();
-      poll(setup.account.accountId);
-    } catch (e) {
-      setStatus(status, e.message, 'err');
-    } finally {
-      btn.disabled = false;
+  function showConnectApprove() {
+    if (!draft.link) {
+      render(nav(backBtn(cancelConnect)), title('지금은 연결할 수 없어요'), desc('서비스 설정이 끝나지 않았어요. 관리자에게 알려 주세요.'),
+        cta(el('button', { class: 'btn gray', onclick: cancelConnect }, '돌아가기')));
+      return;
     }
-  });
+    const waiting = el('div', { class: 'waiting', hidden: '' }, el('span', { class: 'spin' }), el('span', { id: 'waitText' }, 'AWS에서 승인하기를 기다리고 있어요'));
+    const open = el('a', { class: 'btn primary', href: draft.link, target: '_blank', rel: 'noopener' }, 'AWS에서 승인하기');
+    open.addEventListener('click', () => { waiting.hidden = false; open.textContent = 'AWS 다시 열기'; open.className = 'btn soft'; });
+    render(nav(backBtn(cancelConnect)),
+      title('AWS에서\n승인만 하면 끝나요'),
+      el('div', { class: 'card steps' },
+        el('div', { class: 'step' }, el('b', {}, '1'), el('span', {}, '아래 버튼을 눌러 AWS에 로그인해요')),
+        el('div', { class: 'step' }, el('b', {}, '2'), el('span', {}, '맨 아래 체크박스를 누르고 [스택 생성]을 눌러요')),
+        el('div', { class: 'step' }, el('b', {}, '3'), el('span', {}, '이 화면으로 돌아오면 자동으로 연결돼요'))),
+      el('p', { class: 'note', style: 'margin:14px 4px 0' }, '보기 권한만 드려요. 서버를 끄거나 바꿀 수 없어요.'),
+      waiting,
+      cta(open));
+    poll(draft.accountId);
+  }
 
-  function poll(accountId) {
-    clearInterval(pollTimer);
-    const status = $('connectStatus');
+  async function cancelConnect() {
+    const id = draft.accountId;
+    stopPolling();
+    draft.accountId = null;
+    showHome();
+    if (!id) return;
+    try {
+      await api('/api/v1/aws/accounts/' + id, { method: 'DELETE' });
+      toast('연결을 취소했어요');
+    } catch (e) { /* 1시간 뒤 목록에서 자동으로 숨겨진다 */ }
+  }
+
+  function stopPolling() { clearInterval(pollTimer); pollTimer = null; }
+
+  function poll(id) {
+    stopPolling();
     const startedAt = Date.now();
     pollTimer = setInterval(async () => {
       try {
-        const a = await api('/api/v1/aws/accounts/' + accountId);
-        if (a.status === 'ACTIVE') {
-          clearInterval(pollTimer);
-          setStatus(status, `연결됐습니다 (계정 ${a.awsAccountId}). 아래에서 이번 달 사용량을 확인하세요.`, 'ok');
-          loadAccounts();
-        } else if (a.status === 'ERROR') {
-          clearInterval(pollTimer);
-          setStatus(status, (a.lastError && a.lastError.message) || '연결 확인에 실패했습니다.', 'err');
-          loadAccounts();
-        } else if (Date.now() - startedAt > 10 * 60 * 1000) {
-          clearInterval(pollTimer);
-          setStatus(status, '10분 동안 신호가 없습니다. AWS 콘솔에서 스택 상태를 확인하세요.', 'err');
-        } else {
-          const sec = Math.round((Date.now() - startedAt) / 1000);
-          setStatus(status, `AWS에서 스택을 만들면 자동으로 확인합니다… (${sec}초)`);
-        }
+        const a = (await api('/api/v1/aws/accounts/' + id)).account || {};
+        if (a.status === 'ACTIVE') { stopPolling(); showConnected(a); }
+        else if (a.status === 'ERROR') { stopPolling(); showConnectFailed(); }
+        else if (Date.now() - startedAt > 10 * 60 * 1000) { stopPolling(); showConnectFailed(true); }
       } catch (e) {
-        clearInterval(pollTimer);
-        setStatus(status, e.message, 'err');
+        stopPolling();
+        showConnectFailed();
       }
     }, 5000);
   }
 
-  async function loadCosts(accountId, btn) {
-    const box = $('costs');
-    box.style.display = 'block';
-    box.replaceChildren(el('p', { class: 'muted' }, 'AWS에서 가져오는 중… (처음 조회는 최근 90일을 소급해서 몇 초 걸립니다)'));
-    btn.disabled = true;
-    try {
-      const c = await api(`/api/v1/aws/accounts/${accountId}/costs`);
-      const won = v => v == null ? '단가 없음' : Number(v).toLocaleString('ko-KR') + (c.currency === 'KRW' ? '원' : ' USD');
-      const table = el('table', {},
-        el('tr', {}, el('th', {}, '인스턴스'), el('th', {}, '타입'), el('th', { class: 'num' }, '사용 시간'), el('th', { class: 'num' }, '추정 비용')));
-      c.instances.forEach(i => table.append(el('tr', {},
-        el('td', {}, i.name || i.instanceId), el('td', { class: 'mono' }, i.instanceType),
-        el('td', { class: 'num' }, i.usageHours + '시간'), el('td', { class: 'num' }, won(i.estimatedCost)))));
-      box.replaceChildren(
-        el('h2', {}, `${c.from} ~ ${c.to}`),
-        el('div', { class: 'big-num' }, won(c.estimatedCost)),
-        el('div', { class: 'muted' }, `사용 ${c.usageHours}시간 · 추정 비용 (온디맨드 기준, 청구서 금액 아님)`),
-        c.instances.length ? table : el('p', { class: 'muted' }, '이 기간에 사용한 EC2 인스턴스가 없습니다.'));
-    } catch (e) {
-      box.replaceChildren(el('p', { class: 'status err' }, e.message));
-    } finally {
-      btn.disabled = false;
-    }
+  function showConnected(a) {
+    draft.accountId = null;
+    render(nav(),
+      el('div', { class: 'check' }, svg(ICON.check, 44, '#fff', 3)),
+      el('div', { class: 'center' }, title(`'${nameOf(a)}'\n연결됐어요`), desc('이제 이번 달 예상 비용을 볼 수 있어요.')),
+      cta(el('button', { class: 'btn primary', onclick: () => showDetail(a) }, '비용 보기')));
   }
 
-  $('copy').addEventListener('click', async () => {
-    const token = $('token');
-    try {
-      await navigator.clipboard.writeText(token.value);
-    } catch (e) {
-      token.select();
-      document.execCommand('copy');
-    }
-    $('copy').textContent = '복사됨';
-  });
+  function showConnectFailed(timeout) {
+    const id = draft.accountId;
+    draft.accountId = null;
+    render(nav(),
+      el('div', { class: 'center' },
+        title(timeout ? '승인이 확인되지 않았어요' : '연결하지 못했어요'),
+        desc(timeout ? 'AWS에서 [스택 생성]을 눌렀는지 확인하고\n처음부터 다시 해 주세요.' : 'AWS에서 만든 스택을 삭제하고\n처음부터 다시 해 주세요.')),
+      cta(el('button', { class: 'btn primary', onclick: startConnect }, '처음부터 다시'),
+        el('button', { class: 'btn gray', onclick: showHome }, '홈으로')));
+    $('app').querySelector('.desc').style.whiteSpace = 'pre-line';
+    if (id) api('/api/v1/aws/accounts/' + id, { method: 'DELETE' }).catch(() => {});
+  }
 
+  // ---------- 시작 ----------
   async function init() {
-    const status = $('status');
+    showLogin('불러오는 중…');
     let config;
     try {
       config = await (await fetch('/api/v1/auth/config')).json();
     } catch (e) {
-      setStatus(status, '서버에 연결하지 못했습니다.', 'err');
+      $('loginMsg').textContent = '서버에 연결하지 못했어요. 잠시 후 새로고침해 주세요.';
       return;
     }
-    if (!config.googleClientId) {
-      setStatus(status, '서버에 GOOGLE_CLIENT_ID가 설정되지 않았습니다 (관리자 설정 필요).', 'err');
+    if (!config || !config.googleClientId) {
+      $('loginMsg').textContent = '지금은 로그인할 수 없어요.';
       return;
     }
     const start = () => {
       if (!window.google || !google.accounts) { setTimeout(start, 100); return; }
       google.accounts.id.initialize({ client_id: config.googleClientId, callback: onCredential });
-      google.accounts.id.renderButton($('button'),
-        { theme: 'outline', size: 'large', text: 'continue_with', locale: 'ko', width: 300 });
-      setStatus(status, '');
+      google.accounts.id.renderButton($('gbtn'), { theme: 'filled_black', size: 'large', shape: 'pill', text: 'continue_with', locale: 'ko', width: 320 });
+      $('loginMsg').textContent = 'AWS 비밀번호는 받지 않아요. 보기만 해요.';
     };
     start();
   }

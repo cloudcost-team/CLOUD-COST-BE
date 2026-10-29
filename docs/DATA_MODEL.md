@@ -87,5 +87,10 @@ UNIQUE `(auth_provider, provider_subject)`. 비밀번호 컬럼은 없다. `user
 ## 마이그레이션 없음 (2026-10-30) — 수집 정합성 (ADR-006)
 기존 컬럼만 쓴다: PARTIAL의 실패 원인은 `sync_jobs.error_code`·`error_message`, 연결의 마지막 오류는 `aws_accounts.last_error_*`.
 
+## V5 (2026-10-30) — 연결 이름 (이슈 #15)
+- `aws_accounts.alias` VARCHAR(160) NULL: 사용자가 붙인 연결 이름. 40자(코드 포인트) 제한·공백 정리는 애플리케이션(`ConnectionAlias`)에서 한다. AWS에는 보내지 않는다.
+- 연결 삭제(`DELETE /aws/accounts/{id}`)는 `ec2_usage_hourly` → `ec2_instances` → `sync_jobs` → `aws_accounts` 순서로 `owner_id`·`account_id` 조건을 걸어 한 트랜잭션에서 지운다
+  (FK에 ON DELETE CASCADE를 두지 않고 애플리케이션이 지운다). 연결 갱신(`save`)은 이미 지운 연결을 다시 만들지 않는다.
+
 ## 보존 (백로그)
 ec2_usage_hourly는 455일, sync_jobs는 90일 정도로 정리하는 작업이 필요하다.
