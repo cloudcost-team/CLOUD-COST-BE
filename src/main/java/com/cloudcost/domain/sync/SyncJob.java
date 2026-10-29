@@ -6,6 +6,10 @@ import java.util.UUID;
 
 /**
  * AWS 수집 1회 기록. 조회 시점에 캐시가 오래되어 AWS를 부를 때마다 하나 생긴다. CloudWatch 호출 수(cwRequestCount)를 남겨 고객 계정의 무료 한도 사용량을 추적한다.
+ *
+ * <p>결과: SUCCEEDED(전부 성공) / PARTIAL(일부만 저장 — 경고 또는 실패 원인이 남는다) / FAILED(아무것도 저장하지 못함).
+ * PARTIAL의 실패 원인은 errorCode·errorMessage(한국어)에 남긴다. 성공한 부분은 이미 저장되어 있고,
+ * 실패한 구간은 다음 수집에서 다시 읽는다.
  */
 public final class SyncJob {
 
@@ -97,8 +101,18 @@ public final class SyncJob {
         this.warning = warning == null ? message : warning + " / " + message;
     }
 
+    /** 일부가 실패했다 (성공한 부분은 저장됨). 첫 원인을 남기고 이후는 경고에 덧붙인다. */
+    public void partialFailure(String code, String message) {
+        if (errorCode == null) {
+            this.errorCode = code;
+            this.errorMessage = message;
+        } else {
+            warn(message);
+        }
+    }
+
     public void finish(Instant now) {
-        this.status = warning == null ? Status.SUCCEEDED : Status.PARTIAL;
+        this.status = warning == null && errorCode == null ? Status.SUCCEEDED : Status.PARTIAL;
         this.finishedAt = now;
     }
 
