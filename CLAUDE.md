@@ -25,6 +25,7 @@ PostgreSQL에 저장하고, 기존 와이어프레임 화면에 실제 데이터
 8. 로그에 자격증명·JWT·Authorization 헤더를 남기지 않는다. AWS SDK 와이어/요청 로그
    (`software.amazon.awssdk.request`, `org.apache.http.wire`, `software.amazon.awssdk.auth`)를 DEBUG 이하로 켜지 않는다.
 9. "연결 성공"을 Mock으로 만들지 않는다. 실제 AssumeRole과 실제 AWS 응답이 있어야 성공이다.
+   체험 모드(`/api/v1/demo/*`, ADR-008)는 실제 연결과 분리된 경로이고 `aws_accounts`에 저장하지 않는다. 둘을 섞지 않는다.
 10. 고객 계정 데이터는 필요한 필드만 저장한다. 인스턴스 ID·타입·상태·LaunchTime·AZ·OS(platformDetails)·테넌시·수명주기(spot 여부)·Name 태그 외에
     IP, 키페어 이름, 보안그룹, 태그 전체, 사용자 데이터는 **DB에 저장하지 않는다**(필요하면 요청 시점에 조회만 한다).
 
@@ -62,7 +63,7 @@ src/main/resources/db/migration/                    Flyway (V{n}__설명.sql)
 src/test/java/                                      domain · application(H2 + fake AWS) · adapter(Mockito) · api(owner 격리) · architecture(ArchUnit)
 ```
 연결은 CloudFormation 빠른 생성 링크 → 고객 스택이 우리 SNS로 신호 → SQS 폴링 → 실제 AssumeRole 검증으로 자동 완료한다 (docs/decisions/003).
-아직 없는 것: adapter/demo, 사용량 예약 수집(dispatcher), JWT 로그인, 프론트 연동.
+아직 없는 것: 사용량 예약 수집(dispatcher), 프론트 연동. 실제 계정 없이 체험하기는 `domain/demo` + `/api/v1/demo/*` (ADR-008, docs/API.md §3).
 수집은 **조회 시점**에 한다: 인스턴스 10분, CloudWatch 계정당 1시간 1회 캐시 (docs/decisions/002).
 
 ## 4. 아키텍처 규칙 (헥사고날)
@@ -79,7 +80,7 @@ src/test/java/                                      domain · application(H2 + f
 - worker는 SQS 메시지가 아니라 DB의 sync_job 행에서 owner_id를 읽는다.
 
 ## 5. 데이터 원칙
-- AWS 연결과 sync가 성공한 사용자에게는 실제 데이터를 보여 준다. 연결이 없거나 둘러보기 모드면 `/api/v1/demo/*` 예시 데이터를 보여 준다.
+- AWS 연결과 sync가 성공한 사용자에게는 실제 데이터를 보여 준다. 계정이 없는 사람은 체험 모드(간이 로그인 → 서버 구성·기간 설정)로 `/api/v1/demo/*` 예시 데이터를 본다.
   모든 응답에 `data_source`(`aws` | `csv` | `demo`)를 넣는다.
 - 프론트는 계산하지 않는다. 예측, 급증일, 낭비, 시뮬레이션, 벤치마크 계산은 모두 백엔드 domain에서 한다.
 - **사용 시간**은 CloudWatch `GetMetricStatistics`(period 3600)의 데이터 포인트가 있는 시간 수로 센다.

@@ -11,6 +11,7 @@ import com.cloudcost.domain.cost.CostEstimator.PeriodCost;
 import com.cloudcost.domain.cost.CostNotes;
 import com.cloudcost.domain.cost.DisplayCurrency;
 import com.cloudcost.domain.cost.InstancePrice;
+import com.cloudcost.domain.demo.DemoFleet;
 import com.cloudcost.domain.ec2.TrackedInstance;
 import com.cloudcost.domain.usage.CurrentRun;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -29,6 +30,7 @@ import java.util.UUID;
 public final class UsageDtos {
 
     public static final String DATA_SOURCE_AWS = "aws";
+    public static final String DATA_SOURCE_DEMO = "demo";
 
     private UsageDtos() {}
 
@@ -94,12 +96,21 @@ public final class UsageDtos {
             List<String> notes) {
 
         public static InstancesResponse of(InstancesView view, Resolved currency) {
+            return of(view, currency, DATA_SOURCE_AWS);
+        }
+
+        public static InstancesResponse of(InstancesView view, Resolved currency, String dataSource) {
             DisplayCurrency d = currency.display();
             List<InstanceDto> rows = view.rows().stream().map(r -> instance(r, d)).toList();
+            List<String> notes = new ArrayList<>();
+            if (DATA_SOURCE_DEMO.equals(dataSource)) {
+                notes.add(DemoFleet.NOTE);
+                notes.add(DemoFleet.PRICE_NOTE);
+            }
+            notes.addAll(List.of(CostNotes.ESTIMATE, CostNotes.EXCLUDED, CurrentRun.NOTE));
             return new InstancesResponse(
-                    DATA_SOURCE_AWS, CostNotes.COST_BASIS, d.currency().name(), ExchangeRateDto.of(d), view.account().id(),
-                    view.asOf(), rows, FreshnessDto.of(view.freshness()),
-                    withCurrencyNotes(List.of(CostNotes.ESTIMATE, CostNotes.EXCLUDED, CurrentRun.NOTE), currency));
+                    dataSource, CostNotes.COST_BASIS, d.currency().name(), ExchangeRateDto.of(d), view.accountId(),
+                    view.asOf(), rows, FreshnessDto.of(view.freshness()), withCurrencyNotes(notes, currency));
         }
     }
 
@@ -128,10 +139,15 @@ public final class UsageDtos {
             List<String> notes) {
 
         public static CostSummaryResponse of(UsageCostView<?> view, String timezone, Resolved currency) {
+            return of(view, timezone, currency, DATA_SOURCE_AWS);
+        }
+
+        public static CostSummaryResponse of(
+                UsageCostView<?> view, String timezone, Resolved currency, String dataSource) {
             DisplayCurrency d = currency.display();
             PeriodCost<?> period = view.report().periods().getFirst();
             return new CostSummaryResponse(
-                    DATA_SOURCE_AWS, CostNotes.COST_BASIS, d.currency().name(), ExchangeRateDto.of(d), timezone,
+                    dataSource, CostNotes.COST_BASIS, d.currency().name(), ExchangeRateDto.of(d), timezone,
                     view.range().from(), view.range().to(), hours(view.report().totalMinutes()),
                     d.cost(view.report().totalEstimatedCost()), instanceRows(view, period, d),
                     FreshnessDto.of(view.freshness()), withCurrencyNotes(view.notes(), currency));
@@ -156,13 +172,18 @@ public final class UsageDtos {
             List<String> notes) {
 
         public static DailyCostResponse of(UsageCostView<LocalDate> view, String timezone, Resolved currency) {
+            return of(view, timezone, currency, DATA_SOURCE_AWS);
+        }
+
+        public static DailyCostResponse of(
+                UsageCostView<LocalDate> view, String timezone, Resolved currency, String dataSource) {
             DisplayCurrency d = currency.display();
             List<DailyCostDto> days = view.report().periods().stream()
                     .map(p -> new DailyCostDto(p.period(), hours(p.usedMinutes()), d.cost(p.estimatedCost()),
                             instanceRows(view, p, d)))
                     .toList();
             return new DailyCostResponse(
-                    DATA_SOURCE_AWS, CostNotes.COST_BASIS, d.currency().name(), ExchangeRateDto.of(d), timezone,
+                    dataSource, CostNotes.COST_BASIS, d.currency().name(), ExchangeRateDto.of(d), timezone,
                     view.range().from(), view.range().to(), hours(view.report().totalMinutes()),
                     d.cost(view.report().totalEstimatedCost()), days, FreshnessDto.of(view.freshness()),
                     withCurrencyNotes(view.notes(), currency));
@@ -190,13 +211,18 @@ public final class UsageDtos {
             List<String> notes) {
 
         public static MonthlyCostResponse of(UsageCostView<java.time.YearMonth> view, String timezone, Resolved currency) {
+            return of(view, timezone, currency, DATA_SOURCE_AWS);
+        }
+
+        public static MonthlyCostResponse of(
+                UsageCostView<java.time.YearMonth> view, String timezone, Resolved currency, String dataSource) {
             DisplayCurrency d = currency.display();
             List<MonthlyCostDto> months = view.report().periods().stream()
                     .map(p -> new MonthlyCostDto(p.period().toString(), hours(p.usedMinutes()), d.cost(p.estimatedCost()),
                             instanceRows(view, p, d)))
                     .toList();
             return new MonthlyCostResponse(
-                    DATA_SOURCE_AWS, CostNotes.COST_BASIS, d.currency().name(), ExchangeRateDto.of(d), timezone,
+                    dataSource, CostNotes.COST_BASIS, d.currency().name(), ExchangeRateDto.of(d), timezone,
                     java.time.YearMonth.from(view.range().from()).toString(),
                     java.time.YearMonth.from(view.range().to()).toString(),
                     hours(view.report().totalMinutes()), d.cost(view.report().totalEstimatedCost()), months,

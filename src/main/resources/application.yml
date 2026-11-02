@@ -63,6 +63,10 @@ cci:
     verify-interval: 10s
     assume-role-duration-seconds: 900
     pricing-region: us-east-1
+  # 체험 모드 간이 로그인 (실제 AWS 계정 아님, 화면에 안내하는 공개 값. docs/decisions/008)
+  demo:
+    username: ${CCI_DEMO_USERNAME:cloudcost}
+    password: ${CCI_DEMO_PASSWORD:1234}
   usage:
     instance-ttl: ${CCI_INSTANCE_TTL:10m}
     usage-ttl: ${CCI_USAGE_TTL:1h}
