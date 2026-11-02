@@ -114,6 +114,9 @@ class DemoApiTest extends IntegrationTestBase {
         JsonNode monthly = body(postDemo("/costs/monthly?currency=USD", twoMonths).andExpect(status().isOk()));
         assertThat(monthly.at("/months")).hasSize(2);
         assertThat(monthly.at("/months/0/month").asText()).isEqualTo("2026-09");
+        assertThat(monthly.at("/availableFrom").asText()).as("체험은 설정한 시작일부터 기록이 있다").isEqualTo("2026-09-15");
+        assertThat(monthly.at("/months/1/estimatedCostChange").decimalValue()).isEqualByComparingTo(
+            monthly.at("/months/1/estimatedCost").decimalValue().subtract(monthly.at("/months/0/estimatedCost").decimalValue()));
     }
 
     @Test

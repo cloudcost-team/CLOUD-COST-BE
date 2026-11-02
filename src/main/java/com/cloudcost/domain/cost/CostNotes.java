@@ -1,5 +1,7 @@
 package com.cloudcost.domain.cost;
 
+import java.time.LocalDate;
+
 /**
  * 응답에 붙이는 비용 관련 안내 문구. 금액이 청구서 금액처럼 보이지 않게 한다.
  */
@@ -20,6 +22,11 @@ public final class CostNotes {
     public static final String UNSUPPORTED_PLATFORM = "지원하지 않는 OS/테넌시라 온디맨드 단가를 조회하지 않았습니다.";
     public static final String SPOT =
         "Spot 인스턴스입니다. Spot 할인을 반영하지 않고 온디맨드 단가로 계산했습니다.";
+
+    /** 조회 기간이 사용량 기록 시작일보다 앞설 때 */
+    public static String noHistoryBefore(LocalDate availableFrom) {
+        return availableFrom + " 이전은 사용량 기록이 없습니다 (연결할 때 소급 수집한 시작일).";
+    }
 
     private CostNotes() {
     }

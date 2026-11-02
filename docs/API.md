@@ -135,7 +135,13 @@
 ### `GET /aws/accounts/{accountId}/costs/daily?from=&to=` (기본: 최근 30일)
 `days: [ { "date": "2026-10-07", "usageHours": 10.00, "estimatedCost": 0.42, "instances": [ … ] } ]` — 사용이 없는 날도 포함.
 ### `GET /aws/accounts/{accountId}/costs/monthly?from=YYYY-MM&to=YYYY-MM` (기본: 최근 3개월)
-`months: [ { "month": "2026-10", "usageHours": …, "estimatedCost": …, "instances": [ … ] } ]` — 일별 합산.
+`months: [ { "month": "2026-10", "usageHours": …, "estimatedCost": …, "estimatedCostChange": -1200, "instances": [ … ] } ]` — 일별 합산.
+- `estimatedCostChange`: 직전 달 대비 추정 비용 증감 (요청 통화 기준, 반올림한 금액끼리의 차). 첫 달이면 `null`.
+- 화면(계정 상세)은 최근 12개월을 한 번에 받아 원하는 달을 고르고(이전/다음 달, 월별 추이), 고른 달의 `instances`로 서버별 금액을 보여 준다.
+
+**`availableFrom`** (`costs` · `costs/daily` · `costs/monthly` 공통): 이 날짜부터 사용량 기록이 있다 = 가장 먼저 본 인스턴스를 처음 수집할 때 소급한 시작일
+(처음 본 시각 − `CCI_USAGE_BACKFILL`). 그보다 앞의 기간은 조회해도 0이고 `notes`에 안내가 붙는다. 아직 인스턴스를 본 적이 없으면 `null`.
+화면은 이 날짜보다 앞선 달을 보여 주지 않는다 (0원을 "안 썼다"로 읽지 않게).
 
 **단가를 찾지 못한 인스턴스**: `estimatedCost: null`, `note: "해당 인스턴스의 온디맨드 단가를 조회할 수 없습니다."`.
 기간 합계는 단가가 있는 인스턴스만 더하고, `notes`에 빠진 인스턴스 수와 시간을 적는다.
@@ -164,7 +170,7 @@ Google 로그인 없이 간이 로그인 → 서버 구성·기간 설정 → �
                { "name": "gpu", "instanceType": "g4dn.xlarge", "os": "LINUX", "count": 1, "schedule": "DAILY_HOURS", "hoursPerDay": 6 } ] }
 ```
 - 응답은 §2의 실제 경로(`GET /aws/accounts/{accountId}/…`)와 같은 형식이다. 기간은 기본값 없이 요청의 `from`~`to`를 쓰고, 월별은 그 기간을 월로 나눈다.
-- 다른 점: `dataSource: "demo"`, `accountId`는 위 고정값, `notes` 맨 앞에 체험 데이터·예시 단가 안내, `freshness`의 시각은 모두 `null`.
+- 다른 점: `dataSource: "demo"`, `accountId`는 위 고정값, `notes` 맨 앞에 체험 데이터·예시 단가 안내, `freshness`의 시각은 모두 `null`, `availableFrom`은 요청의 `from`.
 - `from` 0시에 모든 서버를 처음 켰다고 보고, 지난 시간까지만 계산한다(현재 진행 중인 시간 제외). 인스턴스 이름은 대수가 2대 이상이면 `web-1`, `web-2`…
 - 단가는 서울 리전 온디맨드 단가를 고정값으로 쓴다 (Price List를 부르지 않음). 금액 계산은 실제 경로와 같은 domain 로직이다.
 - 잘못된 설정은 400 `DEMO_INVALID_SETUP` (이유는 `message`): 모르는 타입, 대수 1~10 밖, 합계 50대 초과, `to`가 오늘 이후 등. 기간 455일 초과는 `INVALID_PERIOD`.

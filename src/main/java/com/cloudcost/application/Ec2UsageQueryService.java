@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -67,7 +68,8 @@ public class Ec2UsageQueryService {
     }
 
     /**
-     * @param instances instanceId → 인스턴스 (이름·타입 표시용)
+     * @param instances     instanceId → 인스턴스 (이름·타입 표시용)
+     * @param availableFrom 이 날짜부터 사용량 기록이 있다 (처음 본 인스턴스의 소급 수집 시작일). 아직 인스턴스가 없으면 null
      */
     public record UsageCostView<K>(
         UUID accountId,
@@ -75,6 +77,7 @@ public class Ec2UsageQueryService {
         CostReport<K> report,
         Map<String, TrackedInstance> instances,
         Map<String, InstancePrice> prices,
+        LocalDate availableFrom,
         Freshness freshness,
         List<String> notes) {
     }
@@ -144,18 +147,34 @@ public class Ec2UsageQueryService {
         PriceService.PriceResult priced =
             prices.pricesFor(tracked.values().stream().map(TrackedInstance::info).toList());
         CostReport<K> report = CostEstimator.report(grouping.apply(daily), priced.byInstanceId());
+        LocalDate availableFrom = availableFrom(tracked.values());
 
         return new UsageCostView<>(
-            accountId, range, report, tracked, priced.byInstanceId(),
-            freshness.withWarnings(priced.warnings()), notes(report));
+            accountId, range, report, tracked, priced.byInstanceId(), availableFrom,
+            freshness.withWarnings(priced.warnings()), notes(report, range, availableFrom));
     }
 
-    private List<String> notes(CostReport<?> report) {
+    /**
+     * 사용량 기록이 시작되는 날: 가장 먼저 본 인스턴스의 첫 수집 때 소급한 시작일 (처음 본 시각 − backfill).
+     * 그보다 앞의 기간은 조회해도 0이다.
+     */
+    private LocalDate availableFrom(Collection<TrackedInstance> tracked) {
+        return tracked.stream()
+            .map(TrackedInstance::firstSeenAt)
+            .min(Comparator.naturalOrder())
+            .map(first -> LocalDate.ofInstant(first.minus(settings.backfill()), settings.zone()))
+            .orElse(null);
+    }
+
+    private List<String> notes(CostReport<?> report, DateRange range, LocalDate availableFrom) {
         List<String> notes = new ArrayList<>();
         notes.add(CostNotes.ESTIMATE);
         notes.add(CostNotes.EXCLUDED);
         notes.add(CostNotes.USAGE_METHOD);
         notes.add(CostNotes.HISTORY_LIMIT + " (첫 수집 때 최근 " + settings.backfill().toDays() + "일을 소급합니다.)");
+        if (availableFrom != null && range.from().isBefore(availableFrom)) {
+            notes.add(CostNotes.noHistoryBefore(availableFrom));
+        }
         if (!report.unpricedInstanceIds().isEmpty()) {
             BigDecimal hours = CostEstimator.hours(report.unpricedMinutes()).setScale(2, RoundingMode.HALF_UP);
             notes.add("단가를 찾지 못한 인스턴스 " + report.unpricedInstanceIds().size() + "개(사용 " + hours

@@ -164,6 +164,15 @@
     .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
     .chip-btn { border: 0; background: var(--press); color: var(--sub); font: inherit; font-size: 14px; font-weight: 600; padding: 8px 14px; border-radius: 999px; cursor: pointer; }
     .chip-btn:active { background: var(--accent-soft); color: var(--accent); }
+    .month-switch { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding: 4px; border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); }
+    .month-switch b { font-size: 16px; font-weight: 700; }
+    .month-switch .icon-btn:disabled { opacity: .25; cursor: default; }
+    .trend-row { padding: 14px 20px; gap: 12px; }
+    .trend-row.on { background: var(--accent-soft); }
+    .trend-month { width: 64px; flex: none; font-size: 15px; font-weight: 600; color: var(--sub); text-align: left; }
+    .trend-row.on .trend-month { color: var(--accent); }
+    .trend-bar { flex: 1; height: 8px; border-radius: 4px; background: var(--press); overflow: hidden; }
+    .trend-bar i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
   </style>
 </head>
 <body>
@@ -240,11 +249,6 @@
   const ICON = {
     back: 'M15 18l-6-6 6-6', chev: 'M9 18l6-6-6-6', more: 'M12 12h.01|M19 12h.01|M5 12h.01',
     check: 'M5 12.5l4.5 4.5L19 7', cloud: 'M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 9.5 4.25 4.25 0 0 0 7 18z', plus: 'M12 5v14|M5 12h14'
-  };
-  /** '2026-10-01' → '10월 1일부터 오늘까지' */
-  const sinceText = from => {
-    const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(from || '');
-    return m ? `${Number(m[1])}월 ${Number(m[2])}일부터 오늘까지` : '';
   };
   const money = (v, currency) => v == null ? '-' : Number(v).toLocaleString('ko-KR') + (currency === 'KRW' ? '원' : ' USD');
 
@@ -398,18 +402,14 @@
       return;
     }
     try {
-      const c = await api(`/api/v1/aws/accounts/${a.accountId}/costs`);
-      head.replaceChildren(
-        el('p', { class: 'amount-label' }, nameOf(a) + ' · 이번 달 예상 비용'),
-        el('div', { class: 'amount' }, money(c.estimatedCost, c.currency)),
-        el('p', { class: 'note' }, (sinceText(c.from) ? sinceText(c.from) + ' · ' : '') + '실제 청구서와 다를 수 있어요'));
-      const parts = [];
-      if (a.status === 'ERROR') {
+      // 최근 12개월을 한 번에 받아 달을 바꿀 때 다시 부르지 않는다 (조회 기간 최대 455일 안).
+      const now = new Date();
+      const m = await api(`/api/v1/aws/accounts/${a.accountId}/costs/monthly?from=${ym(new Date(now.getFullYear(), now.getMonth() - 11, 1))}`);
+      renderMonthly(head, body, m, {
+        name: nameOf(a),
         // 오류 상태에서는 저장해 둔 기록만 보여 준다 (ADR-006). 금액보다 먼저, 최신이 아니라고 알려 준다.
-        head.prepend(noticeCard(a.lastError && a.lastError.code, '지금은 마지막으로 가져온 정보까지만 보여요.'));
-      }
-      parts.push(...serverList(c));
-      body.replaceChildren(...parts);
+        notice: a.status === 'ERROR' ? noticeCard(a.lastError && a.lastError.code, '지금은 마지막으로 가져온 정보까지만 보여요.') : null
+      });
     } catch (e) {
       head.replaceChildren(title(nameOf(a)), el('span', { class: 'chip gray' }, regionOf(a)));
       body.replaceChildren(e instanceof ApiError && problemOf(e.code)
@@ -431,6 +431,83 @@
               el('div', { class: 'row-sub' }, [i.name ? null : i.instanceId, `${i.usageHours ?? 0}시간 켜짐`].filter(Boolean).join(' · '))),
             el('div', { class: 'row-right' }, money(i.estimatedCost, c.currency)))))
         : el('div', { class: 'card', style: 'padding:24px 20px;color:var(--sub)' }, emptyText)];
+  }
+
+  // ---------- 월별 비용 (계정 상세 · 체험 결과 공통, #21) ----------
+  const ym = d => ymd(d).slice(0, 7);
+  /** '2026-10' → '10월' (올해가 아니면 '25년 10월') */
+  const monthName = s => (s.slice(0, 4) === String(new Date().getFullYear()) ? '' : s.slice(2, 4) + '년 ') + Number(s.slice(5, 7)) + '월';
+  const monthTitle = s => `${s.slice(0, 4)}년 ${Number(s.slice(5, 7))}월`;
+  const lastDayOf = s => ymd(new Date(Number(s.slice(0, 4)), Number(s.slice(5, 7)), 0));
+  const later = (a, b) => (a && a > b ? a : b);
+  const earlier = (a, b) => (a && a < b ? a : b);
+
+  /**
+   * 월별 응답(m: /costs/monthly)으로 고른 달의 비용 · 서버별 목록 · 월별 추이를 그린다. 금액 계산은 모두 서버 값이다.
+   * 서버 줄은 앞으로 낭비 리소스 탐지와 사양 추천이 붙는 자리다.
+   *
+   * @param opts.name      계정 이름
+   * @param opts.rangeFrom 이 날 이전 달은 보여 주지 않는다 (체험: 설정한 시작일). 없으면 m.availableFrom
+   * @param opts.rangeTo   마지막 날 (체험: 설정한 종료일). 없으면 오늘
+   * @param opts.notice    금액 위에 보여 줄 안내 카드
+   * @param opts.footer    맨 아래에 붙일 내용
+   */
+  function renderMonthly(head, body, m, opts) {
+    const today = ymd(new Date());
+    const start = opts.rangeFrom || m.availableFrom;
+    const all = Array.isArray(m.months) ? m.months : [];
+    // 기록이 시작되기 전 달은 0원이라 오해하기 쉬우므로 보여 주지 않는다.
+    const months = start ? all.filter(x => x.month >= start.slice(0, 7)) : all.slice(-1);
+    if (!months.length && all.length) months.push(all[all.length - 1]);
+    if (!months.length) {
+      head.replaceChildren(...(opts.notice ? [opts.notice] : []), title(opts.name));
+      body.replaceChildren(el('div', { class: 'card', style: 'padding:24px 20px;color:var(--sub)' }, '아직 가져온 기록이 없어요.'));
+      return;
+    }
+    let idx = months.length - 1;
+    const select = i => { idx = i; draw(); window.scrollTo(0, 0); };
+    const arrow = (dir, enabled) => {
+      const b = el('button', { class: 'icon-btn', 'aria-label': dir < 0 ? '이전 달' : '다음 달' }, svg(dir < 0 ? ICON.back : ICON.chev, 22));
+      if (enabled) b.addEventListener('click', () => select(idx + dir)); else b.disabled = true;
+      return b;
+    };
+    // replaceChildren은 null을 'null' 글자로 넣으므로 빈 칸을 빼고 넣는다
+    const fill = (box, ...nodes) => box.replaceChildren(...nodes.filter(Boolean));
+    const draw = () => {
+      const cur = months[idx];
+      const isNow = cur.month === today.slice(0, 7);
+      const from = later(start, cur.month + '-01');
+      const to = earlier(opts.rangeTo, earlier(today, lastDayOf(cur.month)));
+      const change = idx > 0 && cur.estimatedCostChange != null ? Number(cur.estimatedCostChange) : null;
+      const prev = idx > 0 ? months[idx - 1] : null;
+      const compare = !prev ? null
+        : isNow ? el('span', { class: 'chip gray' }, `${monthName(prev.month)} 전체 ${money(prev.estimatedCost, m.currency)}`)
+        : change == null ? null
+        : change === 0 ? el('span', { class: 'chip gray' }, `${monthName(prev.month)}과 같아요`)
+        : el('span', { class: 'chip ' + (change > 0 ? 'crit' : 'good') },
+            `${monthName(prev.month)}보다 ${change > 0 ? '+' : '−'}${money(Math.abs(change), m.currency)}`);
+      fill(head, opts.notice,
+        el('div', { class: 'month-switch' }, arrow(-1, idx > 0), el('b', {}, monthTitle(cur.month)), arrow(1, idx < months.length - 1)),
+        el('p', { class: 'amount-label' }, `${opts.name} · ${isNow ? '이번 달 예상 비용' : monthName(cur.month) + ' 비용'}`),
+        el('div', { class: 'amount' }, money(cur.estimatedCost, m.currency)),
+        el('p', { class: 'note' }, `${dayText(from)}${to === today ? '부터 오늘까지' : ' ~ ' + dayText(to)} · 실제 청구서와 다를 수 있어요`),
+        compare);
+
+      const max = Math.max(...months.map(x => Number(x.estimatedCost) || 0)) || 1;
+      const trend = months.length < 2 ? null : el('div', { class: 'card list' }, months.map((x, i) => [x, i]).reverse().map(([x, i]) =>
+        el('button', { class: 'row trend-row' + (i === idx ? ' on' : ''), 'aria-pressed': String(i === idx), onclick: () => select(i) },
+          el('span', { class: 'trend-month' }, monthName(x.month)),
+          el('span', { class: 'trend-bar' }, el('i', { style: `width:${Math.max(2, (Number(x.estimatedCost) || 0) / max * 100)}%` })),
+          el('span', { class: 'row-right' }, money(x.estimatedCost, m.currency)))));
+      fill(body,
+        ...serverList({ instances: cur.instances, currency: m.currency }, isNow ? '이번 달에 켠 서버가 없어요.' : '이 달에 켠 서버가 없어요.'),
+        trend ? el('p', { class: 'section-label' }, '월별 추이') : null, trend,
+        opts.footer || null,
+        !opts.rangeFrom && m.availableFrom
+          ? el('p', { class: 'note', style: 'margin:16px 4px 0' }, `${m.availableFrom.slice(0, 4)}년 ${dayText(m.availableFrom)}부터 기록이 있어요. 그 전 사용량은 가져올 수 없어요.`)
+          : null);
+    };
+    draw();
   }
 
   // ---------- 체험 모드 (실제 계정 없이: 간이 로그인 → 인스턴스 설정 → 비용) ----------
@@ -584,29 +661,25 @@
   /** 연결된 계정의 상세 화면과 같은 모양으로 보여 준다. */
   async function showTrialResult() {
     const a = trial.account;
-    const label = (from, to) => {
-      const now = new Date();
-      return from === ymd(new Date(now.getFullYear(), now.getMonth(), 1)) && to === ymd(now) ? '이번 달 예상 비용' : '기간 예상 비용';
-    };
     const head = el('div', {},
-      el('p', { class: 'amount-label' }, a.name + ' · ' + label(trial.from, trial.to)),
+      el('p', { class: 'amount-label' }, a.name + ' · 예상 비용'),
       el('div', { class: 'sk', style: 'height:44px;width:60%;margin-top:10px' }));
     const body = el('div');
     render(nav(backBtn(showTrialSetup), el('span', { class: 'chip gray' }, '체험 모드')), head, body,
       cta(el('button', { class: 'btn gray', onclick: showTrialSetup }, '설정 바꾸기')));
     try {
-      const c = await trialApi('/costs', trialSetup());
-      head.replaceChildren(
-        el('p', { class: 'amount-label' }, a.name + ' · ' + label(c.from, c.to)),
-        el('div', { class: 'amount' }, money(c.estimatedCost, c.currency)),
-        el('p', { class: 'note' }, `${dayText(c.from)} ~ ${dayText(c.to)} · 실제 청구서와 다를 수 있어요`));
-      body.replaceChildren(...serverList(c, '이 기간에 켠 서버가 없어요.'));
+      const m = await trialApi('/costs/monthly', trialSetup());
+      renderMonthly(head, body, m, {
+        name: a.name, rangeFrom: trial.from, rangeTo: trial.to,
+        footer: el('div', { class: 'tip' }, `설정한 기간 전체 (${dayText(trial.from)} ~ ${dayText(trial.to)}) `, el('b', {}, money(m.estimatedCost, m.currency)))
+      });
     } catch (e) {
       head.replaceChildren(title(a.name), el('span', { class: 'chip gray' }, a.region));
       body.replaceChildren(el('div', { class: 'card notice crit' }, el('h2', {}, '설정을 확인해 주세요'), el('p', {}, e.message),
         el('button', { class: 'btn soft', onclick: showTrialSetup }, '설정으로 돌아가기')));
     }
   }
+
 
   /** 문제 안내 카드. 다시 연결해야 하는 문제면 [다시 연결하기]를 붙인다. */
   function noticeCard(code, extra) {

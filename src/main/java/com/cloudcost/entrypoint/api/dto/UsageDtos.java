@@ -132,6 +132,8 @@ public final class UsageDtos {
             String timezone,
             LocalDate from,
             LocalDate to,
+            @Schema(description = "이 날짜부터 사용량 기록이 있다 (연결할 때 소급 수집한 시작일). 그 앞은 조회해도 0이다. 아직 수집 전이면 null",
+                    example = "2026-07-19") LocalDate availableFrom,
             BigDecimal usageHours,
             BigDecimal estimatedCost,
             List<InstanceUsageDto> instances,
@@ -148,7 +150,7 @@ public final class UsageDtos {
             PeriodCost<?> period = view.report().periods().getFirst();
             return new CostSummaryResponse(
                     dataSource, CostNotes.COST_BASIS, d.currency().name(), ExchangeRateDto.of(d), timezone,
-                    view.range().from(), view.range().to(), hours(view.report().totalMinutes()),
+                    view.range().from(), view.range().to(), view.availableFrom(), hours(view.report().totalMinutes()),
                     d.cost(view.report().totalEstimatedCost()), instanceRows(view, period, d),
                     FreshnessDto.of(view.freshness()), withCurrencyNotes(view.notes(), currency));
         }
@@ -165,6 +167,8 @@ public final class UsageDtos {
             String timezone,
             LocalDate from,
             LocalDate to,
+            @Schema(description = "이 날짜부터 사용량 기록이 있다 (연결할 때 소급 수집한 시작일). 그 앞은 조회해도 0이다. 아직 수집 전이면 null",
+                    example = "2026-07-19") LocalDate availableFrom,
             BigDecimal usageHours,
             BigDecimal estimatedCost,
             List<DailyCostDto> days,
@@ -184,7 +188,7 @@ public final class UsageDtos {
                     .toList();
             return new DailyCostResponse(
                     dataSource, CostNotes.COST_BASIS, d.currency().name(), ExchangeRateDto.of(d), timezone,
-                    view.range().from(), view.range().to(), hours(view.report().totalMinutes()),
+                    view.range().from(), view.range().to(), view.availableFrom(), hours(view.report().totalMinutes()),
                     d.cost(view.report().totalEstimatedCost()), days, FreshnessDto.of(view.freshness()),
                     withCurrencyNotes(view.notes(), currency));
         }
@@ -194,6 +198,8 @@ public final class UsageDtos {
             @Schema(example = "2026-10") String month,
             BigDecimal usageHours,
             BigDecimal estimatedCost,
+            @Schema(description = "직전 달 대비 추정 비용 증감 (currency 기준). 첫 달이면 null", example = "-1200")
+                    BigDecimal estimatedCostChange,
             List<InstanceUsageDto> instances) {}
 
     public record MonthlyCostResponse(
@@ -204,6 +210,8 @@ public final class UsageDtos {
             String timezone,
             String from,
             String to,
+            @Schema(description = "이 날짜부터 사용량 기록이 있다 (연결할 때 소급 수집한 시작일). 그 앞은 조회해도 0이다. 아직 수집 전이면 null",
+                    example = "2026-07-19") LocalDate availableFrom,
             BigDecimal usageHours,
             BigDecimal estimatedCost,
             List<MonthlyCostDto> months,
@@ -217,14 +225,19 @@ public final class UsageDtos {
         public static MonthlyCostResponse of(
                 UsageCostView<java.time.YearMonth> view, String timezone, Resolved currency, String dataSource) {
             DisplayCurrency d = currency.display();
-            List<MonthlyCostDto> months = view.report().periods().stream()
-                    .map(p -> new MonthlyCostDto(p.period().toString(), hours(p.usedMinutes()), d.cost(p.estimatedCost()),
-                            instanceRows(view, p, d)))
-                    .toList();
+            List<MonthlyCostDto> months = new ArrayList<>();
+            BigDecimal previous = null;
+            for (PeriodCost<java.time.YearMonth> p : view.report().periods()) {
+                BigDecimal cost = d.cost(p.estimatedCost());
+                BigDecimal change = previous == null || cost == null ? null : cost.subtract(previous);
+                months.add(new MonthlyCostDto(p.period().toString(), hours(p.usedMinutes()), cost, change,
+                        instanceRows(view, p, d)));
+                previous = cost;
+            }
             return new MonthlyCostResponse(
                     dataSource, CostNotes.COST_BASIS, d.currency().name(), ExchangeRateDto.of(d), timezone,
                     java.time.YearMonth.from(view.range().from()).toString(),
-                    java.time.YearMonth.from(view.range().to()).toString(),
+                    java.time.YearMonth.from(view.range().to()).toString(), view.availableFrom(),
                     hours(view.report().totalMinutes()), d.cost(view.report().totalEstimatedCost()), months,
                     FreshnessDto.of(view.freshness()), withCurrencyNotes(view.notes(), currency));
         }
