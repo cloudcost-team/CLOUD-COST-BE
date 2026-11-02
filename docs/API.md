@@ -126,3 +126,31 @@
 **단가를 찾지 못한 인스턴스**: `estimatedCost: null`, `note: "해당 인스턴스의 온디맨드 단가를 조회할 수 없습니다."`.
 기간 합계는 단가가 있는 인스턴스만 더하고, `notes`에 빠진 인스턴스 수와 시간을 적는다.
 조회 기간은 최대 455일이다.
+
+## 3. 체험 모드 — 실제 계정 없이 (ADR-008)
+Google 로그인 없이 간이 로그인 → 서버 구성·기간 설정 → 실제 연결 계정과 같은 형식의 비용을 본다. AWS·DB를 부르지 않는다.
+체험용 계정은 연결 목록(`GET /aws/accounts`)에 들어가지 않고, 실제 연결 경로로는 조회할 수 없다.
+
+### `POST /demo/login` → 200 / 401 `DEMO_LOGIN_FAILED`
+```json
+요청 { "username": "cloudcost", "password": "1234" }
+응답 { "dataSource": "demo", "accountId": "00000000-0000-4000-8000-00000000d3e0", "name": "체험용 AWS 계정",
+       "awsAccountId": "123456789012", "region": "ap-northeast-2" }
+```
+실제 AWS 자격증명이 아니라 화면에 안내하는 공개 값이다 (`CCI_DEMO_USERNAME` / `CCI_DEMO_PASSWORD`로 바꿀 수 있음). 토큰은 주지 않는다.
+
+### `GET /demo/catalog`
+고를 수 있는 `instanceTypes`(타입별 Linux·Windows 시간당 USD), `os`(`LINUX`|`WINDOWS`),
+`schedules`(`ALWAYS` 24시간 · `WEEKDAY_OFFICE` 평일 09~19시 · `DAILY_HOURS` 매일 09시부터 N시간), 한도(`maxServers` 20, `maxCountPerServer` 10, `maxInstances` 50).
+
+### 비용 조회: `POST /demo/instances` · `/demo/costs` · `/demo/costs/daily` · `/demo/costs/monthly` (`?currency=KRW|USD`)
+```json
+{ "from": "2026-10-01", "to": "2026-10-31",
+  "servers": [ { "name": "web", "instanceType": "m5.large", "os": "LINUX", "count": 2, "schedule": "ALWAYS" },
+               { "name": "gpu", "instanceType": "g4dn.xlarge", "os": "LINUX", "count": 1, "schedule": "DAILY_HOURS", "hoursPerDay": 6 } ] }
+```
+- 응답은 §2의 실제 경로(`GET /aws/accounts/{accountId}/…`)와 같은 형식이다. 기간은 기본값 없이 요청의 `from`~`to`를 쓰고, 월별은 그 기간을 월로 나눈다.
+- 다른 점: `dataSource: "demo"`, `accountId`는 위 고정값, `notes` 맨 앞에 체험 데이터·예시 단가 안내, `freshness`의 시각은 모두 `null`.
+- `from` 0시에 모든 서버를 처음 켰다고 보고, 지난 시간까지만 계산한다(현재 진행 중인 시간 제외). 인스턴스 이름은 대수가 2대 이상이면 `web-1`, `web-2`…
+- 단가는 서울 리전 온디맨드 단가를 고정값으로 쓴다 (Price List를 부르지 않음). 금액 계산은 실제 경로와 같은 domain 로직이다.
+- 잘못된 설정은 400 `DEMO_INVALID_SETUP` (이유는 `message`): 모르는 타입, 대수 1~10 밖, 합계 50대 초과, `to`가 오늘 이후 등. 기간 455일 초과는 `INVALID_PERIOD`.
