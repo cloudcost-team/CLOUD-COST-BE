@@ -9,9 +9,14 @@ import java.util.List;
 public class RecordingPauser implements Pauser {
 
     public final List<Duration> pauses = new ArrayList<>();
+    /** 기다리는 순간마다 실행한다 (재시도 중간 상태 검증용). null이면 아무것도 하지 않는다. */
+    public Runnable onPause;
 
     @Override
     public void pause(Duration duration) {
         pauses.add(duration);
+        if (onPause != null) {
+            onPause.run();
+        }
     }
 }

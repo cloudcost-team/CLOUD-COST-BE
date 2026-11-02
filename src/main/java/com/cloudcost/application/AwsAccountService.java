@@ -177,13 +177,23 @@ public class AwsAccountService {
      * 실패하면 원인을 연결에 기록하고 AwsAccessException을 그대로 던진다.
      */
     AwsAccount verifyRole(AwsAccount account, RoleArn roleArn) {
+        return verifyRole(account, roleArn, true);
+    }
+
+    /**
+     * @param recordFailure false면 실패해도 연결에 기록하지 않는다. 재시도 중간의 실패(막 만든 Role의 IAM 반영 지연)로
+     *                      연결이 ERROR가 되어 화면이 실패로 보이지 않게, 마지막 시도 결과만 남길 때 쓴다.
+     */
+    AwsAccount verifyRole(AwsAccount account, RoleArn roleArn, boolean recordFailure) {
         account.attachRole(roleArn, clock.instant());
         try (CustomerAwsSession session =
                  gateway.open(roleArn, account.externalId(), account.region(), sessionName(account))) {
             session.verifyAccess();
         } catch (AwsAccessException e) {
-            account.verificationFailed(e.code(), e.getMessage(), clock.instant());
-            accounts.save(account);
+            if (recordFailure) {
+                account.verificationFailed(e.code(), e.getMessage(), clock.instant());
+                accounts.save(account);
+            }
             throw e;
         }
         account.markVerified(clock.instant());

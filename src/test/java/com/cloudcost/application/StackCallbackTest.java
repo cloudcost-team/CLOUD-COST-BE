@@ -12,6 +12,8 @@ import com.cloudcost.domain.account.StackCallback.RequestType;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -87,6 +89,26 @@ class StackCallbackTest extends IntegrationTestBase {
     }
 
     @Test
+    void 재시도_중에는_연결을_ERROR로_바꾸지_않는다() throws Exception {
+        String id = start();
+        aws.assumeError = new AwsAccessException(Category.ASSUME_ROLE_DENIED, "AccessDenied", "sts:AssumeRole", "AccessDenied");
+        aws.assumeFailuresBeforeSuccess = 2;
+        List<String> seen = new ArrayList<>();
+        pauser.onPause = () -> {
+            try {
+                seen.add(body(getJson("/api/v1/aws/accounts/" + id)).at("/account/status").asText());
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        };
+
+        callbacks.handle(callback(RequestType.CREATE, id, setup.at("/account/externalId").asText(), ROLE_ARN));
+
+        assertThat(seen).as("연결 대기 화면이 중간 실패를 최종 실패로 보지 않게").containsExactly("PENDING", "PENDING");
+        getJson("/api/v1/aws/accounts/" + id).andExpect(jsonPath("$.account.status").value("ACTIVE"));
+    }
+
+    @Test
     void 끝내_검증하지_못하면_FAILED로_응답해_고객_스택이_롤백된다() throws Exception {
         String id = start();
         aws.assumeError = new AwsAccessException(Category.ASSUME_ROLE_DENIED, "AccessDenied", "sts:AssumeRole",
@@ -97,7 +119,45 @@ class StackCallbackTest extends IntegrationTestBase {
         assertThat(aws.assumeCalls).isEqualTo(6);
         assertThat(cfnResponses.last().success()).isFalse();
         assertThat(cfnResponses.last().reason()).contains("Role을 맡을 수 없습니다");
-        getJson("/api/v1/aws/accounts/" + id).andExpect(jsonPath("$.account.status").value("ERROR"));
+        getJson("/api/v1/aws/accounts/" + id)
+                .andExpect(jsonPath("$.account.status").value("ERROR"))
+                .andExpect(jsonPath("$.account.lastError.code").value("ASSUME_ROLE_DENIED"))
+                .andExpect(jsonPath("$.account.stackId").value(STACK_ID));
+    }
+
+    @Test
+    void 이미_연결된_AWS_계정과_리전이면_FAILED로_응답하고_대기_연결에_이유를_남긴다() throws Exception {
+        String first = start();
+        callbacks.handle(callback(RequestType.CREATE, first, setup.at("/account/externalId").asText(), ROLE_ARN));
+        assertThat(cfnResponses.last().success()).isTrue();
+        aws.assumeCalls = 0;
+
+        String second = start();
+        callbacks.handle(callback(RequestType.CREATE, second, setup.at("/account/externalId").asText(), ROLE_ARN));
+
+        assertThat(cfnResponses.last().success()).isFalse();
+        assertThat(cfnResponses.last().reason()).contains("이미 CloudCost Insight에 연결되어 있습니다");
+        assertThat(aws.assumeCalls).as("거절할 때는 AWS를 부르지 않는다").isZero();
+        getJson("/api/v1/aws/accounts/" + second)
+                .andExpect(jsonPath("$.account.status").value("ERROR"))
+                .andExpect(jsonPath("$.account.lastError.code").value("ALREADY_CONNECTED"))
+                .andExpect(jsonPath("$.account.lastError.message").value("이 AWS 계정과 리전은 이미 CloudCost Insight에 연결되어 있습니다."))
+                .andExpect(jsonPath("$.account.verifiedAt").doesNotExist());
+        getJson("/api/v1/aws/accounts/" + first).andExpect(jsonPath("$.account.status").value("ACTIVE"));
+    }
+
+    @Test
+    void 검증된_연결은_거절되는_신호를_받아도_그대로_둔다() throws Exception {
+        String id = start();
+        String externalId = setup.at("/account/externalId").asText();
+        callbacks.handle(callback(RequestType.CREATE, id, externalId, ROLE_ARN));
+
+        callbacks.handle(callback(RequestType.UPDATE, id, externalId, "arn:aws:iam::999999999999:role/CloudCostReadOnlyRole"));
+
+        assertThat(cfnResponses.last().success()).isFalse();
+        getJson("/api/v1/aws/accounts/" + id)
+                .andExpect(jsonPath("$.account.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.account.lastError").doesNotExist());
     }
 
     @Test
@@ -120,6 +180,7 @@ class StackCallbackTest extends IntegrationTestBase {
                 "arn:aws:iam::999999999999:role/CloudCostReadOnlyRole"));
         assertThat(cfnResponses.last().success()).isFalse();
         assertThat(aws.assumeCalls).isZero();
+        getJson("/api/v1/aws/accounts/" + id).andExpect(jsonPath("$.account.lastError.code").value("ACCOUNT_MISMATCH"));
     }
 
     @Test

@@ -147,6 +147,7 @@
     .sheet .actions { margin-top: 24px; }
     .tip { margin-top: 32px; padding: 20px; border-radius: 20px; background: var(--surface); box-shadow: var(--shadow); font-size: 15px; color: var(--sub); line-height: 1.6; }
     .tip b { color: var(--ink); }
+    .tip a { color: var(--accent); font-weight: 600; text-decoration: none; }
     .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(100px + env(safe-area-inset-bottom, 0px)); width: max-content; max-width: min(440px, calc(100% - 40px)); background: rgba(25, 31, 40, .92); color: #fff; padding: 14px 20px; border-radius: 14px; font-size: 15px; font-weight: 500; z-index: 30; text-align: center; }
     .dev { margin-top: 40px; font-size: 13px; color: var(--faint); }
     .dev textarea { width: 100%; height: 72px; margin-top: 6px; font: 12px/1.4 ui-monospace, Menlo, monospace; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); }
@@ -176,7 +177,7 @@
   let me = null;
   let accounts = [];
   let pollTimer = null;
-  const draft = { alias: '', region: 'ap-northeast-2', accountId: null, link: null };
+  const draft = { alias: '', region: 'ap-northeast-2', accountId: null, link: null, stackName: null };
   const DEV = new URLSearchParams(location.search).has('dev'); // 개발자만: login.html?dev → Swagger 토큰 표시
 
   const REGIONS = [
@@ -744,6 +745,7 @@
         const setup = await api('/api/v1/aws/accounts', { method: 'POST', body: JSON.stringify({ region: draft.region, alias: draft.alias }) });
         if (!setup.account || !setup.account.accountId) throw new ApiError(FALLBACK);
         draft.accountId = setup.account.accountId;
+        draft.stackName = setup.account.stackName;
         draft.link = setup.roleSetup && setup.roleSetup.quickCreateUrl;
         showConnectApprove();
       } catch (e) {
@@ -774,6 +776,7 @@
         el('div', { class: 'step' }, el('b', {}, '3'), el('span', {}, '이 화면으로 돌아오면 자동으로 연결돼요'))),
       el('p', { class: 'note', style: 'margin:14px 4px 0' }, '보기 권한만 드려요. 서버를 끄거나 바꿀 수 없어요.'),
       waiting,
+      Object.assign(stackEventsTip('2분이 넘게 걸리고 있어요.'), { id: 'waitHint', hidden: true }),
       cta(open));
     poll(draft.accountId);
   }
@@ -798,12 +801,15 @@
     pollTimer = setInterval(async () => {
       try {
         const a = (await api('/api/v1/aws/accounts/' + id)).account || {};
+        const elapsed = Date.now() - startedAt;
         if (a.status === 'ACTIVE') { stopPolling(); showConnected(a); }
-        else if (a.status === 'ERROR') { stopPolling(); showConnectFailed(); }
-        else if (Date.now() - startedAt > 10 * 60 * 1000) { stopPolling(); showConnectFailed(true); }
+        else if (a.status === 'ERROR') { stopPolling(); showConnectFailed(false, a); }
+        else if (elapsed > 10 * 60 * 1000) { stopPolling(); showConnectFailed(true, a); }
+        // 스택이 우리 신호 전에 AWS에서 실패하면 서버는 알 수 없다. 오래 걸리면 확인할 곳을 미리 보여 준다.
+        else if (elapsed > 2 * 60 * 1000 && $('waitHint')) $('waitHint').hidden = false;
       } catch (e) {
-        stopPolling();
-        showConnectFailed();
+        // 연결이 지워졌을 때만 끝낸다. 잠깐의 네트워크 오류는 다음 확인 때 다시 본다.
+        if (e.code === 'ACCOUNT_NOT_FOUND') { stopPolling(); showConnectFailed(false); }
       }
     }, 5000);
   }
@@ -816,38 +822,93 @@
       cta(el('button', { class: 'btn primary', onclick: () => showDetail(a) }, '비용 보기')));
   }
 
-  function showConnectFailed(timeout) {
+  /** 연결할 때 거절·실패한 이유 (서버 lastError.code: 거절 사유 또는 AWS 오류 분류 → [제목, 할 일]). 연결 후 수집 오류는 PROBLEMS를 쓴다. */
+  const CONNECT_PROBLEMS = {
+    ALREADY_CONNECTED: ['이미 연결된 AWS 계정이에요', '이 AWS 계정은 같은 지역으로 이미 연결되어 있어요.\n내 계정 목록에서 바로 비용을 볼 수 있어요.'],
+    ACCOUNT_MISMATCH: ['다른 AWS 계정에서 승인했어요', '이 연결을 시작한 AWS 계정으로 로그인해서\n처음부터 다시 연결해 주세요.'],
+    INVALID_ROLE_ARN: ['AWS에서 받은 정보가 올바르지 않아요', '처음부터 다시 연결해 주세요.'],
+    ASSUME_ROLE_DENIED: ['AWS 권한을 확인하지 못했어요', 'AWS에 만든 연결 설정으로 접속이 거부됐어요.\n처음부터 다시 연결해 주세요.'],
+    PERMISSION_DENIED: ['AWS가 서버 정보를 보여 주지 않아요', '연결 설정에 보기 권한이 빠져 있어요.\n처음부터 다시 연결해 주세요.'],
+    REGION_DISABLED: ['이 지역은 내 AWS에서 꺼져 있어요', '다른 지역을 골라 다시 연결해 주세요.'],
+    THROTTLED: ['AWS가 잠시 응답하지 않았어요', '1~2분 뒤에 처음부터 다시 해 주세요.'],
+    UNAVAILABLE: ['AWS가 잠시 응답하지 않았어요', '1~2분 뒤에 처음부터 다시 해 주세요.'],
+    BACKEND_CREDENTIALS_MISSING: ['저희 쪽에 문제가 생겼어요', '잠시 후 다시 시도해 주세요.'],
+    UNKNOWN: ['AWS 권한을 확인하지 못했어요', '처음부터 다시 연결해 주세요.']
+  };
+  const cfnConsole = region => `https://${region}.console.aws.amazon.com/cloudformation/home?region=${region}#/stacks`;
+
+  /** AWS에서 스택이 실패했는지 직접 확인하는 방법. 서버는 우리 신호 전의 실패 이유를 알 수 없다. */
+  function stackEventsTip(lead) {
+    return el('div', { class: 'tip' },
+      lead ? el('p', { style: 'margin:0 0 8px' }, lead) : null,
+      'AWS 콘솔 → CloudFormation → ', el('b', {}, draft.stackName || 'CloudCostInsight-로 시작하는'), ' 스택을 열어',
+      ' 상태가 빨간색(', el('b', {}, 'ROLLBACK'), ')이면 ', el('b', {}, '이벤트'), ' 탭의 빨간 줄에서 ', el('b', {}, '상태 사유'), '를 확인해 주세요.',
+      el('p', { style: 'margin:10px 0 0' }, el('a', { href: cfnConsole(draft.region), target: '_blank', rel: 'noopener' }, 'CloudFormation 열기')));
+  }
+
+  /**
+   * 연결 실패 화면. 서버가 거절했으면(a.lastError) 그 이유를, 신호가 오지 않았으면(timeout) AWS에서 확인할 곳을 보여 준다.
+   */
+  function showConnectFailed(timeout, a) {
     const id = draft.accountId;
     draft.accountId = null;
-    render(nav(),
-      el('div', { class: 'center' },
-        title(timeout ? '승인이 확인되지 않았어요' : '연결하지 못했어요'),
-        desc(timeout ? 'AWS에서 [스택 생성]을 눌렀는지 확인하고\n처음부터 다시 해 주세요.' : 'AWS에서 만든 스택을 삭제하고\n처음부터 다시 해 주세요.')),
-      cta(el('button', { class: 'btn primary', onclick: startConnect }, '처음부터 다시'),
-        el('button', { class: 'btn gray', onclick: showHome }, '홈으로')));
+    const error = a && a.lastError;
+    const code = error && error.code;
+    let head, text, extra = null;
+    let buttons = [el('button', { class: 'btn primary', onclick: startConnect }, '처음부터 다시'),
+      el('button', { class: 'btn gray', onclick: showHome }, '홈으로')];
+    if (timeout) {
+      head = 'AWS에서 연결 신호가 오지 않았어요';
+      text = '[스택 생성]을 누르지 않았거나,\nAWS에서 스택을 만들다 실패했을 수 있어요.';
+      extra = stackEventsTip();
+    } else if (code) {
+      const known = CONNECT_PROBLEMS[code];
+      head = known ? known[0] : '연결하지 못했어요';
+      text = known ? known[1] : error.message;
+      extra = el('p', { class: 'note', style: 'text-align:center' }, 'AWS에 남은 실패한 스택' + (draft.stackName ? `(${draft.stackName})` : '') + '은 지워도 돼요.');
+      if (code === 'ALREADY_CONNECTED') {
+        buttons = [el('button', { class: 'btn primary', onclick: showHome }, '내 계정 보기'),
+          el('button', { class: 'btn gray', onclick: startConnect }, '다른 계정 연결하기')];
+      }
+    } else {
+      head = '연결하지 못했어요';
+      text = '연결 정보가 사라졌어요.\n처음부터 다시 해 주세요.';
+    }
+    render(nav(), el('div', { class: 'center' }, title(head), desc(text)), extra, cta(...buttons));
     $('app').querySelector('.desc').style.whiteSpace = 'pre-line';
     if (id) api('/api/v1/aws/accounts/' + id, { method: 'DELETE' }).catch(() => {});
   }
 
   // ---------- 시작 ----------
+  let gisReady = false; // google.accounts.id.initialize()는 페이지에서 한 번만 부른다 (여러 번 부르면 GSI가 경고한다)
+  let authConfig = null;
+
+  /** 로그인 화면. 처음에는 설정을 받아 Google을 초기화하고, 다시 올 때(체험 모드에서 뒤로)는 버튼만 다시 그린다. */
   async function init() {
+    // 기다리는 사이 다른 화면(체험 모드)으로 가면 문구 칸이 없다
+    const loginMsg = text => { const m = $('loginMsg'); if (m) m.textContent = text; };
     showLogin('불러오는 중…');
-    let config;
-    try {
-      config = await (await fetch('/api/v1/auth/config')).json();
-    } catch (e) {
-      $('loginMsg').textContent = '서버에 연결하지 못했어요. 잠시 후 새로고침해 주세요.';
-      return;
+    if (!authConfig) {
+      try {
+        authConfig = await (await fetch('/api/v1/auth/config')).json();
+      } catch (e) {
+        loginMsg('서버에 연결하지 못했어요. 잠시 후 새로고침해 주세요.');
+        return;
+      }
     }
-    if (!config || !config.googleClientId) {
-      $('loginMsg').textContent = '지금은 로그인할 수 없어요.';
+    if (!authConfig || !authConfig.googleClientId) {
+      loginMsg('지금은 로그인할 수 없어요.');
       return;
     }
     const start = () => {
       if (!window.google || !google.accounts) { setTimeout(start, 100); return; }
-      google.accounts.id.initialize({ client_id: config.googleClientId, callback: onCredential });
+      if (!$('gbtn')) return; // 기다리는 사이 다른 화면으로 갔다
+      if (!gisReady) {
+        google.accounts.id.initialize({ client_id: authConfig.googleClientId, callback: onCredential });
+        gisReady = true;
+      }
       google.accounts.id.renderButton($('gbtn'), { theme: 'filled_black', size: 'large', shape: 'pill', text: 'continue_with', locale: 'ko', width: 320 });
-      $('loginMsg').textContent = 'AWS 비밀번호는 받지 않아요. 보기만 해요.';
+      loginMsg('AWS 비밀번호는 받지 않아요. 보기만 해요.');
     };
     start();
   }

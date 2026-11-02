@@ -48,6 +48,20 @@
 사용자가 `quickCreateUrl`로 스택을 만들면 서버가 SNS→SQS 신호를 받아 검증하고 `status`가 `ACTIVE`가 된다 (1~2분).
 스택을 지우면 `DISCONNECTED`. 서버 설정이 없으면 `quickCreateUrl: null` + `warnings`.
 
+**연결이 실패했을 때** (스택 신호를 받은 뒤 서버가 거절하거나 검증에 실패하면): 연결은 `ERROR`, `lastError`에 이유가 남고, 고객 스택은 롤백된다.
+연결 대기 화면은 `status`를 확인하다가 `ERROR`가 되면 바로 `lastError`로 이유를 보여 준다.
+
+| `lastError.code` | 뜻 |
+|---|---|
+| `ALREADY_CONNECTED` | 같은 사용자가 이 AWS 계정·리전을 이미 연결해 두었다 (기존 연결로 안내) |
+| `ACCOUNT_MISMATCH` | Role이 스택과 다른 AWS 계정에 있거나, 이 연결이 이미 다른 AWS 계정에 연결되어 있다 |
+| `INVALID_ROLE_ARN` | 신호의 Role ARN 형식이 올바르지 않다 |
+| `ASSUME_ROLE_DENIED` 등 AWS 오류 분류 | 재시도(최대 6번, 10초 간격)를 마치고도 AssumeRole 검증에 실패했다. 재시도 중에는 `PENDING`을 유지한다 |
+
+- 이미 검증된 연결은 거절되는 신호를 받아도 상태를 바꾸지 않는다 (신호는 누구나 보낼 수 있다).
+- 스택이 우리 신호 전에 AWS에서 실패하면(Role 이름 중복, IAM 권한 없음 등) 서버는 알 수 없어 `PENDING`으로 남는다.
+  화면은 2분이 지나면 `stackName` 스택의 CloudFormation **이벤트** 탭에서 상태 사유를 확인하라고 안내하고, 10분이 지나면 실패 화면으로 바꾼다.
+
 ### `GET /aws/cloudformation-template`
 고객용 템플릿 YAML (관리자가 S3에 올리는 원본).
 
