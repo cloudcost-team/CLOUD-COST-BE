@@ -142,6 +142,18 @@ public final class AwsAccount {
     }
 
     /**
+     * 스택 신호를 받았지만 이 연결로 받아들일 수 없다 (이미 연결된 AWS 계정·다른 계정의 Role 등).
+     * 검증된 적 없는 연결만 ERROR로 바꾸고 사유를 남겨, 연결 대기 화면이 바로 이유를 보여 줄 수 있게 한다.
+     * 검증된 연결은 바꾸지 않는다: 신호는 누구나 보낼 수 있으므로 잘 쓰고 있는 연결을 깨뜨리지 않는다.
+     */
+    public void connectionRejected(String code, String message, Instant now) {
+        if (verifiedAt != null) {
+            return;
+        }
+        verificationFailed(code, message, now);
+    }
+
+    /**
      * 수집 중 AWS 호출 실패.
      *
      * @param connectionBroken true면 사용자가 고쳐야 하는 오류(Role 거부·권한 없음·리전 비활성)라 ERROR가 된다.

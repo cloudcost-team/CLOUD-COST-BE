@@ -107,6 +107,7 @@ public abstract class IntegrationTestBase {
         cfnResponses.responses.clear();
         exchangeRates.reset();
         pauser.pauses.clear();
+        pauser.onPause = null;
         clock.set(NOW);
         owner = "user-" + UUID.randomUUID().toString().substring(0, 8);
     }
