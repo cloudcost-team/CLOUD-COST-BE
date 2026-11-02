@@ -109,7 +109,8 @@ public class DemoUsageService {
             fleet.hourlySamples(range.startInclusive(zone), range.endExclusive(zone)), zone, range.from(), range.to());
         Map<String, InstancePrice> prices = prices(fleet);
         CostReport<K> report = CostEstimator.report(grouping.apply(daily), prices);
-        return new UsageCostView<>(ACCOUNT_ID, range, report, tracked(fleet, now), prices, FRESHNESS, notes());
+        return new UsageCostView<>(
+            ACCOUNT_ID, range, report, tracked(fleet, now), prices, setup.from(), FRESHNESS, notes());
     }
 
     private DemoFleet fleet(DemoSetup setup, Instant now) {
