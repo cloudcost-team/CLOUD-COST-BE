@@ -2,7 +2,6 @@ package com.cloudcost.application;
 
 import com.cloudcost.application.port.Ec2InstanceRepository;
 import com.cloudcost.application.port.Ec2UsageRepository;
-import com.cloudcost.domain.account.AwsAccount;
 import com.cloudcost.domain.cost.CostEstimator;
 import com.cloudcost.domain.cost.CostEstimator.CostReport;
 import com.cloudcost.domain.cost.CostNotes;
@@ -64,14 +63,14 @@ public class Ec2UsageQueryService {
     public record InstanceRow(TrackedInstance instance, InstancePrice price, CurrentRun currentRun) {
     }
 
-    public record InstancesView(AwsAccount account, List<InstanceRow> rows, Freshness freshness, Instant asOf) {
+    public record InstancesView(UUID accountId, List<InstanceRow> rows, Freshness freshness, Instant asOf) {
     }
 
     /**
      * @param instances instanceId → 인스턴스 (이름·타입 표시용)
      */
     public record UsageCostView<K>(
-        AwsAccount account,
+        UUID accountId,
         DateRange range,
         CostReport<K> report,
         Map<String, TrackedInstance> instances,
@@ -81,7 +80,7 @@ public class Ec2UsageQueryService {
     }
 
     public InstancesView instances(String ownerId, UUID accountId) {
-        AwsAccount account = accountService.getActive(ownerId, accountId);
+        accountService.getActive(ownerId, accountId);
         Freshness freshness = refresher.refreshIfStale(ownerId, accountId);
         Instant now = clock.instant();
         List<TrackedInstance> tracked = sorted(instances.findAllByOwnerIdAndAccountId(ownerId, accountId));
@@ -90,7 +89,7 @@ public class Ec2UsageQueryService {
             .map(t -> new InstanceRow(
                 t, priced.byInstanceId().get(t.instanceId()), CurrentRun.of(t.info(), now).orElse(null)))
             .toList();
-        return new InstancesView(account, rows, freshness.withWarnings(priced.warnings()), now);
+        return new InstancesView(accountId, rows, freshness.withWarnings(priced.warnings()), now);
     }
 
     /**
@@ -131,7 +130,7 @@ public class Ec2UsageQueryService {
         UUID accountId,
         DateRange range,
         Function<Map<LocalDate, Map<String, Long>>, Map<K, Map<String, Long>>> grouping) {
-        AwsAccount account = accountService.getActive(ownerId, accountId);
+        accountService.getActive(ownerId, accountId);
         Freshness freshness = refresher.refreshIfStale(ownerId, accountId);
         ZoneId zone = settings.zone();
 
@@ -147,7 +146,7 @@ public class Ec2UsageQueryService {
         CostReport<K> report = CostEstimator.report(grouping.apply(daily), priced.byInstanceId());
 
         return new UsageCostView<>(
-            account, range, report, tracked, priced.byInstanceId(),
+            accountId, range, report, tracked, priced.byInstanceId(),
             freshness.withWarnings(priced.warnings()), notes(report));
     }
 
@@ -169,7 +168,8 @@ public class Ec2UsageQueryService {
         return LocalDate.ofInstant(clock.instant(), settings.zone());
     }
 
-    private static List<TrackedInstance> sorted(List<TrackedInstance> list) {
+    /** 남아 있는 인스턴스 → 실행 중 → instanceId 순 */
+    static List<TrackedInstance> sorted(List<TrackedInstance> list) {
         return list.stream()
             .sorted(Comparator.comparing(TrackedInstance::present).reversed()
                 .thenComparing(t -> t.info().isRunning() ? 0 : 1)

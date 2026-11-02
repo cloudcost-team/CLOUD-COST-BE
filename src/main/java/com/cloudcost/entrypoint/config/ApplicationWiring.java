@@ -4,6 +4,7 @@ import com.cloudcost.application.AuthService;
 import com.cloudcost.application.AwsAccountService;
 import com.cloudcost.application.CurrencyService;
 import com.cloudcost.application.Ec2DataRefresher;
+import com.cloudcost.application.DemoUsageService;
 import com.cloudcost.application.Ec2UsageQueryService;
 import com.cloudcost.application.Pauser;
 import com.cloudcost.application.PriceService;
@@ -148,5 +149,12 @@ class ApplicationWiring {
             Clock clock,
             UsageSettings settings) {
         return new Ec2UsageQueryService(accounts, refresher, instances, usage, prices, clock, settings);
+    }
+
+    @Bean
+    DemoUsageService demoUsageService(Clock clock, UsageSettings settings, CloudCostProperties properties) {
+        CloudCostProperties.Demo demo = properties.demo();
+        return new DemoUsageService(
+                clock, settings, new DemoUsageService.DemoSettings(demo.username(), demo.password()));
     }
 }

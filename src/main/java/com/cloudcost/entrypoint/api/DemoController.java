@@ -1,0 +1,90 @@
+package com.cloudcost.entrypoint.api;
+
+import com.cloudcost.application.CurrencyService;
+import com.cloudcost.application.DemoUsageService;
+import com.cloudcost.application.UsageSettings;
+import com.cloudcost.domain.cost.DisplayCurrency.Currency;
+import com.cloudcost.domain.demo.DemoFleet;
+import com.cloudcost.entrypoint.api.dto.DemoDtos.CatalogResponse;
+import com.cloudcost.entrypoint.api.dto.DemoDtos.DemoAccountResponse;
+import com.cloudcost.entrypoint.api.dto.DemoDtos.LoginRequest;
+import com.cloudcost.entrypoint.api.dto.DemoDtos.SetupRequest;
+import com.cloudcost.entrypoint.api.dto.UsageDtos;
+import com.cloudcost.entrypoint.api.dto.UsageDtos.CostSummaryResponse;
+import com.cloudcost.entrypoint.api.dto.UsageDtos.DailyCostResponse;
+import com.cloudcost.entrypoint.api.dto.UsageDtos.InstancesResponse;
+import com.cloudcost.entrypoint.api.dto.UsageDtos.MonthlyCostResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/v1/demo")
+@Tag(name = "3. 체험 모드 (실제 계정 없이)",
+    description = "간이 로그인(cloudcost / 1234) 후, 서버 구성과 기간을 정하면 실제 연결 계정과 같은 형식으로 비용을 계산한다. "
+        + "Google 로그인이 필요 없고 AWS·DB를 부르지 않는다. 응답의 dataSource는 \"demo\"다.")
+class DemoController {
+
+    private final DemoUsageService demo;
+    private final CurrencyService currencies;
+    private final String timezone;
+
+    DemoController(DemoUsageService demo, CurrencyService currencies, UsageSettings settings) {
+        this.demo = demo;
+        this.currencies = currencies;
+        this.timezone = settings.zone().getId();
+    }
+
+    @PostMapping("/login")
+    @Operation(summary = "체험용 간이 로그인", description = "실제 AWS 로그인이 아니다. 아이디·비밀번호가 맞으면 체험용 계정 정보를 준다.")
+    DemoAccountResponse login(@Valid @RequestBody LoginRequest request) {
+        return DemoAccountResponse.of(demo.login(request.username(), request.password()));
+    }
+
+    @GetMapping("/catalog")
+    @Operation(summary = "고를 수 있는 인스턴스 타입·단가·사용 패턴")
+    CatalogResponse catalog() {
+        return CatalogResponse.of(DemoFleet.PRICE_NOTE);
+    }
+
+    @PostMapping("/instances")
+    @Operation(summary = "설정한 구성의 EC2 인스턴스 목록 (실제: GET /aws/accounts/{id}/instances)")
+    InstancesResponse instances(
+            @Valid @RequestBody SetupRequest setup,
+            @Parameter(description = "금액 통화: KRW(기본, 원화 환산) 또는 USD")
+                    @RequestParam(defaultValue = "KRW") Currency currency) {
+        return InstancesResponse.of(
+                demo.instances(setup.toDomain()), currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
+    }
+
+    @PostMapping("/costs")
+    @Operation(summary = "설정한 기간 합계 (실제: GET /aws/accounts/{id}/costs)")
+    CostSummaryResponse costs(
+            @Valid @RequestBody SetupRequest setup, @RequestParam(defaultValue = "KRW") Currency currency) {
+        return CostSummaryResponse.of(
+                demo.summary(setup.toDomain()), timezone, currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
+    }
+
+    @PostMapping("/costs/daily")
+    @Operation(summary = "설정한 기간의 일별 (실제: GET /aws/accounts/{id}/costs/daily)")
+    DailyCostResponse daily(
+            @Valid @RequestBody SetupRequest setup, @RequestParam(defaultValue = "KRW") Currency currency) {
+        return DailyCostResponse.of(
+                demo.daily(setup.toDomain()), timezone, currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
+    }
+
+    @PostMapping("/costs/monthly")
+    @Operation(summary = "설정한 기간의 월별 (실제: GET /aws/accounts/{id}/costs/monthly)")
+    MonthlyCostResponse monthly(
+            @Valid @RequestBody SetupRequest setup, @RequestParam(defaultValue = "KRW") Currency currency) {
+        return MonthlyCostResponse.of(
+                demo.monthly(setup.toDomain()), timezone, currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
+    }
+}

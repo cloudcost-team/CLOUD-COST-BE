@@ -14,7 +14,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  */
 @ConfigurationProperties(prefix = "cci")
 public record CloudCostProperties(
-        @DefaultValue("local") String appEnv, @DefaultValue Auth auth, @DefaultValue Aws aws, @DefaultValue Usage usage) {
+        @DefaultValue("local") String appEnv, @DefaultValue Auth auth, @DefaultValue Aws aws, @DefaultValue Usage usage,
+        @DefaultValue Demo demo) {
 
     /**
      * @param mode dev: Bearer 토큰이 없으면 X-Owner-Id 헤더로 사용자 구분 (APP_ENV=local 전용) / google: Bearer 토큰 필수
@@ -56,6 +57,11 @@ public record CloudCostProperties(
             @DefaultValue("Asia/Seoul") ZoneId zone,
             @DefaultValue("7d") Duration priceTtl,
             @DefaultValue("1d") Duration missingPriceTtl) {}
+
+    /**
+     * 체험 모드 간이 로그인 (실제 AWS 계정이 아님). 화면에 안내하는 공개 값이다.
+     */
+    public record Demo(@DefaultValue("cloudcost") String username, @DefaultValue("1234") String password) {}
 
     public ConnectionSettings connectionSettings() {
         return new ConnectionSettings(
