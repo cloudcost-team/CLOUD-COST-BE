@@ -117,7 +117,9 @@ chmod 600 ~/cloudcost/.env
 1. Connections → **Linux Server** 통합 → *Install* (대시보드만 설치. Alloy 설치 안내는 건너뛴다) → Dashboards의 *Linux node / overview*에서 `cloudcost-server` 선택
 2. Connections → **PostgreSQL** 통합 → *Install* → *PostgreSQL overview*
 3. Dashboards → New → Import → ID `4701` (JVM Micrometer) 또는 `19004` (Spring Boot 3.x Statistics), 데이터 소스는 `grafanacloud-…-prom`, `application = cloudcost-insight`
-4. 알림(Alerting → Alert rules) 추천: `up{job="cloudcost-app"} == 0` 2분 / CPU 90% 10분 / 디스크 여유 15% 미만 / 메모리 여유 10% 미만
+4. (한눈에 보기) Dashboards → New → Import → `deploy/grafana/cloudcost-dashboard.json` 업로드 → **CloudCost 운영 대시보드**
+   (앱·DB 상태, CPU·메모리·디스크, API 요청 수·응답 시간·오류, JVM 힙·DB 커넥션을 한 화면에. 데이터 소스는 `grafanacloud-*-prom`을 자동으로 고른다)
+5. 알림(Alerting → Alert rules) 추천: `up{job="cloudcost-app"} == 0` 2분 / CPU 90% 10분 / 디스크 여유 15% 미만 / 메모리 여유 10% 미만
 
 무료 플랜(활성 시계열 1만 개) 안에 들어간다. 끄려면 `.env`에서 `COMPOSE_PROFILES` 줄을 지우고 `docker compose --profile monitoring stop alloy`.
 
