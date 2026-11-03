@@ -10,3 +10,4 @@ out/
 deploy/app.jar
 deploy/.env
 *.pem
+.omc/

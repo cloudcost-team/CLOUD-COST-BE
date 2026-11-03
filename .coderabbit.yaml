@@ -1,0 +1,168 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit 설정 — CloudCost Insight BE
+# 문서: https://docs.coderabbit.ai/reference/configuration
+
+language: ko-KR
+tone_instructions: "간결한 한국어로, 근거(파일·줄)와 함께 리뷰한다. 보안 규칙 위반은 가장 먼저 지적한다."
+early_access: false
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_placeholder: "@coderabbitai summary"
+  review_status: true
+  collapse_walkthrough: true
+  sequence_diagrams: true
+  changed_files_summary: true
+  poem: false
+  auto_title_placeholder: "@coderabbitai"
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - dev
+      - main
+    ignore_title_keywords:
+      - "WIP"
+      - "[skip review]"
+
+  path_filters:
+    - "!**/build/**"
+    - "!**/.gradle/**"
+    - "!.omc/**"
+    - "!gradle/wrapper/**"
+    - "!gradlew"
+    - "!gradlew.bat"
+    - "!assets/**"
+    - "!**/*.png"
+    - "!**/*.jpg"
+    - "!**/*.svg"
+
+  path_instructions:
+    - path: "**/*"
+      instructions: |
+        CloudCost Insight는 READ ONLY 서비스다. 아래 절대 규칙 위반은 항상 최우선으로 지적한다.
+        - 사용자에게 AWS Access Key / Secret Key를 받는 화면·API·DB 컬럼을 만들지 않는다.
+        - AssumeRole 임시 자격증명을 DB·캐시·파일·SQS·로그·API 응답·예외 메시지에 넣지 않는다.
+        - 실제 AWS 계정 ID·ARN을 코드·문서·테스트에 쓰지 않는다. 예시는 123456789012(고객), 111122223333(우리)만 허용.
+        - 비밀값(DB 비밀번호, Webhook, Cognito/Google OAuth 설정, 백엔드 Role ARN)은 하드코딩하지 않고 환경변수/Parameter Store를 쓴다.
+
+    - path: "src/main/java/com/cloudcost/domain/**"
+      instructions: |
+        domain은 JDK 표준 라이브러리만 쓴다. AWS SDK·Spring·JPA(jakarta.persistence)·Jackson import가 있으면 지적한다.
+        금액은 BigDecimal, 통화 USD, 날짜는 UTC, 월 환산은 730시간 기준인지 확인한다.
+        단가를 못 구하면 0이 아니라 null + 사유를 반환해야 한다.
+
+    - path: "src/main/java/com/cloudcost/application/**"
+      instructions: |
+        application은 포트(interface)에만 의존한다. AWS SDK·Spring Web·JPA import가 있으면 지적한다(@Service, @Transactional만 허용).
+        사용자 데이터 조회·수정은 항상 owner_id(JWT sub) 조건이 걸려야 한다.
+
+    - path: "src/main/java/com/cloudcost/adapter/awscustomer/**"
+      instructions: |
+        고객 계정에는 ec2:DescribeInstances, cloudwatch:GetMetricStatistics 두 액션만 호출할 수 있다.
+        그 외 호출(특히 create/delete/modify/put/update/stop/terminate/release/detach, GetMetricData, Cost Explorer,
+        Compute Optimizer, ELB, DescribeInstanceTypes)은 반드시 지적한다.
+        클라이언트는 동기 클라이언트만 쓰고 연결마다 만들어 try-with-resources로 닫는지 확인한다.
+        임시 자격증명은 StsAssumeRoleCredentialsProvider 안에서만 다뤄야 한다.
+        adapter/awsinternal을 import하면 지적한다.
+        GetMetricStatistics는 period 3600, 30일 단위 분할, 최대 455일 범위인지 확인한다.
+
+    - path: "src/main/java/com/cloudcost/adapter/awsinternal/**"
+      instructions: |
+        우리 계정 호출 전용(Price List는 us-east-1, DescribeInstanceTypes, SQS, CloudFormation 응답).
+        adapter/awscustomer를 import하면 지적한다.
+
+    - path: "src/main/java/com/cloudcost/adapter/persistence/**"
+      instructions: |
+        Repository 메서드는 첫 인자로 ownerId를 받아야 한다. id만으로 조회하는 메서드가 있으면 지적한다.
+        고객 인스턴스 데이터는 ID·타입·상태·LaunchTime·AZ·OS(platformDetails)·테넌시·수명주기·Name 태그만 저장한다.
+        IP, 키페어, 보안그룹, 태그 전체, 사용자 데이터를 저장하는 필드가 있으면 지적한다.
+
+    - path: "src/main/java/com/cloudcost/entrypoint/**"
+      instructions: |
+        남의 리소스 요청은 404로 응답해야 한다. 응답에 data_source(aws|csv|demo)가 들어가는지,
+        비용 응답에 cost_basis(estimated_on_demand)가 있는지 확인한다.
+        체험 모드(/api/v1/demo/*)가 aws_accounts에 저장하거나 실제 연결 경로와 섞이면 지적한다.
+        "연결 성공"을 Mock으로 만드는 코드가 있으면 지적한다.
+        로그에 자격증명·JWT·Authorization 헤더가 남는지 확인한다.
+        사용자에게 보이는 오류 문구는 원인이 드러나는 한국어여야 한다.
+        DTO는 record, 의존성은 생성자 주입만 사용한다(필드 @Autowired 금지).
+
+    - path: "src/main/resources/cloudformation/**"
+      instructions: |
+        고객 Role 정책은 ec2:DescribeInstances, cloudwatch:GetMetricStatistics만 허용해야 한다.
+        Action 와일드카드(ec2:*, Describe*)나 쓰기 권한이 있으면 지적한다.
+        aws:RequestedRegion 조건으로 리전을 제한하는지, Trust Policy가 우리 백엔드 Role만 Principal로 두고
+        sts:ExternalId 조건을 거는지 확인한다. scripts/customer-role-allowlist.txt와 일치해야 한다.
+
+    - path: "src/main/resources/db/migration/**"
+      instructions: |
+        Flyway 파일명은 V{n}__설명.sql 형식이어야 한다. 이미 존재하던 마이그레이션 파일을 수정하면 지적한다.
+        금액은 NUMERIC, 사용자 데이터 테이블에는 owner_id가 있어야 한다.
+        테이블 변경 시 docs/DATA_MODEL.md도 같이 바뀌었는지 확인한다.
+
+    - path: "src/main/resources/**/*.{yml,yaml,xml}"
+      instructions: |
+        software.amazon.awssdk.request, org.apache.http.wire, software.amazon.awssdk.auth 로거를 DEBUG 이하로 켜면 지적한다.
+        비밀값이 하드코딩되어 있으면 지적한다.
+
+    - path: "src/test/**"
+      instructions: |
+        단위 테스트는 실제 AWS를 호출하지 않아야 한다(fakes 또는 Mockito 사용).
+        test.skip/@Disabled, 비어 있는 테스트, 실제 계정 ID·ARN 사용을 지적한다.
+        owner 격리(남의 리소스 → 404) 테스트가 빠졌으면 제안한다.
+
+    - path: "scripts/customer-role-allowlist.txt"
+      instructions: |
+        허용 목록 변경은 사람 승인과 ADR(docs/decisions)이 먼저다. ADR 없이 액션이 추가되면 지적하고,
+        CLAUDE.md §10 정책과 일치하는지 확인한다.
+
+    - path: "docs/**"
+      instructions: |
+        문서는 한국어로 작성한다. 실제 계정 ID·ARN이 있으면 지적한다.
+        ADR(docs/decisions/NNN-제목.md)은 배경/결정/결과 구조, 40줄 이내인지 확인한다.
+
+    - path: ".github/workflows/**"
+      instructions: |
+        시크릿은 secrets.* 로만 참조하고 로그에 출력하지 않는지 확인한다. 가능하면 OIDC로 AWS 인증하는지 확인한다.
+
+  tools:
+    gitleaks:
+      enabled: true
+    actionlint:
+      enabled: true
+    yamllint:
+      enabled: true
+    markdownlint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    hadolint:
+      enabled: true
+    checkov:
+      enabled: true
+    pmd:
+      enabled: true
+    semgrep:
+      enabled: true
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  opt_out: false
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "CLAUDE.md"
+      - "docs/SECURITY.md"
+      - "docs/ARCHITECTURE.md"
+  learnings:
+    scope: local
+  issues:
+    scope: local
+  pull_requests:
+    scope: local
