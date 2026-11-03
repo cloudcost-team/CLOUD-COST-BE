@@ -118,7 +118,7 @@ reviews:
     - path: "scripts/customer-role-allowlist.txt"
       instructions: |
         허용 목록 변경은 사람 승인과 ADR(docs/decisions)이 먼저다. ADR 없이 액션이 추가되면 지적하고,
-        CLAUDE.md §10 정책과 일치하는지 확인한다.
+        .claude/CLAUDE.md §10 정책과 일치하는지 확인한다.
 
     - path: "docs/**"
       instructions: |
@@ -157,7 +157,7 @@ knowledge_base:
   code_guidelines:
     enabled: true
     filePatterns:
-      - "CLAUDE.md"
+      - ".claude/CLAUDE.md"
       - "docs/SECURITY.md"
       - "docs/ARCHITECTURE.md"
   learnings:

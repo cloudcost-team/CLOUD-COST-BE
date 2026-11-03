@@ -1,5 +1,5 @@
 # 고객 계정 Read Only Role에 허용된 IAM 액션 (한 줄에 하나)
-# 원본이다. domain.account.CustomerRolePolicy.ALLOWED_ACTIONS, docs/SECURITY.md, CLAUDE.md §10과 항상 같아야 한다.
+# 원본이다. domain.account.CustomerRolePolicy.ALLOWED_ACTIONS, docs/SECURITY.md, .claude/CLAUDE.md §10과 항상 같아야 한다.
 # 와일드카드 금지. 바꾸려면 사람 승인 + ADR이 먼저다.
 ec2:DescribeInstances
 cloudwatch:GetMetricStatistics
