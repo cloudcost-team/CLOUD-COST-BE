@@ -110,4 +110,18 @@ class WasteApiTest extends IntegrationTestBase {
         assertThat(body.at("/items").size()).isZero();
         assertThat(body.at("/totalMonthlySavings").decimalValue()).isEqualByComparingTo("0");
     }
+
+    @Test
+    void 오래전에_꺼_둔_서버는_절감액에_넣지_않고_이유를_알려_준다() throws Exception {
+        aws.instances.add(Fixtures.instance("i-old", "m5.large", "stopped", Instant.parse("2026-09-01T00:00:00Z")));
+        aws.addCpuHours("i-old", WINDOW_START, 5 * 24, 3, 5);   // 9/24~9/29만 켜짐, 그 뒤로 중지
+        server("i-web", "t3.medium", 50, 90, 50 * MB);
+
+        JsonNode body = waste("USD");
+
+        assertThat(body.at("/status").asText()).isEqualTo("NONE_FOUND");
+        assertThat(body.at("/totalMonthlySavings").decimalValue()).isEqualByComparingTo("0");
+        assertThat(body.at("/skipped/0/instanceId").asText()).isEqualTo("i-old");
+        assertThat(body.at("/skipped/0/reason").asText()).contains("지금 중지돼 있고");
+    }
 }

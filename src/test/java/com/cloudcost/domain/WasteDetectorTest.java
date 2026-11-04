@@ -144,4 +144,26 @@ class WasteDetectorTest {
         assertThat(result.findings()).extracting(f -> f.instance().instanceId()).containsExactly("i-big", "i-small");
         assertThat(result.totalMonthlySavingsUsd()).isEqualByComparingTo("115.34");
     }
+
+    private static Candidate stoppedCandidate(String id, Instant lastUsedHour) {
+        Ec2Instance stopped = new Ec2Instance(id, id + "-name", "m5.large", "ap-northeast-2", "ap-northeast-2a", "stopped",
+                Instant.parse("2026-09-01T00:00:00Z"), "Linux/UNIX", "default", false, false);
+        return new Candidate(stopped, stats(id, 200, "3", "4", "5", 10_000_000_000L), 200L * 60,
+                new BigDecimal("0.118"), new BigDecimal("0.052"), lastUsedHour);
+    }
+
+    @Test
+    void 지금_중지돼_있고_3일_동안_안_켜진_서버는_판단하지_않는다() {
+        Instant windowEnd = Instant.parse("2026-10-08T03:00:00Z");
+
+        Result result = WasteDetector.detect(List.of(
+                stoppedCandidate("i-old", Instant.parse("2026-10-01T00:00:00Z")),
+                stoppedCandidate("i-night", Instant.parse("2026-10-07T10:00:00Z"))), windowEnd);
+
+        assertThat(result.skipped()).extracting(WasteDetector.Skipped::instanceId).containsExactly("i-old");
+        assertThat(result.skipped().getFirst().reason()).contains("최근 3일 동안 켜진 적이 없어");
+        assertThat(result.findings()).as("밤에 꺼 둔 서버는 지금 중지여도 판단한다")
+                .extracting(f -> f.instance().instanceId()).containsExactly("i-night");
+        assertThat(result.judgedCount()).isEqualTo(1);
+    }
 }
