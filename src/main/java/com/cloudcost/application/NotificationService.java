@@ -11,7 +11,6 @@ import com.cloudcost.application.port.NotificationRepository;
 import com.cloudcost.application.port.NotificationRepository.Cursor;
 import com.cloudcost.domain.DomainValidationException;
 import com.cloudcost.domain.account.AwsAccount;
-import com.cloudcost.domain.account.RoleArn;
 import com.cloudcost.domain.alert.AlertRules;
 import com.cloudcost.domain.alert.AlertRules.Candidate;
 import com.cloudcost.domain.alert.AlertSettings;
@@ -224,14 +223,14 @@ public class NotificationService {
         return AlertRules.weeklySummary(account.id(), lastMonday, lastWeek, previous, display, current);
     }
 
-    /** 사용자가 붙인 이름, 없으면 "AWS 계정 1234****9012", 그것도 없으면 "AWS 연결" */
+    /** 연결 이름 없을 때 (기능명세서 F02 규칙과 같은 문구) */
+    public static final String UNNAMED = "이름 없는 연결";
+
+    /** 사용자가 붙인 이름, 없으면 "이름 없는 연결" */
     static String connectionName(AwsAccount account) {
         if (account.alias() != null && !account.alias().isBlank()) {
             return account.alias();
         }
-        if (account.roleArn() != null) {
-            return "AWS 계정 " + RoleArn.maskAccountId(account.roleArn().accountId());
-        }
-        return "AWS 연결";
+        return UNNAMED;
     }
 }
