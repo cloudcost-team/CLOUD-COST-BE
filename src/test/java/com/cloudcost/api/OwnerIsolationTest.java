@@ -50,6 +50,21 @@ class OwnerIsolationTest extends IntegrationTestBase {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("ACCOUNT_NOT_FOUND"));
 
+        mvc.perform(as(userB, put("/api/v1/settings/alerts").contentType(MediaType.APPLICATION_JSON).content("""
+                        {"budget80":true,"budget100":true,"budget120":true,"spike":true,"weeklySummary":true,
+                         "budgets":[{"accountId":"%s","amount":1,"currency":"USD"}]}
+                        """.formatted(accountOfA))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("ACCOUNT_NOT_FOUND"));
+        mvc.perform(as(userB, get("/api/v1/settings/alerts")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.budgets.length()").value(0));
+        mvc.perform(as(userB, get("/api/v1/notifications")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(0));
+        mvc.perform(as(userB, post("/api/v1/notifications/" + java.util.UUID.randomUUID() + "/read")))
+                .andExpect(status().isNotFound());
+
         mvc.perform(as(userB, get("/api/v1/aws/accounts")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));

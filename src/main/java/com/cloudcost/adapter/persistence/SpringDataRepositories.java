@@ -93,6 +93,43 @@ final class SpringDataRepositories {
         int deleteByOwnerIdAndAccountId(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);
     }
 
+    interface AlertSettingsJpa extends Repository<AlertSettingsEntity, String> {
+        AlertSettingsEntity save(AlertSettingsEntity entity);
+
+        /** id가 곧 owner_id다 */
+        Optional<AlertSettingsEntity> findOneByOwnerId(String ownerId);
+    }
+
+    interface NotificationJpa extends Repository<NotificationEntity, UUID> {
+        NotificationEntity save(NotificationEntity entity);
+
+        boolean existsByOwnerIdAndEventKey(String ownerId, String eventKey);
+
+        List<NotificationEntity> findByOwnerIdOrderByCreatedAtDescIdDesc(String ownerId, Limit limit);
+
+        @Query("select n from NotificationEntity n where n.ownerId = :ownerId and (n.createdAt < :createdAt "
+            + "or (n.createdAt = :createdAt and n.id < :id)) order by n.createdAt desc, n.id desc")
+        List<NotificationEntity> findPageAfter(
+            @Param("ownerId") String ownerId, @Param("createdAt") Instant createdAt, @Param("id") UUID id, Limit limit);
+
+        long countByOwnerIdAndReadAtIsNull(String ownerId);
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("update NotificationEntity n set n.readAt = :readAt where n.ownerId = :ownerId and n.readAt is null")
+        int markAllRead(@Param("ownerId") String ownerId, @Param("readAt") Instant readAt);
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("update NotificationEntity n set n.readAt = :readAt "
+            + "where n.ownerId = :ownerId and n.id = :id and n.readAt is null")
+        int markRead(@Param("ownerId") String ownerId, @Param("id") UUID id, @Param("readAt") Instant readAt);
+
+        boolean existsByOwnerIdAndId(String ownerId, UUID id);
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("delete from NotificationEntity n where n.ownerId = :ownerId and n.accountId = :accountId")
+        int deleteByOwnerIdAndAccountId(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);
+    }
+
     /** 공개 환율 캐시 (owner 없음) */
     interface ExchangeRateJpa extends Repository<ExchangeRateEntity, UUID> {
         ExchangeRateEntity save(ExchangeRateEntity entity);

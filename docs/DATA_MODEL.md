@@ -13,6 +13,9 @@
 users 1─* aws_accounts 1─* ec2_instances
                        1─* ec2_usage_hourly
                        1─* sync_jobs
+                       1─1 account_budgets
+                       1─* notifications
+alert_settings (owner별 1행)
 ec2_price_cache (공개 단가, owner 없음)
 ```
 
@@ -113,5 +116,27 @@ UNIQUE `(auth_provider, provider_subject)`. 비밀번호 컬럼은 없다. `user
 | updated_at | TIMESTAMPTZ | |
 - 연결 삭제 순서: `ec2_usage_hourly` → `ec2_instances` → `sync_jobs` → **`account_budgets`** → `aws_accounts` (한 트랜잭션).
 
+## V8 (2026-11-05) — 서비스 안 알림 (이슈 #35, ADR-014)
+### alert_settings — 사용자별 알림 조건 (행이 없으면 모두 켜짐)
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| owner_id | VARCHAR(64) PK | |
+| budget80, budget100, budget120, spike, weekly_summary | BOOLEAN NOT NULL DEFAULT TRUE | 알림 종류별 on/off |
+| updated_at | TIMESTAMPTZ | |
+
+### notifications — 알림 1건
+UNIQUE `(owner_id, event_key)` — 같은 일은 한 번만 만든다. 인덱스 `(owner_id, created_at DESC, id DESC)`(목록 커서), `(owner_id, read_at)`(안 읽은 수).
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| id | UUID PK | |
+| owner_id | VARCHAR(64) | 조회·읽음 처리는 항상 owner 조건 |
+| account_id | UUID FK aws_accounts | 알림이 생긴 연결 |
+| type | VARCHAR(20) | BUDGET / SPIKE / WEEKLY_SUMMARY |
+| message | VARCHAR(500) | 만들 때 정한 한국어 문구 (금액은 그때의 통화·환율) |
+| event_key | VARCHAR(200) | `BUDGET:{연결}:{yyyy-MM}:{80|100|120}` · `SPIKE:{연결}:{날짜}` · `WEEKLY_SUMMARY:{연결}:{주 월요일}` |
+| created_at | TIMESTAMPTZ | |
+| read_at | TIMESTAMPTZ NULL | 읽지 않았으면 NULL |
+- 연결 삭제 순서: `ec2_usage_hourly` → `ec2_instances` → `sync_jobs` → `account_budgets` → **`notifications`** → `aws_accounts` (한 트랜잭션).
+
 ## 보존 (백로그)
-ec2_usage_hourly는 455일, sync_jobs는 90일 정도로 정리하는 작업이 필요하다.
+ec2_usage_hourly는 455일, sync_jobs는 90일, notifications는 읽은 지 90일 정도로 정리하는 작업이 필요하다.
