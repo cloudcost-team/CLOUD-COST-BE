@@ -83,7 +83,8 @@ class DemoController {
     DailyCostResponse daily(
             @Valid @RequestBody SetupRequest setup, @RequestParam(defaultValue = "KRW") Currency currency) {
         return DailyCostResponse.of(
-                demo.daily(setup.toDomain()), timezone, currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
+                demo.dailyWithSpikes(setup.toDomain()), timezone, currencies.resolve(currency),
+                UsageDtos.DATA_SOURCE_DEMO);
     }
 
     @PostMapping("/costs/monthly")

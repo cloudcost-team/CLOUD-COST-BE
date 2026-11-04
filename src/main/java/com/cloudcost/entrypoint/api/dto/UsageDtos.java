@@ -1,6 +1,7 @@
 package com.cloudcost.entrypoint.api.dto;
 
 import com.cloudcost.application.CurrencyService.Resolved;
+import com.cloudcost.application.Ec2UsageQueryService.DailyView;
 import com.cloudcost.application.Ec2UsageQueryService.InstanceRow;
 import com.cloudcost.application.Ec2UsageQueryService.InstancesView;
 import com.cloudcost.application.Ec2UsageQueryService.UsageCostView;
@@ -13,6 +14,7 @@ import com.cloudcost.domain.cost.DisplayCurrency;
 import com.cloudcost.domain.cost.InstancePrice;
 import com.cloudcost.domain.demo.DemoFleet;
 import com.cloudcost.domain.ec2.TrackedInstance;
+import com.cloudcost.domain.spike.SpikeDetector.Spike;
 import com.cloudcost.domain.usage.CurrentRun;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
@@ -31,6 +33,8 @@ public final class UsageDtos {
 
     public static final String DATA_SOURCE_AWS = "aws";
     public static final String DATA_SOURCE_DEMO = "demo";
+    public static final String SPIKE_RULE =
+            "급증 = 그날 비용이 직전 30일 중 기록 있는 날의 중앙값(평소)의 1.5배 이상. 기록이 7일 미만이면 판정하지 않아요.";
 
     private UsageDtos() {}
 
@@ -156,8 +160,35 @@ public final class UsageDtos {
         }
     }
 
+    @Schema(description = "비용 급증 (그날 비용 ≥ 직전 30일 중앙값 × 1.5). 급증이 아니거나 판정하지 않은 날은 null")
+    public record SpikeDto(
+            @Schema(description = "그날 비용 ÷ 평소 (소수 첫째 자리)", example = "2.4") BigDecimal ratio,
+            @Schema(description = "평소 하루 비용 = 직전 30일 중 기록 있는 날의 중앙값 (currency 기준)", example = "4100")
+                    BigDecimal baseline,
+            @Schema(description = "평소를 잰 날 수 (7~30)", example = "30") int baselineDays,
+            @Schema(description = "원인 서버: 그날 사용 시간이 평소보다 가장 많이 늘어난 인스턴스. 없으면 null")
+                    String causeInstanceId,
+            @Schema(description = "원인 서버 이름 (Name 태그). 없으면 null", example = "web-server-1") String causeName,
+            @Schema(description = "원인 서버의 그날 사용 시간", example = "24.00") BigDecimal causeUsageHours,
+            @Schema(description = "원인 서버의 평소 하루 사용 시간 (중앙값)", example = "8.00") BigDecimal causeBaselineHours,
+            @Schema(example = "10/12 비용 급증 · 평소의 2.4배 · web-server-1 사용 시간이 늘었어요") String message) {
+
+        public static SpikeDto of(Spike s, String causeName, DisplayCurrency d) {
+            if (s == null) {
+                return null;
+            }
+            return new SpikeDto(s.ratio(), d.cost(s.baselineUsd()), s.baselineDays(), s.causeInstanceId(), causeName,
+                    s.causeInstanceId() == null ? null : hours(s.causeUsedMinutes()),
+                    s.causeInstanceId() == null ? null : hours(s.causeBaselineMinutes()), s.message(causeName));
+        }
+    }
+
     public record DailyCostDto(
-            LocalDate date, BigDecimal usageHours, BigDecimal estimatedCost, List<InstanceUsageDto> instances) {}
+            LocalDate date,
+            BigDecimal usageHours,
+            BigDecimal estimatedCost,
+            List<InstanceUsageDto> instances,
+            @Schema(description = "급증일이면 판정 근거와 원인 서버, 아니면 null") SpikeDto spike) {}
 
     public record DailyCostResponse(
             String dataSource,
@@ -175,22 +206,28 @@ public final class UsageDtos {
             FreshnessDto freshness,
             List<String> notes) {
 
-        public static DailyCostResponse of(UsageCostView<LocalDate> view, String timezone, Resolved currency) {
-            return of(view, timezone, currency, DATA_SOURCE_AWS);
+        public static DailyCostResponse of(DailyView daily, String timezone, Resolved currency) {
+            return of(daily, timezone, currency, DATA_SOURCE_AWS);
         }
 
-        public static DailyCostResponse of(
-                UsageCostView<LocalDate> view, String timezone, Resolved currency, String dataSource) {
+        public static DailyCostResponse of(DailyView daily, String timezone, Resolved currency, String dataSource) {
             DisplayCurrency d = currency.display();
+            UsageCostView<LocalDate> view = daily.costs();
             List<DailyCostDto> days = view.report().periods().stream()
-                    .map(p -> new DailyCostDto(p.period(), hours(p.usedMinutes()), d.cost(p.estimatedCost()),
-                            instanceRows(view, p, d)))
+                    .map(p -> {
+                        Spike spike = daily.spikes().get(p.period());
+                        return new DailyCostDto(p.period(), hours(p.usedMinutes()), d.cost(p.estimatedCost()),
+                                instanceRows(view, p, d),
+                                spike == null ? null : SpikeDto.of(spike, daily.causeName(spike), d));
+                    })
                     .toList();
+            List<String> notes = new ArrayList<>(view.notes());
+            notes.add(SPIKE_RULE);
             return new DailyCostResponse(
                     dataSource, CostNotes.COST_BASIS, d.currency().name(), ExchangeRateDto.of(d), timezone,
                     view.range().from(), view.range().to(), view.availableFrom(), hours(view.report().totalMinutes()),
                     d.cost(view.report().totalEstimatedCost()), days, FreshnessDto.of(view.freshness()),
-                    withCurrencyNotes(view.notes(), currency));
+                    withCurrencyNotes(notes, currency));
         }
     }
 

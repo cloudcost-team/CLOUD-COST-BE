@@ -1,5 +1,6 @@
 package com.cloudcost.application;
 
+import com.cloudcost.application.Ec2UsageQueryService.DailyView;
 import com.cloudcost.application.Ec2UsageQueryService.InstanceRow;
 import com.cloudcost.application.Ec2UsageQueryService.InstancesView;
 import com.cloudcost.application.Ec2UsageQueryService.UsageCostView;
@@ -15,6 +16,7 @@ import com.cloudcost.domain.demo.DemoSetup;
 import com.cloudcost.domain.ec2.Ec2Instance;
 import com.cloudcost.domain.ec2.InstanceSpecs;
 import com.cloudcost.domain.ec2.TrackedInstance;
+import com.cloudcost.domain.spike.SpikeDetector;
 import com.cloudcost.domain.usage.CurrentRun;
 import com.cloudcost.domain.usage.DateRange;
 import com.cloudcost.domain.usage.UsageAggregator;
@@ -95,6 +97,21 @@ public class DemoUsageService {
 
     public UsageCostView<LocalDate> daily(DemoSetup setup) {
         return query(setup, Function.identity());
+    }
+
+    /** 일별 + 급증일. 기록 시작일(from)부터 평소 비용을 잰다 */
+    public DailyView dailyWithSpikes(DemoSetup setup) {
+        return withSpikes(daily(setup));
+    }
+
+    /** 지정한 기간의 일별 + 급증일 (대시보드용) */
+    public DailyView dailyWithSpikes(DemoSetup setup, DateRange range) {
+        return withSpikes(daily(setup, range));
+    }
+
+    private static DailyView withSpikes(UsageCostView<LocalDate> view) {
+        return new DailyView(view, SpikeDetector.detect(
+            view.report(), view.availableFrom(), view.range().from(), view.range().to()));
     }
 
     /** 설정한 기간을 월별로 나눈 합계 */

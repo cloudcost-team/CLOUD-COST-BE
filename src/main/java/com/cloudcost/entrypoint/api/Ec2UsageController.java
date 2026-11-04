@@ -66,7 +66,8 @@ class Ec2UsageController {
     }
 
     @GetMapping("/costs/daily")
-    @Operation(summary = "일별 사용 시간 · 추정 비용 (기본: 최근 30일)")
+    @Operation(summary = "일별 사용 시간 · 추정 비용 · 급증일 (기본: 최근 30일)",
+        description = "days[].spike: 그날 비용이 직전 30일 중 기록 있는 날의 중앙값 × 1.5 이상이면 급증 (기록 7일 미만이면 판정하지 않음).")
     DailyCostResponse daily(
         @CurrentOwner String owner,
         @PathVariable UUID accountId,
@@ -74,7 +75,8 @@ class Ec2UsageController {
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @Parameter(description = "금액 통화: KRW(기본, 원화 환산) 또는 USD")
                     @RequestParam(defaultValue = "KRW") Currency currency) {
-        return DailyCostResponse.of(queries.daily(owner, accountId, from, to), timezone, currencies.resolve(currency));
+        return DailyCostResponse.of(
+            queries.dailyWithSpikes(owner, accountId, from, to), timezone, currencies.resolve(currency));
     }
 
     @GetMapping("/costs/monthly")

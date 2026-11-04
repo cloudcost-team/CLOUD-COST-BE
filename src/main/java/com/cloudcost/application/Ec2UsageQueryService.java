@@ -7,6 +7,8 @@ import com.cloudcost.domain.cost.CostEstimator.CostReport;
 import com.cloudcost.domain.cost.CostNotes;
 import com.cloudcost.domain.cost.InstancePrice;
 import com.cloudcost.domain.ec2.TrackedInstance;
+import com.cloudcost.domain.spike.SpikeDetector;
+import com.cloudcost.domain.spike.SpikeDetector.Spike;
 import com.cloudcost.domain.usage.CurrentRun;
 import com.cloudcost.domain.usage.DateRange;
 import com.cloudcost.domain.usage.HourlySample;
@@ -82,6 +84,23 @@ public class Ec2UsageQueryService {
         List<String> notes) {
     }
 
+    /**
+     * 일별 비용 + 급증일 (#29).
+     *
+     * @param spikes 날짜 → 급증. 급증이 아닌 날은 없다
+     */
+    public record DailyView(UsageCostView<LocalDate> costs, Map<LocalDate, Spike> spikes) {
+
+        /** 원인 서버 이름 (Name 태그). 모르면 null */
+        public String causeName(Spike spike) {
+            if (spike.causeInstanceId() == null) {
+                return null;
+            }
+            TrackedInstance t = costs.instances().get(spike.causeInstanceId());
+            return t == null ? null : t.info().name();
+        }
+    }
+
     public InstancesView instances(String ownerId, UUID accountId) {
         accountService.getActive(ownerId, accountId);
         Freshness freshness = refresher.refreshIfStale(ownerId, accountId);
@@ -118,6 +137,19 @@ public class Ec2UsageQueryService {
     }
 
     /**
+     * 일별 + 급증일. 기간 앞 30일을 함께 읽어 첫날부터 평소 비용을 잰다 (기본: 최근 30일).
+     */
+    public DailyView dailyWithSpikes(String ownerId, UUID accountId, LocalDate from, LocalDate to) {
+        LocalDate today = today();
+        DateRange range = DateRange.resolve(from, to, today.minusDays(29), today);
+        Loaded loaded = load(ownerId, accountId, range, range.from().minusDays(SpikeDetector.BASELINE_DAYS));
+        CostReport<LocalDate> withBaseline = CostEstimator.report(loaded.daily(), loaded.priced().byInstanceId());
+        Map<LocalDate, Spike> spikes =
+            SpikeDetector.detect(withBaseline, loaded.availableFrom(), range.from(), range.to());
+        return new DailyView(view(loaded, Function.identity()), spikes);
+    }
+
+    /**
      * 월별 = 일별 합산. 기본: 최근 3개월 (이번 달 포함)
      */
     public UsageCostView<YearMonth> monthly(String ownerId, UUID accountId, YearMonth from, YearMonth to) {
@@ -133,25 +165,54 @@ public class Ec2UsageQueryService {
         UUID accountId,
         DateRange range,
         Function<Map<LocalDate, Map<String, Long>>, Map<K, Map<String, Long>>> grouping) {
+        return view(load(ownerId, accountId, range, range.from()), grouping);
+    }
+
+    /**
+     * @param daily 읽어 온 날짜 전체(loadFrom ~ range.to) → instanceId → 사용 분
+     */
+    private record Loaded(
+        UUID accountId,
+        DateRange range,
+        Map<LocalDate, Map<String, Long>> daily,
+        Map<String, TrackedInstance> tracked,
+        PriceService.PriceResult priced,
+        LocalDate availableFrom,
+        Freshness freshness) {
+    }
+
+    /** range 안의 날만 grouping해 비용을 계산한다 */
+    private <K> UsageCostView<K> view(
+        Loaded l, Function<Map<LocalDate, Map<String, Long>>, Map<K, Map<String, Long>>> grouping) {
+        Map<LocalDate, Map<String, Long>> inRange = new LinkedHashMap<>();
+        l.daily().forEach((day, minutes) -> {
+            if (!day.isBefore(l.range().from())) {
+                inRange.put(day, minutes);
+            }
+        });
+        CostReport<K> report = CostEstimator.report(grouping.apply(inRange), l.priced().byInstanceId());
+        return new UsageCostView<>(
+            l.accountId(), l.range(), report, l.tracked(), l.priced().byInstanceId(), l.availableFrom(),
+            l.freshness().withWarnings(l.priced().warnings()), notes(report, l.range(), l.availableFrom()));
+    }
+
+    /**
+     * @param loadFrom range.from 이하. 그 앞 날짜(급증 판정의 평소 비용용)도 함께 읽는다
+     */
+    private Loaded load(String ownerId, UUID accountId, DateRange range, LocalDate loadFrom) {
         accountService.getActive(ownerId, accountId);
         Freshness freshness = refresher.refreshIfStale(ownerId, accountId);
         ZoneId zone = settings.zone();
 
-        List<HourlySample> samples =
-            usage.findHourly(ownerId, accountId, range.startInclusive(zone), range.endExclusive(zone));
-        Map<LocalDate, Map<String, Long>> daily =
-            UsageAggregator.dailyMinutes(samples, zone, range.from(), range.to());
+        List<HourlySample> samples = usage.findHourly(
+            ownerId, accountId, loadFrom.atStartOfDay(zone).toInstant(), range.endExclusive(zone));
+        Map<LocalDate, Map<String, Long>> daily = UsageAggregator.dailyMinutes(samples, zone, loadFrom, range.to());
 
         Map<String, TrackedInstance> tracked = instances.findAllByOwnerIdAndAccountId(ownerId, accountId).stream()
             .collect(Collectors.toMap(TrackedInstance::instanceId, Function.identity()));
         PriceService.PriceResult priced =
             prices.pricesFor(tracked.values().stream().map(TrackedInstance::info).toList());
-        CostReport<K> report = CostEstimator.report(grouping.apply(daily), priced.byInstanceId());
-        LocalDate availableFrom = availableFrom(tracked.values());
-
-        return new UsageCostView<>(
-            accountId, range, report, tracked, priced.byInstanceId(), availableFrom,
-            freshness.withWarnings(priced.warnings()), notes(report, range, availableFrom));
+        return new Loaded(accountId, range, daily, tracked, priced, availableFrom(tracked.values()), freshness);
     }
 
     /**

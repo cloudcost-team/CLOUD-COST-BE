@@ -47,7 +47,7 @@ public final class DemoDtos {
             @Schema(example = "LINUX") Os os,
             @Schema(example = "2") int count,
             @Schema(example = "ALWAYS") DemoSchedule schedule,
-            @Schema(description = "schedule이 DAILY_HOURS일 때 하루 사용 시간 (1~24)", example = "8") Integer hoursPerDay,
+            @Schema(description = "schedule이 DAILY_HOURS·MONTHLY_SPIKE일 때 하루 사용 시간 (1~24)", example = "8") Integer hoursPerDay,
             @Schema(description = "켜져 있는 동안의 CPU·네트워크 사용 모양. 없으면 NORMAL", example = "OVERSIZED")
                     DemoUsagePattern usagePattern) {
 

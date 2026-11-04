@@ -133,7 +133,17 @@
                    "usageHours": 10.17, "estimatedHourlyCost": 0.0416, "estimatedCost": 0.42, "note": null } ] }
 ```
 ### `GET /aws/accounts/{accountId}/costs/daily?from=&to=` (기본: 최근 30일)
-`days: [ { "date": "2026-10-07", "usageHours": 10.00, "estimatedCost": 0.42, "instances": [ … ] } ]` — 사용이 없는 날도 포함.
+`days: [ { "date": "2026-10-07", "usageHours": 10.00, "estimatedCost": 0.42, "instances": [ … ], "spike": null } ]` — 사용이 없는 날도 포함.
+- **급증일**(`spike`, 이슈 #29, ADR-011 · S06 빨간 막대 · S06-6 그날 상세). 급증이 아니거나 판정하지 않은 날은 `null`.
+```json
+"spike": { "ratio": 2.4, "baseline": 4100, "baselineDays": 30, "causeInstanceId": "i-0abc", "causeName": "web-server-1",
+           "causeUsageHours": 24.00, "causeBaselineHours": 8.00,
+           "message": "10/12 비용 급증 · 평소의 2.4배 · web-server-1 사용 시간이 늘었어요" }
+```
+  - 평소(`baseline`) = 그날 **직전 30일** 중 기록 있는 날(기록 시작일 `availableFrom` 이후)의 하루 추정 비용 **중앙값**. 조회 기간 앞 30일도 함께 읽어 첫날부터 판정한다.
+  - 급증 = 그날 비용 ≥ 평소 × 1.5. 평소를 잰 날이 7일 미만이거나 평소가 0이면 판정하지 않는다. `ratio`는 소수 첫째 자리.
+  - 원인 서버 = 그날 사용 시간이 자기 평소(같은 30일의 하루 사용 시간 중앙값)보다 가장 많이 늘어난 인스턴스. 늘어난 서버가 없으면 `cause*`가 `null`이고 문구에 서버를 쓰지 않는다.
+  - 진행 중인 오늘도 판정한다 (이미 기준을 넘었으면 급증). 단가를 모르는 서버는 비용에 들어가지 않는다.
 ### `GET /aws/accounts/{accountId}/costs/monthly?from=YYYY-MM&to=YYYY-MM` (기본: 최근 3개월)
 `months: [ { "month": "2026-10", "usageHours": …, "estimatedCost": …, "estimatedCostChange": -1200, "instances": [ … ] } ]` — 일별 합산.
 - `estimatedCostChange`: 직전 달 대비 추정 비용 증감 (요청 통화 기준, 반올림한 금액끼리의 차). 첫 달이면 `null`.
@@ -160,6 +170,9 @@
   "previousMonthSamePeriod": { "currentFrom": "2026-11-01", "currentTo": "2026-11-03", "currentCost": 96300,
                                "previousFrom": "2026-10-01", "previousTo": "2026-10-03", "previousCost": 86000,
                                "change": 10300, "changeRate": 12.0 },
+  "latestSpike": { "date": "2026-10-12", "cost": 9840, "ratio": 2.4, "baseline": 4100, "baselineDays": 30,
+                   "causeInstanceId": "i-0abc", "causeName": "web-server-1",
+                   "message": "10/12 비용 급증 · 평소의 2.4배 · web-server-1 사용 시간이 늘었어요" },
   "freshness": { … }, "notes": [ "월말 예상 = …" ], "asOf": "…" }
 ```
 - **이번 달 추정 비용**(`monthToDate`): 1일 ~ 오늘(진행 중인 오늘 포함). 사용 시간 카드의 대수는 `instanceCounts`(지금 남아 있는 인스턴스의 실행 중·중지됨).
@@ -171,6 +184,7 @@
   `change`는 반올림한 금액끼리의 차, `changeRate`는 전월이 0이면 `null`. 매달 1일이거나 전월 1일이 기록 시작일보다 앞이면 `null` + `notes` 안내.
 - 단가를 모르는 서버는 §2처럼 합계에서 빼고 `notes`로 알린다. **단가를 아는 서버가 하나도 없으면** 0원으로 보이지 않도록
   `monthToDate.estimatedCost`·`forecast`·`previousMonthSamePeriod`·`budget.usageRate`가 `null`이다 (사용 시간은 그대로).
+- **최근 급증**(`latestSpike`, S06 배너): 최근 30일(오늘 포함) 중 가장 최근 급증일. 규칙은 §2 `costs/daily`의 `spike`와 같다. 없으면 `null`.
 - 환율은 원화 예산이 있을 때만 조회한다 (응답 통화 환산은 §2와 같다).
 - 오류: §2와 같다.
 
@@ -197,7 +211,8 @@ Google 로그인 없이 간이 로그인 → 서버 구성·기간 설정 → �
 
 ### `GET /demo/catalog`
 고를 수 있는 `instanceTypes`(타입별 Linux·Windows 시간당 USD), `os`(`LINUX`|`WINDOWS`),
-`schedules`(`ALWAYS` 24시간 · `WEEKDAY_OFFICE` 평일 09~19시 · `DAILY_HOURS` 매일 09시부터 N시간),
+`schedules`(`ALWAYS` 24시간 · `WEEKDAY_OFFICE` 평일 09~19시 · `DAILY_HOURS` 매일 09시부터 N시간 ·
+`MONTHLY_SPIKE` 매일 09시부터 N시간이지만 매달 12일은 24시간 — 급증 체험용, `hoursPerDay` 필요),
 `usagePatterns`(켜져 있는 동안의 CPU·네트워크 모양: `NORMAL` 업무 시간 CPU 40~70% · `OVERSIZED` CPU 3~8% · `IDLE` CPU 1% 미만·네트워크 거의 없음),
 한도(`maxServers` 20, `maxCountPerServer` 10, `maxInstances` 50).
 
@@ -213,6 +228,8 @@ Google 로그인 없이 간이 로그인 → 서버 구성·기간 설정 → �
 - `usagePattern`은 선택이고 없으면 `NORMAL`이다. 비용 응답에는 드러나지 않고, 낭비 탐지(`POST /demo/waste`, §4)·벤치마킹 체험에 쓰인다.
   값은 인스턴스 ID·시각으로 정한 결정적 값이라 같은 설정이면 항상 같다.
 - 단가는 서울 리전 온디맨드 단가를 고정값으로 쓴다 (Price List를 부르지 않음). 금액 계산은 실제 경로와 같은 domain 로직이다.
+- `POST /demo/costs/daily`도 `days[].spike`를 준다. 체험 모드의 평소는 `from`부터 잰다 (`from` 앞은 기록이 없다).
+  예: `from` 9/1, `MONTHLY_SPIKE`·`hoursPerDay` 4인 서버가 있으면 9/12가 급증일이 된다 (평소를 잰 날 11일).
 - 잘못된 설정은 400 `DEMO_INVALID_SETUP` (이유는 `message`): 모르는 타입, 대수 1~10 밖, 합계 50대 초과, `to`가 오늘 이후 등. 기간 455일 초과는 `INVALID_PERIOD`.
 
 ### `POST /demo/dashboard` (`?currency=KRW|USD`) — 체험 모드 대시보드 요약

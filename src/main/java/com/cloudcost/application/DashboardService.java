@@ -1,5 +1,6 @@
 package com.cloudcost.application;
 
+import com.cloudcost.application.Ec2UsageQueryService.DailyView;
 import com.cloudcost.application.Ec2UsageQueryService.InstanceRow;
 import com.cloudcost.application.Ec2UsageQueryService.InstancesView;
 import com.cloudcost.application.Ec2UsageQueryService.UsageCostView;
@@ -12,6 +13,8 @@ import com.cloudcost.domain.cost.DisplayCurrency.ExchangeRate;
 import com.cloudcost.domain.demo.DemoSetup;
 import com.cloudcost.domain.ec2.Ec2Instance;
 import com.cloudcost.domain.ec2.InstanceStates;
+import com.cloudcost.domain.spike.SpikeDetector;
+import com.cloudcost.domain.spike.SpikeDetector.Spike;
 import com.cloudcost.domain.usage.DateRange;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -59,6 +62,14 @@ public class DashboardService {
         MonthlyBudget budget, BigDecimal budgetUsd, BigDecimal budgetRate, Integer thresholdReached) {
     }
 
+    /**
+     * 최근 30일(오늘 포함) 중 가장 최근 급증일 (#29, S06 배너).
+     *
+     * @param causeName 원인 서버 이름. 모르면 null
+     */
+    public record LatestSpike(Spike spike, String causeName) {
+    }
+
     public record DashboardView(
         UUID accountId,
         LocalDate today,
@@ -70,6 +81,7 @@ public class DashboardService {
         MonthEndForecast forecast,
         BudgetStatus budget,
         PreviousComparison previous,
+        LatestSpike latestSpike,
         Freshness freshness,
         List<String> notes,
         Instant asOf) {
@@ -113,8 +125,7 @@ public class DashboardService {
 
     public DashboardView dashboard(String ownerId, UUID accountId) {
         LocalDate today = LocalDate.ofInstant(clock.instant(), settings.zone());
-        UsageCostView<LocalDate> daily =
-            queries.daily(ownerId, accountId, YearMonth.from(today).minusMonths(1).atDay(1), today);
+        DailyView daily = queries.dailyWithSpikes(ownerId, accountId, loadFrom(today), today);
         InstancesView instances = queries.instances(ownerId, accountId);
         List<Ec2Instance> present = instances.rows().stream()
             .map(InstanceRow::instance)
@@ -123,7 +134,7 @@ public class DashboardService {
             .toList();
         MonthlyBudget budget = budgets.findByOwnerIdAndAccountId(ownerId, accountId).orElse(null);
         return compose(accountId, today, daily, present, budget, krwRateFor(budget),
-            daily.freshness().withWarnings(instances.freshness().warnings()), clock.instant());
+            daily.costs().freshness().withWarnings(instances.freshness().warnings()), clock.instant());
     }
 
     /**
@@ -132,19 +143,31 @@ public class DashboardService {
      */
     public DashboardView demoDashboard(DemoSetup setup, MonthlyBudget budget) {
         LocalDate today = setup.to();
-        UsageCostView<LocalDate> daily =
-            demo.daily(setup, new DateRange(YearMonth.from(today).minusMonths(1).atDay(1), today));
+        DailyView daily = demo.dailyWithSpikes(setup, new DateRange(loadFrom(today), today));
         List<Ec2Instance> present = demo.instances(setup).rows().stream().map(r -> r.instance().info()).toList();
         return compose(DemoUsageService.ACCOUNT_ID, today, daily, present, budget, krwRateFor(budget),
-            daily.freshness(), clock.instant());
+            daily.costs().freshness(), clock.instant());
+    }
+
+    /** 전월 1일과 최근 30일(급증 배너) 중 이른 날부터 읽는다 */
+    static LocalDate loadFrom(LocalDate today) {
+        LocalDate previousMonthStart = YearMonth.from(today).minusMonths(1).atDay(1);
+        LocalDate spikeFrom = spikeWindowFrom(today);
+        return spikeFrom.isBefore(previousMonthStart) ? spikeFrom : previousMonthStart;
+    }
+
+    /** latestSpike를 찾는 첫날 = 오늘 − 29일 */
+    static LocalDate spikeWindowFrom(LocalDate today) {
+        return today.minusDays(SpikeDetector.BASELINE_DAYS - 1L);
     }
 
     /**
-     * @param daily 전월 1일 ~ 오늘의 일별 비용 (availableFrom 포함)
+     * @param dailyView {@link #loadFrom} ~ 오늘의 일별 비용과 급증일 (availableFrom 포함)
      */
     static DashboardView compose(
-        UUID accountId, LocalDate today, UsageCostView<LocalDate> daily, List<Ec2Instance> present,
+        UUID accountId, LocalDate today, DailyView dailyView, List<Ec2Instance> present,
         MonthlyBudget budget, ExchangeRate krwRate, Freshness freshness, Instant asOf) {
+        UsageCostView<LocalDate> daily = dailyView.costs();
         Map<LocalDate, BigDecimal> costByDay = new HashMap<>();
         Map<LocalDate, Long> minutesByDay = new HashMap<>();
         for (PeriodCost<LocalDate> p : daily.report().periods()) {
@@ -183,10 +206,15 @@ public class DashboardService {
             budgetStatus = new BudgetStatus(budget, budgetUsd, rate, thresholdReached(rate));
         }
 
+        LocalDate spikeFrom = spikeWindowFrom(today);
+        LatestSpike latestSpike = SpikeDetector.latest(dailyView.spikes()).filter(sp -> !sp.date().isBefore(spikeFrom))
+            .map(sp -> new LatestSpike(sp, dailyView.causeName(sp)))
+            .orElse(null);
+
         int running = (int) present.stream().filter(Ec2Instance::isRunning).count();
         int stopped = (int) present.stream().filter(i -> InstanceStates.isStopped(i.state())).count();
         return new DashboardView(accountId, today, YearMonth.from(today), availableFrom, monthToDate, running, stopped,
-            forecast, budgetStatus, previous, freshness, List.copyOf(notes), asOf);
+            forecast, budgetStatus, previous, latestSpike, freshness, List.copyOf(notes), asOf);
     }
 
     private static PreviousComparison previous(
