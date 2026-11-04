@@ -19,7 +19,7 @@ import java.util.TreeSet;
  * 비용 급증일 탐지 (이슈 #29, S06 배너·빨간 막대).
  *
  * <ul>
- *   <li><b>평소</b>: 그날 직전 30일 중 기록이 있는 날(기록 시작일 이후)의 하루 추정 비용 중앙값
+ *   <li><b>평소</b>: 그날 직전 30일 중 기록이 있는 날(기록 시작일 이후, 처음 사용한 날부터)의 하루 추정 비용 중앙값
  *   <li><b>급증</b>: 그날 비용 ≥ 평소 × 1.5. 평소를 잰 날이 7일 미만이거나 평소가 0이면 판정하지 않는다
  *   <li><b>원인 서버</b>: 그날 사용 시간이 자기 평소(같은 30일의 하루 사용 시간 중앙값)보다 가장 많이 늘어난 인스턴스
  * </ul>
@@ -78,7 +78,7 @@ public final class SpikeDetector {
 
     /**
      * @param daily         일별 비용 (날짜 → 비용·서버별 사용 분). 평가 기간 앞 30일도 들어 있어야 평소를 잴 수 있다
-     * @param availableFrom 기록 시작일. null이면 기록이 없다 (판정하지 않음)
+     * @param availableFrom 기록 시작일. null이면 기록이 없다 (판정하지 않음). 이 날 이후 처음 사용한 날부터 평소를 잰다
      * @param from          판정할 첫날 (포함)
      * @param to            판정할 마지막 날 (포함)
      * @return 날짜 → 급증. 급증이 아닌 날·판정하지 않은 날은 들어가지 않는다
@@ -89,10 +89,19 @@ public final class SpikeDetector {
         if (availableFrom == null) {
             return result;
         }
+        // 기록 시작일 뒤라도 처음 쓰기 전의 0원인 날은 "기록"이 아니다. 넣으면 서버를 켠 지 보름쯤 된 날
+        // 30일 창에 0원과 쓴 날이 반씩 섞여 중앙값이 낮아지고, 평소대로 쓴 날이 급증으로 잡힌다.
+        Optional<LocalDate> firstUsed = daily.periods().stream()
+            .filter(p -> p.usedMinutes() > 0 && !p.period().isBefore(availableFrom))
+            .map(PeriodCost::period)
+            .min(LocalDate::compareTo);
+        if (firstUsed.isEmpty()) {
+            return result;
+        }
         Map<LocalDate, PeriodCost<LocalDate>> byDay = new HashMap<>();
         daily.periods().forEach(p -> byDay.put(p.period(), p));
         for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
-            evaluate(byDay, availableFrom, d).ifPresent(s -> result.put(s.date(), s));
+            evaluate(byDay, firstUsed.get(), d).ifPresent(s -> result.put(s.date(), s));
         }
         return result;
     }
