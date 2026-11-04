@@ -154,7 +154,7 @@ public class DashboardService {
         YearMonth month = view.month();
         UsageCostView<YearMonth> monthly =
             queries.monthly(ownerId, accountId, month.minusMonths(RECENT_MONTHS), month.minusMonths(1));
-        return guide(view, monthly);
+        return guide(view, monthly, queries.firstUsedDay(ownerId, accountId));
     }
 
     /** 체험 모드 예산 화면: 설정한 기간의 마지막 날이 속한 달 앞의 3개월 */
@@ -163,17 +163,22 @@ public class DashboardService {
         YearMonth month = view.month();
         UsageCostView<YearMonth> monthly = demo.monthly(setup,
             new DateRange(month.minusMonths(RECENT_MONTHS).atDay(1), month.minusMonths(1).atEndOfMonth()));
-        return guide(view, monthly);
+        // 체험 모드는 설정한 기간(from) 앞의 기록이 없으므로 기간 안의 사용만 본다
+        return guide(view, monthly, null);
     }
 
-    /** 끝난 달 중 첫날이 기록 시작일 이후인(온전한) 달만 평균에 넣는다. 처음 쓰기 전의 달·단가를 모르는 달은 뺀다 */
-    static BudgetGuide guide(DashboardView view, UsageCostView<YearMonth> monthly) {
+    /**
+     * 끝난 달 중 첫날이 기록 시작일 이후인(온전한) 달만 평균에 넣는다. 처음 쓰기 전의 달·단가를 모르는 달은 뺀다.
+     *
+     * @param firstUsed 기록 전체에서 처음 사용한 날. 조회 기간보다 앞이면 기간 첫 달부터 0원인 달도 평균에 넣는다
+     */
+    static BudgetGuide guide(DashboardView view, UsageCostView<YearMonth> monthly, LocalDate firstUsed) {
         LocalDate availableFrom = monthly.availableFrom();
         List<YearMonth> months = new ArrayList<>();
         BigDecimal sum = BigDecimal.ZERO;
         boolean used = false;
         for (PeriodCost<YearMonth> p : monthly.report().periods()) {
-            used = used || p.usedMinutes() > 0;
+            used = used || p.usedMinutes() > 0 || (firstUsed != null && firstUsed.isBefore(p.period().atDay(1)));
             // 처음 쓰기 전의 0원인 달은 "안 썼다"가 아니라 서버가 없던 달이라 평균에 넣지 않는다
             if (!used || availableFrom == null || p.period().atDay(1).isBefore(availableFrom)
                 || p.estimatedCost() == null) {
