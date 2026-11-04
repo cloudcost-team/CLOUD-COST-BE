@@ -200,4 +200,27 @@ class WasteDetectorTest {
                 .extracting(f -> f.instance().instanceId()).containsExactly("i-night");
         assertThat(result.judgedCount()).isEqualTo(1);
     }
+
+    @Test
+    void 예상_P95는_반올림_전_값으로_기본_성능과_비교한다() {
+        // m5.large(2 vCPU) P95 20.01% → t3.medium(2 vCPU, 기본 20%)이면 20.01 > 20 이라 안 되고, 반올림하면 20.0이 되어 잘못 통과했다
+        Result result = WasteDetector.detect(List.of(candidate("i-edge", "m5.large",
+                stats("i-edge", 336, "8", "20.01", "30", LOTS_OF_NETWORK), "0.118")));
+
+        assertThat(result.findings()).extracting(f -> f.targetSpec().instanceType())
+                .doesNotContain("t3.medium");
+    }
+
+    @Test
+    void GPU와_사양표에_없는_타입은_판단한_서버_수에도_넣지_않는다() {
+        Result result = WasteDetector.detect(List.of(
+                candidate("i-gpu-busy", "g4dn.xlarge", stats("i-gpu-busy", 336, "50", "70", "90", LOTS_OF_NETWORK), "0.647"),
+                candidate("i-unknown", "x9.unknown", stats("i-unknown", 336, "0.4", "0.9", "1.5", 100L), "0.1"),
+                candidate("i-web", "t3.medium", stats("i-web", 336, "45", "70", "95", LOTS_OF_NETWORK), "0.052")));
+
+        assertThat(result.judgedIds()).as("벤치마킹 판단 대상").containsExactly("i-web");
+        assertThat(result.findings()).as("사양을 모르는 타입은 유휴처럼 보여도 중지를 권하지 않는다").isEmpty();
+        assertThat(result.skipped()).extracting(WasteDetector.Skipped::instanceId).containsExactly("i-unknown");
+        assertThat(result.skipped().getFirst().reason()).contains("사양 정보");
+    }
 }
