@@ -119,13 +119,14 @@ public final class SpikeDetector {
 
     static Optional<Spike> evaluate(Map<LocalDate, PeriodCost<LocalDate>> byDay, LocalDate availableFrom, LocalDate day) {
         PeriodCost<LocalDate> today = byDay.get(day);
-        if (today == null || day.isBefore(availableFrom)) {
+        // 쓴 기록은 있는데 단가를 하나도 모르는 날(estimatedCost null)은 0원이 아니라 "모름"이라 판정하지 않는다
+        if (today == null || today.estimatedCost() == null || day.isBefore(availableFrom)) {
             return Optional.empty();
         }
         List<PeriodCost<LocalDate>> basis = new ArrayList<>();
         for (LocalDate d = day.minusDays(BASELINE_DAYS); d.isBefore(day); d = d.plusDays(1)) {
             PeriodCost<LocalDate> p = byDay.get(d);
-            if (p != null && !d.isBefore(availableFrom)) {
+            if (p != null && p.estimatedCost() != null && !d.isBefore(availableFrom)) {
                 basis.add(p);
             }
         }
