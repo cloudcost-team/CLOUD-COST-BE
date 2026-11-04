@@ -1,8 +1,8 @@
 {
-  "_comment": "팀 벤치마킹 비교 기준 (ADR-013). 외부 자료의 숫자라 코드 대신 이 파일로 둔다. 바꾸면 docs/API.md §4-2와 ADR-013도 확인한다. 다른 파일을 쓰려면 CCI_BENCHMARK_REFERENCE(예: file:/opt/cci/reference.json)를 지정한다.",
+  "_comment": "팀 벤치마킹 비교 기준 (ADR-013). 외부 자료의 숫자라 코드 대신 이 파일로 둔다. 바꾸면 docs/API.md §4-2와 ADR-013도 확인한다. 다른 파일을 쓰려면 CCI_BENCHMARK_REFERENCE(예: file:/opt/cci/reference.json)를 지정한다. oversized의 숫자는 기획서 값이라 scripts/benchmark/azure_oversized.py로 원본에서 다시 계산해 바꾼다(백분위 표도 함께 채워진다).",
   "oversized": {
     "source": "Azure Public Dataset V2",
-    "description": "VM 3~20대를 쓰는 구독 2,607곳의 과다 사양(CPU P95 10% 미만) VM 비율",
+    "description": "마이크로소프트 내부 서비스 VM 30일 기록 중 VM 3~20대 구독 2,607곳의 과다 사양(5분 최대 CPU의 P95 10% 미만) VM 비율. 측정 방식이 달라 참고용",
     "sampleSize": 2607,
     "averagePercent": 42,
     "medianPercent": 35,
