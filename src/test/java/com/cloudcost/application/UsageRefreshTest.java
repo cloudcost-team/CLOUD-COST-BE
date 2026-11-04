@@ -103,9 +103,10 @@ class UsageRefreshTest extends IntegrationTestBase {
 
         JsonNode jobs = body(getJson("/api/v1/aws/accounts/" + accountId + "/sync-jobs"));
         assertThat(jobs).hasSize(3);
-        assertThat(jobs.get(0).at("/cwRequestCount").asInt()).isEqualTo(1);
+        assertThat(jobs.get(0).at("/cwRequestCount").asInt()).as("CPU 1 + 네트워크 입출력 2 (실행 중 1대)").isEqualTo(3);
         assertThat(jobs.get(1).at("/cwRequestCount").asInt()).isZero();
-        assertThat(jobs.get(2).at("/cwRequestCount").asInt()).isEqualTo(6);
+        assertThat(jobs.get(2).at("/cwRequestCount").asInt()).as("CPU 6 + 네트워크 입출력 2 × 2대").isEqualTo(10);
+        assertThat(aws.networkCalls).isEqualTo(6);
         assertThat(jobs.get(2).at("/status").asText()).isEqualTo("SUCCEEDED");
     }
 

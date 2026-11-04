@@ -10,6 +10,7 @@ import com.cloudcost.application.error.AwsAccessException;
 import com.cloudcost.application.error.AwsAccessException.Category;
 import com.cloudcost.application.port.CustomerAwsSession.DescribeResult;
 import com.cloudcost.domain.ec2.Ec2Instance;
+import com.cloudcost.application.port.CustomerAwsSession.NetworkDirection;
 import com.cloudcost.domain.usage.HourlySample;
 import java.time.Instant;
 import java.util.List;
@@ -86,7 +87,7 @@ class AwsCustomerAdapterTest {
         Instant start = Instant.parse("2026-10-07T00:00:00Z");
         Instant end = Instant.parse("2026-10-08T00:00:00Z");
 
-        List<HourlySample> samples = session.hourlySampleCounts("i-0abc", start, end);
+        List<HourlySample> samples = session.hourlyCpu("i-0abc", start, end);
 
         ArgumentCaptor<GetMetricStatisticsRequest> captor = ArgumentCaptor.forClass(GetMetricStatisticsRequest.class);
         org.mockito.Mockito.verify(cloudWatch).getMetricStatistics(captor.capture());
@@ -94,12 +95,57 @@ class AwsCustomerAdapterTest {
         assertThat(request.namespace()).isEqualTo("AWS/EC2");
         assertThat(request.metricName()).isEqualTo("CPUUtilization");
         assertThat(request.period()).isEqualTo(3600);
-        assertThat(request.statistics()).containsExactly(Statistic.SAMPLE_COUNT);
+        assertThat(request.statistics()).as("사용 시간과 CPU 평균·최대를 한 번에 받는다 (호출 수 그대로)")
+                .containsExactly(Statistic.SAMPLE_COUNT, Statistic.AVERAGE, Statistic.MAXIMUM);
         assertThat(request.dimensions().getFirst().value()).isEqualTo("i-0abc");
         assertThat(request.startTime()).isEqualTo(start);
         assertThat(request.endTime()).isEqualTo(end);
         assertThat(samples).extracting(HourlySample::hourStart)
                 .containsExactly(Instant.parse("2026-10-07T00:00:00Z"), Instant.parse("2026-10-07T01:00:00Z"));
+    }
+
+    @Test
+    void CPU_평균과_최대를_사용_시간과_함께_돌려준다() {
+        when(cloudWatch.getMetricStatistics(any(GetMetricStatisticsRequest.class)))
+                .thenReturn(GetMetricStatisticsResponse.builder()
+                        .datapoints(Datapoint.builder().timestamp(Instant.parse("2026-10-07T00:00:00Z"))
+                                .sampleCount(60.0).average(6.12345).maximum(23.0).build())
+                        .build());
+
+        HourlySample sample = session.hourlyCpu("i-0abc", Instant.EPOCH, Instant.EPOCH.plusSeconds(3600)).getFirst();
+
+        assertThat(sample.sampleCount()).isEqualByComparingTo("60");
+        assertThat(sample.cpuAvg()).isEqualByComparingTo("6.123");
+        assertThat(sample.cpuMax()).isEqualByComparingTo("23");
+        assertThat(sample.networkInBytes()).isNull();
+    }
+
+    @Test
+    void 네트워크는_NetworkIn_NetworkOut을_Sum으로_한_건씩_요청한다() {
+        when(cloudWatch.getMetricStatistics(any(GetMetricStatisticsRequest.class)))
+                .thenReturn(GetMetricStatisticsResponse.builder()
+                        .datapoints(Datapoint.builder().timestamp(Instant.parse("2026-10-07T00:00:00Z"))
+                                .sum(1536.6).build())
+                        .build());
+
+        List<com.cloudcost.domain.usage.HourlyNetwork> in = session.hourlyNetwork(
+                "i-0abc", NetworkDirection.IN, Instant.EPOCH, Instant.EPOCH.plusSeconds(3600));
+        List<com.cloudcost.domain.usage.HourlyNetwork> out = session.hourlyNetwork(
+                "i-0abc", NetworkDirection.OUT, Instant.EPOCH, Instant.EPOCH.plusSeconds(3600));
+
+        ArgumentCaptor<GetMetricStatisticsRequest> captor = ArgumentCaptor.forClass(GetMetricStatisticsRequest.class);
+        org.mockito.Mockito.verify(cloudWatch, org.mockito.Mockito.times(2)).getMetricStatistics(captor.capture());
+        assertThat(captor.getAllValues()).extracting(GetMetricStatisticsRequest::metricName)
+                .containsExactly("NetworkIn", "NetworkOut");
+        assertThat(captor.getAllValues()).allSatisfy(r -> {
+            assertThat(r.namespace()).isEqualTo("AWS/EC2");
+            assertThat(r.period()).isEqualTo(3600);
+            assertThat(r.statistics()).containsExactly(Statistic.SUM);
+        });
+        assertThat(in.getFirst().inBytes()).isEqualTo(1537L);
+        assertThat(in.getFirst().outBytes()).isNull();
+        assertThat(out.getFirst().outBytes()).isEqualTo(1537L);
+        assertThat(out.getFirst().inBytes()).isNull();
     }
 
     @Test
@@ -110,7 +156,7 @@ class AwsCustomerAdapterTest {
                                 .errorMessage("User: arn:aws:sts::123456789012:assumed-role/X is not authorized").build())
                         .build());
 
-        assertThatThrownBy(() -> session.hourlySampleCounts("i-0abc", Instant.EPOCH, Instant.EPOCH.plusSeconds(3600)))
+        assertThatThrownBy(() -> session.hourlyCpu("i-0abc", Instant.EPOCH, Instant.EPOCH.plusSeconds(3600)))
                 .isInstanceOfSatisfying(AwsAccessException.class, e -> {
                     assertThat(e.category()).isEqualTo(Category.PERMISSION_DENIED);
                     assertThat(e.getMessage()).startsWith("AccessDenied: cloudwatch:GetMetricStatistics 권한이 없습니다")

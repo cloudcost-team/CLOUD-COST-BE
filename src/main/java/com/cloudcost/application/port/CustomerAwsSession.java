@@ -1,6 +1,7 @@
 package com.cloudcost.application.port;
 
 import com.cloudcost.domain.ec2.Ec2Instance;
+import com.cloudcost.domain.usage.HourlyNetwork;
 import com.cloudcost.domain.usage.HourlySample;
 import java.time.Instant;
 import java.util.List;
@@ -25,9 +26,31 @@ public interface CustomerAwsSession extends AutoCloseable {
     DescribeResult describeInstances();
 
     /**
-     * GetMetricStatistics 1건 (AWS/EC2 CPUUtilization, Period 3600, SampleCount).
+     * GetMetricStatistics 1건 (AWS/EC2 CPUUtilization, Period 3600, SampleCount·Average·Maximum).
+     * 사용 시간(SampleCount)과 CPU 사용률(평균·최대)을 한 번에 받는다.
      */
-    List<HourlySample> hourlySampleCounts(String instanceId, Instant start, Instant end);
+    List<HourlySample> hourlyCpu(String instanceId, Instant start, Instant end);
+
+    /**
+     * GetMetricStatistics 1건 (AWS/EC2 NetworkIn 또는 NetworkOut, Period 3600, Sum).
+     * 돌려주는 값은 요청한 방향만 채워져 있고 다른 방향은 null이다.
+     */
+    List<HourlyNetwork> hourlyNetwork(String instanceId, NetworkDirection direction, Instant start, Instant end);
+
+    enum NetworkDirection {
+        IN("NetworkIn"),
+        OUT("NetworkOut");
+
+        private final String metricName;
+
+        NetworkDirection(String metricName) {
+            this.metricName = metricName;
+        }
+
+        public String metricName() {
+            return metricName;
+        }
+    }
 
     @Override
     void close();
