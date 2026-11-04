@@ -114,6 +114,12 @@ class NotificationApiTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$.unreadCount").value(0));
 
         getJson("/api/v1/notifications?cursor=broken").andExpect(status().isBadRequest());
+        for (String raw : new String[] {"1.1000000000:" + id, "9223372036854775807.999999999:" + id, "-1.-5:" + id}) {
+            String bad = java.util.Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            getJson("/api/v1/notifications?cursor=" + bad).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+        }
         getJson("/api/v1/notifications?limit=51").andExpect(status().isBadRequest());
         mvc.perform(as("someone-else", get("/api/v1/notifications"))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(0));

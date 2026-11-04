@@ -32,10 +32,13 @@ final class NotificationCursor {
             if (colon < 0 || dot < 0 || dot > colon) {
                 throw new IllegalArgumentException(raw);
             }
-            Instant at = Instant.ofEpochSecond(
-                Long.parseLong(raw.substring(0, dot)), Long.parseLong(raw.substring(dot + 1, colon)));
+            long nanos = Long.parseLong(raw.substring(dot + 1, colon));
+            if (nanos < 0 || nanos >= 1_000_000_000L) {
+                throw new IllegalArgumentException(raw);
+            }
+            Instant at = Instant.ofEpochSecond(Long.parseLong(raw.substring(0, dot)), nanos);
             return new Cursor(at, UUID.fromString(raw.substring(colon + 1)));
-        } catch (IllegalArgumentException | java.time.DateTimeException e) {
+        } catch (IllegalArgumentException | java.time.DateTimeException | ArithmeticException e) {
             throw new DomainValidationException("VALIDATION_ERROR", "cursor 값이 올바르지 않습니다. 받은 nextCursor를 그대로 보내 주세요.");
         }
     }

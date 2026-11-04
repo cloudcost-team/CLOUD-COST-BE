@@ -9,6 +9,7 @@ import com.cloudcost.domain.alert.Notification;
 import com.cloudcost.domain.alert.NotificationType;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -19,6 +20,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Component
 class NotificationPersistenceAdapter implements NotificationRepository, AlertSettingsRepository {
+
+    /** V8의 UNIQUE (owner_id, event_key) 제약 이름 */
+    static final String EVENT_KEY_CONSTRAINT = "uq_notifications_owner_event";
 
     private final NotificationJpa notifications;
     private final AlertSettingsJpa settings;
@@ -68,11 +72,26 @@ class NotificationPersistenceAdapter implements NotificationRepository, AlertSet
         e.createdAt = n.createdAt();
         e.readAt = n.readAt();
         try {
-            notifications.save(e);
+            // 바로 flush해 UNIQUE 위반이 이 try 안에서 나게 한다 (커밋 때 나면 catch를 지나 조회가 500이 된다)
+            notifications.saveAndFlush(e);
             return true;
-        } catch (DataIntegrityViolationException duplicate) {
-            return false;
+        } catch (DataIntegrityViolationException e2) {
+            if (isEventKeyDuplicate(e2)) {
+                return false;
+            }
+            throw e2;
         }
+    }
+
+    /** 같은 (owner, event_key) UNIQUE 위반만 "이미 있음"으로 본다. 다른 무결성 위반(FK 등)은 그대로 던진다 */
+    static boolean isEventKeyDuplicate(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            String message = t.getMessage();
+            if (message != null && message.toLowerCase(Locale.ROOT).contains(EVENT_KEY_CONSTRAINT)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
