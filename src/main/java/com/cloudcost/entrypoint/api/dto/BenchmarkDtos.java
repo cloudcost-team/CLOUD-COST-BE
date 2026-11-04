@@ -18,7 +18,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -136,7 +135,8 @@ public final class BenchmarkDtos {
         public static BenchmarkResponse of(BenchmarkView v, Resolved currency, String dataSource) {
             DisplayCurrency d = currency.display();
             BenchmarkReference ref = v.reference();
-            List<String> notes = new ArrayList<>();
+            // 대시보드 안내와 겹치는 문구는 한 번만 보여 준다
+            java.util.Set<String> notes = new java.util.LinkedHashSet<>();
             if (UsageDtos.DATA_SOURCE_DEMO.equals(dataSource)) {
                 notes.add(DemoFleet.NOTE);
                 notes.add(DemoFleet.PRICE_NOTE);
