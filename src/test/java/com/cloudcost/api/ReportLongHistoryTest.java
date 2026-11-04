@@ -36,4 +36,24 @@ class ReportLongHistoryTest extends IntegrationTestBase {
         assertThat(oldest.at("/estimatedCost").decimalValue()).as("720시간 × 0.05").isEqualByComparingTo("36.00");
         assertThat(oldest.at("/changeRate").decimalValue()).as("8월 735시간 × 0.05 = 36.75 대비").isEqualByComparingTo("-2.0");
     }
+
+    @Test
+    void 전월에_단가를_아는_서버가_없으면_전월_대비는_비어_있다() throws Exception {
+        // 2025-08에는 단가를 모르는 서버만, 2025-09부터는 단가를 아는 서버만 켜져 있다
+        String accountId = activeAccount();
+        Instant aug = Instant.parse("2025-07-31T15:00:00Z");
+        Instant sep = Instant.parse("2025-08-31T15:00:00Z");
+        aws.instances.add(Fixtures.instance("i-unpriced", "x9.unknown", "stopped", aug));
+        aws.instances.add(Fixtures.instance("i-new", "t3.medium", "running", sep));
+        aws.addHours("i-unpriced", aug, 31 * 24, 60);
+        aws.addHours("i-new", sep, 402 * 24 + 12, 60);
+        priceCatalog.hourlyByType.put("t3.medium", new BigDecimal("0.05"));
+
+        JsonNode oldest = body(getJson("/api/v1/aws/accounts/" + accountId + "/reports?currency=USD")
+                .andExpect(status().isOk())).at("/months/13");
+
+        assertThat(oldest.at("/month").asText()).isEqualTo("2025-09");
+        assertThat(oldest.at("/estimatedCost").decimalValue()).isEqualByComparingTo("36.00");
+        assertThat(oldest.at("/changeRate").isNull()).isTrue();
+    }
 }
