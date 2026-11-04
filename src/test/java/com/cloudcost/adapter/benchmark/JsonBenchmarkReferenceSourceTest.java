@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.cloudcost.domain.benchmark.BenchmarkReference;
+import com.cloudcost.domain.benchmark.BenchmarkReference.SizeBand;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ByteArrayResource;
@@ -11,67 +12,80 @@ import org.springframework.core.io.ClassPathResource;
 
 class JsonBenchmarkReferenceSourceTest {
 
-    @Test
-    void 기본_파일은_Azure_SpendArk_Flexera_기준을_담고_백분위_표는_비어_있다() {
-        BenchmarkReference ref = JsonBenchmarkReferenceSource.read(new ClassPathResource("benchmark/reference.json"));
+    private static final String TEMPLATE = """
+        {"oversized":{"source":"x","description":"d","bands":%s},
+         "waste":{"source":"w","description":"d","averagePercent":20},
+         "spend":{"source":"s","description":"d","minUsd":50,"maxUsd":300}}
+        """;
+    private static final String EMPTY_1_2 =
+        "{\"minServers\":1,\"maxServers\":2,\"sampleSize\":0,\"averagePercent\":null,\"medianPercent\":null,\"percentiles\":[]}";
 
-        assertThat(ref.oversized().sampleSize()).isEqualTo(2607);
-        assertThat(ref.oversized().averagePercent()).isEqualByComparingTo("42");
-        assertThat(ref.oversized().medianPercent()).isEqualByComparingTo("35");
-        assertThat(ref.oversized().percentiles()).isEmpty();
-        assertThat(ref.waste().averagePercent()).isEqualByComparingTo("29");
-        assertThat(ref.spend().minUsd()).isEqualByComparingTo("100");
-        assertThat(ref.spend().maxUsd()).isEqualByComparingTo("500");
+    private static BenchmarkReference read(String bands) {
+        return JsonBenchmarkReferenceSource.read(
+            new ByteArrayResource(TEMPLATE.formatted(bands).getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private static String band(int min, int max, String extra) {
+        return "{\"minServers\":" + min + ",\"maxServers\":" + max + extra + "}";
     }
 
     @Test
-    void 백분위_표가_있는_파일로_바꿀_수_있고_항목이_빠지면_시작하지_않는다() {
-        String json = """
-            {"oversized":{"source":"x","description":"d","sampleSize":10,"averagePercent":40,"medianPercent":30,
-              "percentiles":[{"percentile":50,"ratioPercent":30}]},
-             "waste":{"source":"w","description":"d","averagePercent":20},
-             "spend":{"source":"s","description":"d","minUsd":50,"maxUsd":300}}
-            """;
-        BenchmarkReference ref = JsonBenchmarkReferenceSource.read(
-            new ByteArrayResource(json.getBytes(StandardCharsets.UTF_8)));
-        assertThat(ref.oversized().percentiles()).hasSize(1);
+    void 기본_파일은_서버_1_2대_구간이_비어_있고_3_20대는_기획서_값이다() {
+        BenchmarkReference ref = JsonBenchmarkReferenceSource.read(new ClassPathResource("benchmark/reference.json"));
 
+        assertThat(ref.oversized().source()).isEqualTo("Azure Public Dataset V2");
+        assertThat(ref.oversized().bands()).extracting(SizeBand::key).containsExactly("1-2", "3-20");
+        SizeBand small = ref.oversized().bandFor(2).orElseThrow();
+        assertThat(small.label()).isEqualTo("서버 1~2대");
+        assertThat(small.hasData()).as("원본에서 아직 계산하지 않음").isFalse();
+        SizeBand mid = ref.oversized().bandFor(3).orElseThrow();
+        assertThat(mid.sampleSize()).isEqualTo(2607);
+        assertThat(mid.averagePercent()).isEqualByComparingTo("42");
+        assertThat(mid.percentiles()).isEmpty();
+        assertThat(ref.oversized().bandFor(21)).as("어느 구간에도 안 듦").isEmpty();
+        assertThat(ref.waste().averagePercent()).isEqualByComparingTo("29");
+        assertThat(ref.spend().minUsd()).isEqualByComparingTo("100");
+    }
+
+    @Test
+    void 구간마다_숫자와_백분위_표를_넣을_수_있고_형식이_틀리면_시작하지_않는다() {
+        String ok = "[" + EMPTY_1_2 + ","
+            + band(3, 20, ",\"sampleSize\":10,\"averagePercent\":40,\"medianPercent\":30,"
+                + "\"percentiles\":[{\"percentile\":25,\"ratioPercent\":10},{\"percentile\":75,\"ratioPercent\":50}]") + "]";
+        assertThat(read(ok).oversized().band("3-20").orElseThrow().percentiles()).hasSize(2);
+
+        String[] bad = {
+            "[]",
+            "[" + band(3, 2, "") + "]",
+            "[" + band(0, 2, "") + "]",
+            "[" + band(1, 5, "") + "," + band(3, 20, "") + "]",
+            "[" + band(3, 20, "") + "," + band(1, 2, "") + "]",
+            "[" + band(1, 2, ",\"sampleSize\":10,\"averagePercent\":40") + "]",
+            "[" + band(1, 2, ",\"percentiles\":[{\"percentile\":50,\"ratioPercent\":30}]") + "]",
+            "[" + band(1, 2, ",\"sampleSize\":10,\"averagePercent\":40,\"medianPercent\":30,"
+                + "\"percentiles\":[{\"percentile\":50}]") + "]",
+        };
+        for (String b : bad) {
+            assertThatThrownBy(() -> read(b)).as(b).isInstanceOf(IllegalStateException.class);
+        }
         assertThatThrownBy(() -> JsonBenchmarkReferenceSource.read(
             new ByteArrayResource("{\"oversized\":{}}".getBytes(StandardCharsets.UTF_8))))
             .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> JsonBenchmarkReferenceSource.read(new ByteArrayResource(
-            json.replace("\"minUsd\":50,", "").getBytes(StandardCharsets.UTF_8))))
+            TEMPLATE.formatted("[" + EMPTY_1_2 + "]").replace("\"minUsd\":50,", "").getBytes(StandardCharsets.UTF_8))))
             .as("spend 범위가 빠지면 조회 때 500이 아니라 시작할 때 실패").isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> JsonBenchmarkReferenceSource.read(new ByteArrayResource(
-            json.replace("\"minUsd\":50", "\"minUsd\":900").getBytes(StandardCharsets.UTF_8))))
-            .isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> JsonBenchmarkReferenceSource.read(new ByteArrayResource(
-            json.replace(",\"ratioPercent\":30", "").getBytes(StandardCharsets.UTF_8))))
-            .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
     void 백분위_표는_0에서_100_사이이고_오름차순이어야_시작한다() {
-        String base = """
-            {"oversized":{"source":"x","description":"d","sampleSize":10,"averagePercent":40,"medianPercent":30,
-              "percentiles":%s},
-             "waste":{"source":"w","description":"d","averagePercent":20},
-             "spend":{"source":"s","description":"d","minUsd":50,"maxUsd":300}}
-            """;
-        String ok = "[{\"percentile\":25,\"ratioPercent\":10},{\"percentile\":75,\"ratioPercent\":50}]";
-        assertThat(JsonBenchmarkReferenceSource.read(resource(base.formatted(ok))).oversized().percentiles()).hasSize(2);
-
-        for (String bad : new String[] {
+        String prefix = ",\"sampleSize\":10,\"averagePercent\":40,\"medianPercent\":30,\"percentiles\":";
+        for (String table : new String[] {
             "[{\"percentile\":120,\"ratioPercent\":10}]",
             "[{\"percentile\":50,\"ratioPercent\":-1}]",
             "[{\"percentile\":75,\"ratioPercent\":10},{\"percentile\":25,\"ratioPercent\":50}]",
             "[{\"percentile\":25,\"ratioPercent\":50},{\"percentile\":75,\"ratioPercent\":10}]"}) {
-            assertThatThrownBy(() -> JsonBenchmarkReferenceSource.read(resource(base.formatted(bad))))
-                .as(bad).isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> read("[" + band(1, 2, prefix + table) + "]"))
+                .as(table).isInstanceOf(IllegalStateException.class);
         }
-    }
-
-    private static ByteArrayResource resource(String json) {
-        return new ByteArrayResource(json.getBytes(StandardCharsets.UTF_8));
     }
 }

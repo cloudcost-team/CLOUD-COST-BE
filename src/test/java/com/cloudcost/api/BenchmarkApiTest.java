@@ -115,17 +115,44 @@ class BenchmarkApiTest extends IntegrationTestBase {
     }
 
     @Test
-    void 판단한_서버가_3대_미만이면_과다_사양만_비교하지_않는다() throws Exception {
+    void 서버_2대는_1_2대_구간과_견주고_그_구간_자료가_없으면_비교하지_않는다() throws Exception {
         server("i-api", "m5.large", 6, 23, 10L * 1024 * 1024);
         server("i-web", "t3.medium", 50, 90, 50L * 1024 * 1024);
 
         JsonNode body = benchmark("");
+        JsonNode oversized = body.at("/oversizedRatio");
 
         assertThat(body.at("/status").asText()).isEqualTo("OK");
-        assertThat(body.at("/oversizedRatio/status").asText()).isEqualTo("NOT_COMPARABLE");
-        assertThat(body.at("/oversizedRatio/ours/ratio").decimalValue()).isEqualByComparingTo("50.0");
-        assertThat(body.at("/oversizedRatio/servers").size()).isEqualTo(2);
+        assertThat(oversized.at("/status").asText()).isEqualTo("NOT_COMPARABLE");
+        assertThat(oversized.at("/ours/ratio").decimalValue()).isEqualByComparingTo("50.0");
+        assertThat(oversized.at("/matchedSizeBand").asText()).isEqualTo("1-2");
+        assertThat(oversized.at("/reference/sizeBand").asText()).isEqualTo("1-2");
+        assertThat(oversized.at("/reference/dataAvailable").asBoolean()).isFalse();
+        assertThat(oversized.at("/reference/averageRatio").isNull()).isTrue();
+        assertThat(oversized.at("/sizeBands").size()).isEqualTo(2);
+        assertThat(oversized.at("/sizeBands/0/matchesOurs").asBoolean()).isTrue();
+        assertThat(oversized.at("/sizeBands/1/dataAvailable").asBoolean()).isTrue();
+        assertThat(body.at("/notes").toString()).contains("서버 1~2대 비교 자료는 아직 준비 중");
         assertThat(body.at("/monthlySpend/status").asText()).isEqualTo("OK");
+    }
+
+    @Test
+    void 다른_규모_구간을_고르면_그_구간과_견준다() throws Exception {
+        server("i-api", "m5.large", 6, 23, 10L * 1024 * 1024);
+        server("i-web", "t3.medium", 50, 90, 50L * 1024 * 1024);
+
+        JsonNode body = benchmark("&sizeBand=3-20");
+        JsonNode oversized = body.at("/oversizedRatio");
+
+        assertThat(oversized.at("/status").asText()).isEqualTo("OK");
+        assertThat(oversized.at("/matchedSizeBand").asText()).as("우리 구간은 그대로").isEqualTo("1-2");
+        assertThat(oversized.at("/reference/sizeBand").asText()).isEqualTo("3-20");
+        assertThat(oversized.at("/reference/averageRatio").decimalValue()).isEqualByComparingTo("42");
+        assertThat(body.at("/notes").toString()).contains("우리는 서버 2대지만 서버 3~20대 팀 자료와 견줬어요");
+
+        getJson("/api/v1/aws/accounts/" + accountId + "/benchmark?sizeBand=4-9")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
     }
 
     @Test

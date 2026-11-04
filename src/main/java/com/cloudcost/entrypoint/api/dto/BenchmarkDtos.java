@@ -6,6 +6,7 @@ import com.cloudcost.application.BenchmarkService.OversizedSection;
 import com.cloudcost.application.BenchmarkService.SpendSection;
 import com.cloudcost.application.CurrencyService.Resolved;
 import com.cloudcost.domain.benchmark.BenchmarkReference;
+import com.cloudcost.domain.benchmark.BenchmarkReference.SizeBand;
 import com.cloudcost.domain.benchmark.TeamBenchmark.Ratio;
 import com.cloudcost.domain.benchmark.TeamBenchmark.ServerVerdict;
 import com.cloudcost.domain.cost.CostNotes;
@@ -53,28 +54,58 @@ public final class BenchmarkDtos {
         }
     }
 
+    @Schema(description = "비교에 쓴 서버(VM) 대수 구간의 분포")
     public record OversizedReferenceDto(
             String source,
             String description,
+            @Schema(description = "구간 키 (sizeBand로 보낸다)", example = "1-2") String sizeBand,
+            @Schema(example = "서버 1~2대") String sizeBandLabel,
+            @Schema(description = "이 구간의 비교 자료가 있으면 true. false면 숫자가 null이고 status는 NOT_COMPARABLE")
+                    boolean dataAvailable,
             int sampleSize,
             @Schema(example = "42") BigDecimal averageRatio,
             @Schema(example = "35") BigDecimal medianRatio,
-            @Schema(description = "백분위 표가 있으면 true (없으면 moreEfficientTeamsPercent는 null)") boolean percentileAvailable) {}
+            @Schema(description = "백분위 표가 있으면 true (없으면 moreEfficientTeamsPercent는 null)") boolean percentileAvailable) {
+
+        static OversizedReferenceDto of(BenchmarkReference.Oversized ref, SizeBand band) {
+            if (band == null) {
+                return new OversizedReferenceDto(ref.source(), ref.description(), null, null, false, 0, null, null, false);
+            }
+            return new OversizedReferenceDto(ref.source(), ref.description(), band.key(), band.label(), band.hasData(),
+                    band.sampleSize(), band.averagePercent(), band.medianPercent(), !band.percentiles().isEmpty());
+        }
+    }
+
+    @Schema(description = "고를 수 있는 서버 대수 구간 (S09 규모 선택)")
+    public record SizeBandDto(
+            @Schema(example = "1-2") String key,
+            @Schema(example = "서버 1~2대") String label,
+            int minServers,
+            int maxServers,
+            @Schema(description = "비교 자료가 있으면 true") boolean dataAvailable,
+            @Schema(description = "우리 서버 대수가 속한 구간이면 true") boolean matchesOurs) {}
 
     @Schema(description = "① 과다 사양 서버 비율 (S09-2·S09-3)")
     public record OversizedDto(
-            @Schema(description = "OK | NOT_COMPARABLE(판단한 서버 3대 미만) | INSUFFICIENT_HISTORY(기록 14일 미만)") String status,
+            @Schema(description = "OK | NOT_COMPARABLE(판단한 서버가 없거나 고른 구간의 비교 자료 없음) | INSUFFICIENT_HISTORY(기록 14일 미만)")
+                    String status,
             @Schema(description = "우리 비율. INSUFFICIENT_HISTORY면 null") RatioDto ours,
             @Schema(description = "우리보다 과다 사양 비율이 낮은 팀 (%). 백분위 표가 없거나 비교하지 않으면 null")
                     BigDecimal moreEfficientTeamsPercent,
-            OversizedReferenceDto reference,
+            @Schema(description = "우리 서버 대수가 속한 구간 키. 판단한 서버가 없거나 맞는 구간이 없으면 null", example = "1-2")
+                    String matchedSizeBand,
+            @Schema(description = "비교에 쓴 구간 (요청한 sizeBand, 없으면 matchedSizeBand)") OversizedReferenceDto reference,
+            @Schema(description = "고를 수 있는 구간 (작은 순)") List<SizeBandDto> sizeBands,
             @Schema(description = "서버별 P95와 판정 (P95 낮은 순)") List<ServerDto> servers,
             @Schema(description = "추천을 적용한 뒤 (recommendationIds가 없으면 null)") RatioDto afterSimulation) {
 
         static OversizedDto of(OversizedSection s, BenchmarkReference.Oversized ref) {
+            SizeBand matched = s.matchedBand();
+            List<SizeBandDto> bands = ref.bands().stream()
+                    .map(b -> new SizeBandDto(b.key(), b.label(), b.minServers(), b.maxServers(), b.hasData(), b == matched))
+                    .toList();
             return new OversizedDto(s.status().name(), RatioDto.of(s.ratio()), s.moreEfficientTeamsPercent(),
-                    new OversizedReferenceDto(ref.source(), ref.description(), ref.sampleSize(), ref.averagePercent(),
-                            ref.medianPercent(), !ref.percentiles().isEmpty()),
+                    matched == null ? null : matched.key(), OversizedReferenceDto.of(ref, s.selectedBand()), bands,
                     s.servers().stream().map(ServerDto::of).toList(), RatioDto.of(s.after()));
         }
     }

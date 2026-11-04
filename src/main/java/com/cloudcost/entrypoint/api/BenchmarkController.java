@@ -40,9 +40,12 @@ class BenchmarkController {
             @PathVariable UUID accountId,
             @Parameter(description = "적용할 추천 id (쉼표로 구분하거나 여러 번)", example = "i-0abc:OVERSIZED,i-0def:IDLE")
                     @RequestParam(required = false) List<String> recommendationIds,
+            @Parameter(description = "비교할 서버 대수 구간 (예: 1-2, 3-20). 없으면 우리 서버 대수에 맞는 구간. "
+                    + "고를 수 있는 값은 응답 oversizedRatio.sizeBands", example = "1-2")
+                    @RequestParam(required = false) String sizeBand,
             @Parameter(description = "금액 통화: KRW(기본, 원화 환산) 또는 USD")
                     @RequestParam(defaultValue = "KRW") Currency currency) {
-        return BenchmarkResponse.of(benchmarks.benchmark(owner, accountId, recommendationIds),
+        return BenchmarkResponse.of(benchmarks.benchmark(owner, accountId, recommendationIds, sizeBand),
             currencies.resolve(currency), UsageDtos.DATA_SOURCE_AWS);
     }
 }
