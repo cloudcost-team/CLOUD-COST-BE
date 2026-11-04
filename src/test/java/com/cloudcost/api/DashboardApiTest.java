@@ -137,4 +137,19 @@ class DashboardApiTest extends IntegrationTestBase {
         assertThat(waste.at("/forecastMonthEndCost").decimalValue()).isEqualByComparingTo("30.95");
         assertThat(waste.at("/savingsRateOfForecast").decimalValue()).as("추천이 없으면 0%").isEqualByComparingTo("0");
     }
+
+    @Test
+    void 단가를_아는_서버가_없으면_0원이_아니라_계산하지_않았다고_알린다() throws Exception {
+        priceCatalog.hourlyByType.clear();
+        putBudget("{\"amount\":40,\"currency\":\"USD\"}").andExpect(status().isOk());
+
+        JsonNode body = dashboard("USD");
+
+        assertThat(body.at("/monthToDate/usageHours").decimalValue()).as("사용 시간은 그대로").isEqualByComparingTo("180");
+        assertThat(body.at("/monthToDate/estimatedCost").isNull()).isTrue();
+        assertThat(body.at("/forecast").isNull()).isTrue();
+        assertThat(body.at("/previousMonthSamePeriod").isNull()).isTrue();
+        assertThat(body.at("/budget/usageRate").isNull()).as("0%로 보이지 않게").isTrue();
+        assertThat(body.at("/notes").toString()).contains("단가를 아는 서버가 없어");
+    }
 }

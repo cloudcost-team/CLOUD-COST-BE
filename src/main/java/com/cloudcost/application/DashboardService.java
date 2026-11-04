@@ -35,7 +35,7 @@ public class DashboardService {
     public static final List<Integer> THRESHOLDS = List.of(80, 100, 120);
 
     /**
-     * @param costUsd   기간 추정 비용
+     * @param costUsd     기간 추정 비용. 단가를 아는 서버가 하나도 없으면 null
      * @param usedMinutes 기간 사용 분
      */
     public record PeriodTotal(LocalDate from, LocalDate to, long usedMinutes, BigDecimal costUsd) {
@@ -121,8 +121,8 @@ public class DashboardService {
             .filter(t -> t.present())
             .map(t -> t.info())
             .toList();
-        return compose(accountId, today, daily, present,
-            budgets.findByOwnerIdAndAccountId(ownerId, accountId).orElse(null), krwRate(),
+        MonthlyBudget budget = budgets.findByOwnerIdAndAccountId(ownerId, accountId).orElse(null);
+        return compose(accountId, today, daily, present, budget, krwRateFor(budget),
             daily.freshness().withWarnings(instances.freshness().warnings()), clock.instant());
     }
 
@@ -135,8 +135,8 @@ public class DashboardService {
         UsageCostView<LocalDate> daily =
             demo.daily(setup, new DateRange(YearMonth.from(today).minusMonths(1).atDay(1), today));
         List<Ec2Instance> present = demo.instances(setup).rows().stream().map(r -> r.instance().info()).toList();
-        return compose(DemoUsageService.ACCOUNT_ID, today, daily, present, budget, krwRate(), daily.freshness(),
-            clock.instant());
+        return compose(DemoUsageService.ACCOUNT_ID, today, daily, present, budget, krwRateFor(budget),
+            daily.freshness(), clock.instant());
     }
 
     /**
@@ -153,16 +153,25 @@ public class DashboardService {
         }
         LocalDate monthStart = today.withDayOfMonth(1);
         LocalDate availableFrom = daily.availableFrom();
-        PeriodTotal monthToDate = total(monthStart, today, costByDay, minutesByDay);
-
-        MonthEndForecast forecast = MonthEndForecast.of(costByDay, today, availableFrom).orElse(null);
         List<String> notes = new ArrayList<>(daily.notes());
         notes.add(MonthEndForecast.METHOD);
-        if (forecast == null) {
-            notes.add("끝난 날의 기록이 없어 월말 예상 비용은 내일부터 보여 드려요.");
-        }
 
-        PreviousComparison previous = previous(today, availableFrom, costByDay, minutesByDay, notes);
+        // 단가를 모르는 서버는 기존 비용 API처럼 합계에서 빼고 notes로 알린다. 다만 단가를 아는 서버가 하나도 없으면
+        // 0원으로 보이지 않도록 비용·월말 예상·전월 비교를 계산하지 않는다.
+        boolean nothingPriced = daily.report().totalEstimatedCost() == null;
+        PeriodTotal monthToDate = total(monthStart, today, costByDay, minutesByDay);
+        MonthEndForecast forecast = null;
+        PreviousComparison previous = null;
+        if (nothingPriced) {
+            monthToDate = new PeriodTotal(monthToDate.from(), monthToDate.to(), monthToDate.usedMinutes(), null);
+            notes.add("온디맨드 단가를 아는 서버가 없어 이번 달 비용·월말 예상·전월 대비를 계산하지 않았어요.");
+        } else {
+            forecast = MonthEndForecast.of(costByDay, today, availableFrom).orElse(null);
+            if (forecast == null) {
+                notes.add("끝난 날의 기록이 없어 월말 예상 비용은 내일부터 보여 드려요.");
+            }
+            previous = previous(today, availableFrom, costByDay, minutesByDay, notes);
+        }
 
         BudgetStatus budgetStatus = null;
         if (budget != null) {
@@ -230,8 +239,14 @@ public class DashboardService {
         return reached;
     }
 
-    /** 원화 예산 비교용 환율. 한 번도 받지 못했으면 null */
-    private ExchangeRate krwRate() {
+    /**
+     * 원화 예산 비교용 환율. 원화 예산이 있을 때만 조회한다 (예산이 없거나 달러 예산이면 환율 API를 부르지 않는다).
+     * 한 번도 받지 못했으면 null
+     */
+    private ExchangeRate krwRateFor(MonthlyBudget budget) {
+        if (budget == null || budget.currency() != Currency.KRW) {
+            return null;
+        }
         return currencies.resolve(Currency.KRW).display().rate();
     }
 }

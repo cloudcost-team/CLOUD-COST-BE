@@ -169,6 +169,9 @@
   `thresholdReached` = 넘은 가장 높은 알림 기준(80·100·120) 또는 `null`. 원화 예산인데 환율이 한 번도 없으면 `amount`·`usageRate`가 `null`.
 - **전월 대비**(`previousMonthSamePeriod`): 이번 달 1일 ~ 어제 vs 전월 1일 ~ 같은 날 (끝난 날끼리, 전월이 짧으면 말일까지).
   `change`는 반올림한 금액끼리의 차, `changeRate`는 전월이 0이면 `null`. 매달 1일이거나 전월 1일이 기록 시작일보다 앞이면 `null` + `notes` 안내.
+- 단가를 모르는 서버는 §2처럼 합계에서 빼고 `notes`로 알린다. **단가를 아는 서버가 하나도 없으면** 0원으로 보이지 않도록
+  `monthToDate.estimatedCost`·`forecast`·`previousMonthSamePeriod`·`budget.usageRate`가 `null`이다 (사용 시간은 그대로).
+- 환율은 원화 예산이 있을 때만 조회한다 (응답 통화 환산은 §2와 같다).
 - 오류: §2와 같다.
 
 ### `PUT /aws/accounts/{accountId}/budget` → 200
