@@ -1,11 +1,14 @@
 package com.cloudcost.domain.waste;
 
 import com.cloudcost.domain.ec2.Ec2Instance;
+import com.cloudcost.domain.ec2.InstanceStates;
 import com.cloudcost.domain.ec2.InstanceSpecs;
 import com.cloudcost.domain.ec2.InstanceSpecs.Spec;
 import com.cloudcost.domain.usage.UtilizationStats;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -30,6 +33,11 @@ public final class WasteDetector {
     /** 이보다 적게 켜져 있었으면 판단하지 않는다 */
     public static final int MIN_CPU_HOURS = 24;
     public static final BigDecimal HOURS_PER_MONTH = BigDecimal.valueOf(730);
+    /**
+     * 지금 중지돼 있고 이 기간 동안 한 번도 켜지지 않았으면 판단하지 않는다 (이미 비용이 나지 않는 서버).
+     * 밤·주말에 꺼지는 서버가 조회 시각에 따라 빠지지 않도록 "지금 중지"만으로는 빼지 않는다.
+     */
+    public static final Duration STOPPED_FOR = Duration.ofHours(72);
 
     private static final BigDecimal WINDOW_HOURS = BigDecimal.valueOf(UtilizationStats.WINDOW.toHours());
     private static final int WINDOW_DAYS = (int) UtilizationStats.WINDOW.toDays();
@@ -44,10 +52,17 @@ public final class WasteDetector {
      * @param usedMinutes     최근 14일 동안 켜져 있던 분
      * @param hourlyUsd       지금 타입의 온디맨드 단가. 모르면 null
      * @param targetHourlyUsd 줄인 타입({@link InstanceSpecs#downsizeTarget})의 단가. 후보가 없거나 모르면 null
+     * @param lastUsedHour    판단 구간 안에서 마지막으로 켜져 있던 시간. 모르면 null
      */
     public record Candidate(
         Ec2Instance instance, UtilizationStats stats, long usedMinutes, BigDecimal hourlyUsd,
-        BigDecimal targetHourlyUsd) {
+        BigDecimal targetHourlyUsd, Instant lastUsedHour) {
+
+        public Candidate(
+            Ec2Instance instance, UtilizationStats stats, long usedMinutes, BigDecimal hourlyUsd,
+            BigDecimal targetHourlyUsd) {
+            this(instance, stats, usedMinutes, hourlyUsd, targetHourlyUsd, null);
+        }
     }
 
     /** 판단하지 않은 서버와 이유 */
@@ -66,6 +81,13 @@ public final class WasteDetector {
     }
 
     public static Result detect(List<Candidate> candidates) {
+        return detect(candidates, null);
+    }
+
+    /**
+     * @param windowEnd 판단 구간 끝. 지금 중지된 서버가 {@link #STOPPED_FOR} 동안 켜지지 않았는지 볼 때 쓴다 (null이면 보지 않음)
+     */
+    public static Result detect(List<Candidate> candidates, Instant windowEnd) {
         List<WasteFinding> findings = new ArrayList<>();
         List<Skipped> skipped = new ArrayList<>();
         int judged = 0;
@@ -77,6 +99,11 @@ public final class WasteDetector {
             if (c.stats().cpuHours() < MIN_CPU_HOURS) {
                 skipped.add(new Skipped(info.instanceId(), info.name(),
                     "최근 14일 동안 켜져 있던 시간이 " + MIN_CPU_HOURS + "시간 미만이라 판단하지 않았어요."));
+                continue;
+            }
+            if (stoppedLongAgo(c, windowEnd)) {
+                skipped.add(new Skipped(info.instanceId(), info.name(),
+                    "지금 중지돼 있고 최근 " + STOPPED_FOR.toHours() / 24 + "일 동안 켜진 적이 없어 비용이 나지 않는 서버로 보고 판단하지 않았어요."));
                 continue;
             }
             judged++;
@@ -100,6 +127,11 @@ public final class WasteDetector {
         findings.sort(Comparator.comparing(WasteFinding::monthlySavingsUsd).reversed()
             .thenComparing(f -> f.instance().instanceId()));
         return new Result(List.copyOf(findings), List.copyOf(skipped), judged);
+    }
+
+    private static boolean stoppedLongAgo(Candidate c, Instant windowEnd) {
+        return windowEnd != null && InstanceStates.isStopped(c.instance().state()) && c.lastUsedHour() != null
+            && c.lastUsedHour().isBefore(windowEnd.minus(STOPPED_FOR));
     }
 
     /** 유휴: CPU 평균 1% 미만 + 네트워크를 알고 하루 평균 5MB 미만. 네트워크를 모르면 유휴로 보지 않는다. */

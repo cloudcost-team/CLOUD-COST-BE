@@ -139,12 +139,19 @@ public class WasteService {
 
         Map<String, UtilizationStats> stats = UtilizationStats.byInstance(windowSamples);
         Map<String, Long> minutes = new HashMap<>();
-        windowSamples.forEach(s -> minutes.merge(s.instanceId(), UsageCalculator.usedMinutes(s.sampleCount()), Long::sum));
+        Map<String, Instant> lastUsed = new HashMap<>();
+        for (HourlySample s : windowSamples) {
+            long used = UsageCalculator.usedMinutes(s.sampleCount());
+            minutes.merge(s.instanceId(), used, Long::sum);
+            if (used > 0) {
+                lastUsed.merge(s.instanceId(), s.hourStart(), (a, b) -> a.isAfter(b) ? a : b);
+            }
+        }
         List<Candidate> candidates = infos.stream()
             .map(i -> new Candidate(i, stats.get(i.instanceId()), minutes.getOrDefault(i.instanceId(), 0L),
-                hourly.apply(i), targetHourly.apply(i)))
+                hourly.apply(i), targetHourly.apply(i), lastUsed.get(i.instanceId())))
             .toList();
-        Result result = WasteDetector.detect(candidates);
+        Result result = WasteDetector.detect(candidates, end);
         Status status = result.findings().isEmpty() ? Status.NONE_FOUND : Status.OK;
         return new WasteView(accountId, status, null, start, end, result, freshness, notes, asOf);
     }
