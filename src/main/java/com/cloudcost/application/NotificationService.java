@@ -9,6 +9,7 @@ import com.cloudcost.application.port.AlertSettingsRepository;
 import com.cloudcost.application.port.BudgetRepository;
 import com.cloudcost.application.port.NotificationRepository;
 import com.cloudcost.application.port.NotificationRepository.Cursor;
+import com.cloudcost.application.port.UnitOfWork;
 import com.cloudcost.domain.DomainValidationException;
 import com.cloudcost.domain.account.AwsAccount;
 import com.cloudcost.domain.alert.AlertRules;
@@ -63,6 +64,7 @@ public class NotificationService {
     private final BudgetRepository budgets;
     private final AlertSettingsRepository settings;
     private final NotificationRepository notifications;
+    private final UnitOfWork unitOfWork;
     private final CurrencyService currencies;
     private final Clock clock;
     private final UsageSettings usage;
@@ -74,6 +76,7 @@ public class NotificationService {
         BudgetRepository budgets,
         AlertSettingsRepository settings,
         NotificationRepository notifications,
+        UnitOfWork unitOfWork,
         CurrencyService currencies,
         Clock clock,
         UsageSettings usage) {
@@ -83,6 +86,7 @@ public class NotificationService {
         this.budgets = budgets;
         this.settings = settings;
         this.notifications = notifications;
+        this.unitOfWork = unitOfWork;
         this.currencies = currencies;
         this.clock = clock;
         this.usage = usage;
@@ -102,14 +106,17 @@ public class NotificationService {
     public SettingsView updateSettings(String ownerId, AlertSettings conditions, List<BudgetChange> changes) {
         List<BudgetChange> list = changes == null ? List.of() : changes;
         list.forEach(c -> accounts.get(ownerId, c.accountId()));
-        settings.save(ownerId, conditions, clock.instant());
-        for (BudgetChange c : list) {
-            if (c.budget() == null) {
-                dashboards.deleteBudget(ownerId, c.accountId());
-            } else {
-                dashboards.setBudget(ownerId, c.accountId(), c.budget());
+        // 도중에 실패하면(예: 확인 뒤 연결이 지워짐) 조건·앞선 예산까지 모두 되돌린다
+        unitOfWork.run(() -> {
+            settings.save(ownerId, conditions, clock.instant());
+            for (BudgetChange c : list) {
+                if (c.budget() == null) {
+                    dashboards.deleteBudget(ownerId, c.accountId());
+                } else {
+                    dashboards.setBudget(ownerId, c.accountId(), c.budget());
+                }
             }
-        }
+        });
         return settings(ownerId);
     }
 
