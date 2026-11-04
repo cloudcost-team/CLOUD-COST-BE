@@ -369,7 +369,7 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
   "appliedRecommendationIds": [],
   "oversizedRatio": {
     "status": "OK", "ours": { "judgedCount": 4, "oversizedCount": 2, "ratio": 50.0 }, "moreEfficientTeamsPercent": null,
-    "reference": { "source": "Azure Public Dataset V2", "description": "VM 3~20대를 쓰는 구독 2,607곳 …", "sampleSize": 2607,
+    "reference": { "source": "Azure Public Dataset V2", "description": "마이크로소프트 내부 서비스 VM 30일 기록 중 VM 3~20대 구독 2,607곳 … 참고용", "sampleSize": 2607,
                    "averageRatio": 42, "medianRatio": 35, "percentileAvailable": false },
     "servers": [ { "instanceId": "i-0abc", "name": "api-server", "instanceType": "m5.large", "cpuP95": 6.20, "cpuHours": 336,
                    "oversized": true, "verdict": "과다 사양 (P95 10% 미만)" } ],

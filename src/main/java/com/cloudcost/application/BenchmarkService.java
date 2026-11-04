@@ -115,7 +115,8 @@ public class BenchmarkService {
         List<String> notes = new ArrayList<>(dashboard.notes());
         notes.add(WasteService.BASIS);
         notes.add("과다 사양 = 최근 14일 동안 24시간 이상 켜진 서버 중 CPU P95가 10% 미만인 서버예요. "
-            + "비교 자료와 측정 방식(지표 간격·기간)이 달라 참고용으로 봐 주세요.");
+            + "비교 자료는 마이크로소프트 내부 서비스 VM 기록(Azure Public Dataset)이에요. "
+            + "우리는 1시간 평균, 비교 자료는 5분 최대값으로 재서 정확한 순위가 아니라 참고용으로 봐 주세요.");
 
         boolean insufficient = wasteView.status() == WasteService.Status.INSUFFICIENT_HISTORY;
         OversizedSection oversized = oversized(wasteView, insufficient, simulate, applied, reference, notes);
