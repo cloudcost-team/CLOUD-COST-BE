@@ -111,7 +111,7 @@ public class ReportService {
     static MonthRow withPrevious(MonthRow row, UsageCostView<YearMonth> previousMonth) {
         BigDecimal previous = previousMonth.report().periods().stream()
             .filter(p -> p.period().equals(row.month().minusMonths(1)))
-            .map(PeriodCost::estimatedCost).findFirst().orElse(null);
+            .findFirst().map(PeriodCost::estimatedCost).orElse(null);
         return new MonthRow(row.month(), row.status(), row.usedMinutes(), row.costUsd(), previous,
             MonthlyReport.changeRate(row.costUsd(), previous));
     }
