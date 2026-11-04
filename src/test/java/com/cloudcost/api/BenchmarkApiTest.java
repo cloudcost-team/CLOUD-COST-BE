@@ -61,11 +61,13 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(oversized.at("/ours/oversizedCount").asInt()).isEqualTo(2);
         assertThat(oversized.at("/ours/ratio").decimalValue()).isEqualByComparingTo("66.7");
         assertThat(oversized.at("/reference/source").asText()).isEqualTo("Azure Public Dataset V2");
-        assertThat(oversized.at("/reference/sampleSize").asInt()).isEqualTo(2607);
+        assertThat(oversized.at("/reference/sizeBand").asText()).isEqualTo("3-20");
+        assertThat(oversized.at("/reference/sampleSize").asInt()).isEqualTo(2622);
         assertThat(oversized.at("/reference/averageRatio").decimalValue()).isEqualByComparingTo("42");
-        assertThat(oversized.at("/reference/medianRatio").decimalValue()).isEqualByComparingTo("35");
-        assertThat(oversized.at("/reference/percentileAvailable").asBoolean()).isFalse();
-        assertThat(oversized.at("/moreEfficientTeamsPercent").isNull()).as("백분위 표가 없으면 null").isTrue();
+        assertThat(oversized.at("/reference/medianRatio").decimalValue()).isEqualByComparingTo("33");
+        assertThat(oversized.at("/reference/percentileAvailable").asBoolean()).isTrue();
+        assertThat(oversized.at("/moreEfficientTeamsPercent").decimalValue())
+                .as("3~20대 표에서 66.7%보다 확실히 낮은 가장 큰 백분위는 65% (57.9%)").isEqualByComparingTo("65.0");
         assertThat(oversized.at("/servers").findValuesAsText("instanceId")).containsExactly("i-batch", "i-api", "i-web");
         assertThat(oversized.at("/servers/2/verdict").asText()).isEqualTo("적정");
         assertThat(oversized.at("/afterSimulation").isNull()).isTrue();
@@ -80,7 +82,7 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(spend.at("/position").asText()).isEqualTo("WITHIN");
         assertThat(spend.at("/range/minUsd").decimalValue()).isEqualByComparingTo("100");
         assertThat(spend.at("/afterSimulation").isNull()).isTrue();
-        assertThat(body.at("/notes").toString()).contains("우리보다 효율적인 팀");
+        assertThat(body.at("/notes").toString()).as("백분위 표가 있어 안내 없음").doesNotContain("백분위 표가 없어");
     }
 
     @Test
@@ -115,7 +117,7 @@ class BenchmarkApiTest extends IntegrationTestBase {
     }
 
     @Test
-    void 서버_2대는_1_2대_구간과_견주고_그_구간_자료가_없으면_비교하지_않는다() throws Exception {
+    void 서버_2대는_1_2대_구간과_견준다() throws Exception {
         server("i-api", "m5.large", 6, 23, 10L * 1024 * 1024);
         server("i-web", "t3.medium", 50, 90, 50L * 1024 * 1024);
 
@@ -123,17 +125,33 @@ class BenchmarkApiTest extends IntegrationTestBase {
         JsonNode oversized = body.at("/oversizedRatio");
 
         assertThat(body.at("/status").asText()).isEqualTo("OK");
-        assertThat(oversized.at("/status").asText()).isEqualTo("NOT_COMPARABLE");
+        assertThat(oversized.at("/status").asText()).isEqualTo("OK");
         assertThat(oversized.at("/ours/ratio").decimalValue()).isEqualByComparingTo("50.0");
         assertThat(oversized.at("/matchedSizeBand").asText()).isEqualTo("1-2");
         assertThat(oversized.at("/reference/sizeBand").asText()).isEqualTo("1-2");
-        assertThat(oversized.at("/reference/dataAvailable").asBoolean()).isFalse();
-        assertThat(oversized.at("/reference/averageRatio").isNull()).isTrue();
+        assertThat(oversized.at("/reference/sizeBandLabel").asText()).isEqualTo("서버 1~2대");
+        assertThat(oversized.at("/reference/dataAvailable").asBoolean()).isTrue();
+        assertThat(oversized.at("/reference/sampleSize").asInt()).isEqualTo(1473);
+        assertThat(oversized.at("/moreEfficientTeamsPercent").decimalValue())
+                .as("1~2대 팀의 45%까지는 과다 사양 0%").isEqualByComparingTo("45.0");
         assertThat(oversized.at("/sizeBands").size()).isEqualTo(2);
         assertThat(oversized.at("/sizeBands/0/matchesOurs").asBoolean()).isTrue();
-        assertThat(oversized.at("/sizeBands/1/dataAvailable").asBoolean()).isTrue();
-        assertThat(body.at("/notes").toString()).contains("서버 1~2대 비교 자료는 아직 준비 중");
+        assertThat(oversized.at("/sizeBands/1/matchesOurs").asBoolean()).isFalse();
         assertThat(body.at("/monthlySpend/status").asText()).isEqualTo("OK");
+    }
+
+    @Test
+    void 어느_구간에도_안_드는_서버_수는_비교하지_않는다() throws Exception {
+        for (int i = 0; i < 21; i++) {
+            server("i-w" + i, "t3.medium", 50, 90, 50L * 1024 * 1024);
+        }
+
+        JsonNode oversized = benchmark("").at("/oversizedRatio");
+
+        assertThat(oversized.at("/status").asText()).isEqualTo("NOT_COMPARABLE");
+        assertThat(oversized.at("/ours/judgedCount").asInt()).isEqualTo(21);
+        assertThat(oversized.at("/matchedSizeBand").isNull()).isTrue();
+        assertThat(oversized.at("/reference/dataAvailable").asBoolean()).isFalse();
     }
 
     @Test

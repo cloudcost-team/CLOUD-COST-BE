@@ -350,11 +350,11 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 { "dataSource": "aws", "currency": "KRW", "status": "OK", "availableAt": null, "window": { "from": "…", "to": "…" },
   "appliedRecommendationIds": [],
   "oversizedRatio": {
-    "status": "OK", "ours": { "judgedCount": 4, "oversizedCount": 2, "ratio": 50.0 }, "moreEfficientTeamsPercent": null,
+    "status": "OK", "ours": { "judgedCount": 4, "oversizedCount": 2, "ratio": 50.0 }, "moreEfficientTeamsPercent": 55.0,
     "matchedSizeBand": "3-20",
     "reference": { "source": "Azure Public Dataset V2", "description": "마이크로소프트 내부 서비스 VM 30일 기록 중 같은 VM 대수 구간 구독들의 … 참고용",
-                   "sizeBand": "3-20", "sizeBandLabel": "서버 3~20대", "dataAvailable": true, "sampleSize": 2607,
-                   "averageRatio": 42, "medianRatio": 35, "percentileAvailable": false },
+                   "sizeBand": "3-20", "sizeBandLabel": "서버 3~20대", "dataAvailable": true, "sampleSize": 2622,
+                   "averageRatio": 42, "medianRatio": 33, "percentileAvailable": true },
     "sizeBands": [ { "key": "1-2", "label": "서버 1~2대", "minServers": 1, "maxServers": 2, "dataAvailable": false, "matchesOurs": false },
                    { "key": "3-20", "label": "서버 3~20대", "minServers": 3, "maxServers": 20, "dataAvailable": true, "matchesOurs": true } ],
     "servers": [ { "instanceId": "i-0abc", "name": "api-server", "instanceType": "m5.large", "cpuP95": 6.20, "cpuHours": 336,
@@ -374,8 +374,10 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
     `sizeBand`(예: `1-2`)를 주면 그 구간과 견준다 (S09 규모 선택, "그 규모 팀과 비교하면"). 고를 수 있는 값은 `sizeBands`, 모르는 값은 400 `VALIDATION_ERROR`.
   - `status`: `OK` · `NOT_COMPARABLE`(판단한 서버가 없거나, 맞는 구간이 없거나, 고른 구간의 비교 자료가 아직 없음(`reference.dataAvailable: false`) — 비율·목록은 주지만 비교하지 않음) ·
     `INSUFFICIENT_HISTORY`(기록 14일 미만, `ours`·`servers` 비움).
-  - 기본 파일의 `1-2` 구간은 아직 비어 있다. `3-20`의 숫자는 기획서 값이다. 둘 다 `scripts/benchmark/AzureOversized.java`로 원본에서 계산해 채운다 (ADR-013).
-  - `moreEfficientTeamsPercent`: 우리보다 비율이 낮은 팀의 비율(%). 비교 기준 파일에 백분위 표(`percentiles`)가 있을 때만 계산하고(표 사이는 직선 보간), 없으면 `null` + `notes` 안내. **기본 파일에는 표가 없다.**
+  - 기본 파일은 Azure 원본(VM 2,695,548대·구독 6,687곳)을 `scripts/benchmark/AzureOversized.java`로 계산한 값이다:
+    `1-2` 구독 1,473곳 평균 47%·중앙값 50%, `3-20` 구독 2,622곳 평균 42%·중앙값 33% (ADR-013).
+  - `moreEfficientTeamsPercent`: 우리보다 비율이 **확실히 낮은** 팀의 비율(%). 백분위 표에서 비율이 우리보다 낮은 가장 큰 백분위다
+    (5% 단위 하한값. 같은 비율인 팀은 넣지 않는다 — 1~2대 팀은 비율이 0·50·100%뿐이라 같은 값이 많다). 표가 없으면 `null` + `notes` 안내.
 - **② 전체 낭비 비율**(`wasteRatio`): 미연결 볼륨·스냅샷·고정 IP·로드밸런서를 지금 권한으로 볼 수 없어 항상 `UNAVAILABLE` + 사유. Flexera 평균은 참고값이다.
 - **③ 월 지출**(`monthlySpend`): 월말 예상(§2-1, USD)을 비교 범위($100~$500)와 견줘 `BELOW`(미만)·`WITHIN`·`ABOVE`(초과). 범위는 요청 통화로도 준다.
   월말 예상이 없으면 `status: "NO_FORECAST"`, 금액·위치 `null`. 기록이 14일 미만이어도 월말 예상이 있으면 비교한다.
