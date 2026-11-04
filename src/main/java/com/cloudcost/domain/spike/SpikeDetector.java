@@ -78,32 +78,38 @@ public final class SpikeDetector {
 
     /**
      * @param daily         일별 비용 (날짜 → 비용·서버별 사용 분). 평가 기간 앞 30일도 들어 있어야 평소를 잴 수 있다
-     * @param availableFrom 기록 시작일. null이면 기록이 없다 (판정하지 않음). 이 날 이후 처음 사용한 날부터 평소를 잰다
+     * @param baselineFrom  평소를 재기 시작하는 날 = 기록 시작일과 처음 사용한 날 중 늦은 날 ({@link #baselineFrom}).
+     *                      null이면 기록이 없다 (판정하지 않음). 조회 기간과 상관없이 같은 값을 넘겨야 같은 날의 판정이 같다
      * @param from          판정할 첫날 (포함)
      * @param to            판정할 마지막 날 (포함)
      * @return 날짜 → 급증. 급증이 아닌 날·판정하지 않은 날은 들어가지 않는다
      */
     public static Map<LocalDate, Spike> detect(
-        CostReport<LocalDate> daily, LocalDate availableFrom, LocalDate from, LocalDate to) {
+        CostReport<LocalDate> daily, LocalDate baselineFrom, LocalDate from, LocalDate to) {
         Map<LocalDate, Spike> result = new LinkedHashMap<>();
-        if (availableFrom == null) {
-            return result;
-        }
-        // 기록 시작일 뒤라도 처음 쓰기 전의 0원인 날은 "기록"이 아니다. 넣으면 서버를 켠 지 보름쯤 된 날
-        // 30일 창에 0원과 쓴 날이 반씩 섞여 중앙값이 낮아지고, 평소대로 쓴 날이 급증으로 잡힌다.
-        Optional<LocalDate> firstUsed = daily.periods().stream()
-            .filter(p -> p.usedMinutes() > 0 && !p.period().isBefore(availableFrom))
-            .map(PeriodCost::period)
-            .min(LocalDate::compareTo);
-        if (firstUsed.isEmpty()) {
+        if (baselineFrom == null) {
             return result;
         }
         Map<LocalDate, PeriodCost<LocalDate>> byDay = new HashMap<>();
         daily.periods().forEach(p -> byDay.put(p.period(), p));
         for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
-            evaluate(byDay, firstUsed.get(), d).ifPresent(s -> result.put(s.date(), s));
+            evaluate(byDay, baselineFrom, d).ifPresent(s -> result.put(s.date(), s));
         }
         return result;
+    }
+
+    /**
+     * 평소를 재기 시작하는 날. 기록 시작일 뒤라도 처음 쓰기 전의 0원인 날은 "기록"이 아니다
+     * (넣으면 서버를 켠 지 보름쯤 된 날 30일 창에 0원과 쓴 날이 반씩 섞여 평소대로 쓴 날이 급증으로 잡힌다).
+     * 처음 사용한 뒤 꺼 둔 날의 0원은 평소에 넣는다.
+     *
+     * @param firstUsedDay 전체 기록에서 처음 켜져 있던 날 (조회 기간 안이 아니라). 없으면 null
+     */
+    public static LocalDate baselineFrom(LocalDate availableFrom, LocalDate firstUsedDay) {
+        if (availableFrom == null || firstUsedDay == null) {
+            return null;
+        }
+        return firstUsedDay.isAfter(availableFrom) ? firstUsedDay : availableFrom;
     }
 
     /** 가장 최근 급증 (없으면 empty) */
