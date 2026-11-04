@@ -20,6 +20,11 @@ public final class InstanceStates {
         return "running".equals(state);
     }
 
+    /** 중지됨·중지 중 (대시보드의 "중지 N대") */
+    public static boolean isStopped(String state) {
+        return "stopped".equals(state) || "stopping".equals(state);
+    }
+
     public static boolean mayEmitMetrics(String state) {
         return state != null && MAY_EMIT_METRICS.contains(state);
     }

@@ -15,6 +15,8 @@ import com.cloudcost.entrypoint.api.dto.UsageDtos.DailyCostResponse;
 import com.cloudcost.entrypoint.api.dto.UsageDtos.InstancesResponse;
 import com.cloudcost.entrypoint.api.dto.UsageDtos.MonthlyCostResponse;
 import com.cloudcost.entrypoint.api.dto.WasteDtos.WasteResponse;
+import com.cloudcost.entrypoint.api.dto.DashboardDtos.DashboardResponse;
+import com.cloudcost.application.DashboardService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -34,11 +36,14 @@ import org.springframework.web.bind.annotation.RestController;
 class DemoController {
 
     private final DemoUsageService demo;
+    private final DashboardService dashboards;
     private final CurrencyService currencies;
     private final String timezone;
 
-    DemoController(DemoUsageService demo, CurrencyService currencies, UsageSettings settings) {
+    DemoController(
+            DemoUsageService demo, DashboardService dashboards, CurrencyService currencies, UsageSettings settings) {
         this.demo = demo;
+        this.dashboards = dashboards;
         this.currencies = currencies;
         this.timezone = settings.zone().getId();
     }
@@ -94,6 +99,17 @@ class DemoController {
             description = "기간의 마지막 14일을 서버별 usagePattern으로 판단한다. 기간이 14일보다 짧으면 INSUFFICIENT_HISTORY.")
     WasteResponse waste(
             @Valid @RequestBody SetupRequest setup, @RequestParam(defaultValue = "KRW") Currency currency) {
-        return WasteResponse.of(demo.waste(setup.toDomain()), currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
+        var domain = setup.toDomain();
+        return WasteResponse.of(demo.waste(domain), dashboards.demoDashboard(domain, null).forecast(),
+                currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
+    }
+
+    @PostMapping("/dashboard")
+    @Operation(summary = "설정한 구성의 대시보드 요약 (실제: GET /aws/accounts/{id}/dashboard)",
+            description = "기간의 마지막 날(to)을 오늘로 본다. 요청에 budget을 넣으면 예산 대비를 함께 계산한다.")
+    DashboardResponse dashboard(
+            @Valid @RequestBody SetupRequest setup, @RequestParam(defaultValue = "KRW") Currency currency) {
+        return DashboardResponse.of(dashboards.demoDashboard(setup.toDomain(), setup.budgetOrNull()), timezone,
+                currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
     }
 }

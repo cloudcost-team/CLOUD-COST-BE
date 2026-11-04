@@ -4,6 +4,7 @@ import com.cloudcost.application.error.AwsAccessException;
 import com.cloudcost.application.error.ConflictException;
 import com.cloudcost.application.error.NotFoundException;
 import com.cloudcost.application.port.AwsAccountRepository;
+import com.cloudcost.application.port.BudgetRepository;
 import com.cloudcost.application.port.CustomerAwsGateway;
 import com.cloudcost.application.port.CustomerAwsSession;
 import com.cloudcost.application.port.Ec2InstanceRepository;
@@ -42,6 +43,7 @@ public class AwsAccountService {
     private final Ec2InstanceRepository instances;
     private final Ec2UsageRepository usage;
     private final SyncJobRepository syncJobs;
+    private final BudgetRepository budgets;
     private final CustomerAwsGateway gateway;
     private final UnitOfWork unitOfWork;
     private final Clock clock;
@@ -53,6 +55,7 @@ public class AwsAccountService {
         Ec2InstanceRepository instances,
         Ec2UsageRepository usage,
         SyncJobRepository syncJobs,
+        BudgetRepository budgets,
         CustomerAwsGateway gateway,
         UnitOfWork unitOfWork,
         Clock clock,
@@ -62,6 +65,7 @@ public class AwsAccountService {
         this.instances = instances;
         this.usage = usage;
         this.syncJobs = syncJobs;
+        this.budgets = budgets;
         this.gateway = gateway;
         this.unitOfWork = unitOfWork;
         this.clock = clock;
@@ -121,7 +125,7 @@ public class AwsAccountService {
     }
 
     /**
-     * 연결과 이 연결로 모은 데이터(인스턴스·시간별 사용량·수집 기록)를 모두 지운다. 남의 연결이면 404.
+     * 연결과 이 연결로 모은 데이터(인스턴스·시간별 사용량·수집 기록·월 예산)를 모두 지운다. 남의 연결이면 404.
      * 고객 계정의 스택(Role)은 건드리지 않는다. 이후 그 스택에서 오는 신호는 연결을 찾지 못해 무시된다
      * ({@link StackCallbackService}).
      */
@@ -131,6 +135,7 @@ public class AwsAccountService {
             usage.deleteUsageByOwnerIdAndAccountId(ownerId, accountId);
             instances.deleteInstancesByOwnerIdAndAccountId(ownerId, accountId);
             syncJobs.deleteAllByOwnerIdAndAccountId(ownerId, accountId);
+            budgets.deleteByOwnerIdAndAccountId(ownerId, accountId);
             if (!accounts.deleteByOwnerIdAndId(ownerId, accountId)) {
                 throw notFound();
             }

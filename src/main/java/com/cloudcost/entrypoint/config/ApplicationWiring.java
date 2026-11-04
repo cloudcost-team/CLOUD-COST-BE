@@ -4,6 +4,7 @@ import com.cloudcost.application.AuthService;
 import com.cloudcost.application.AwsAccountService;
 import com.cloudcost.application.CurrencyService;
 import com.cloudcost.application.Ec2DataRefresher;
+import com.cloudcost.application.DashboardService;
 import com.cloudcost.application.DemoUsageService;
 import com.cloudcost.application.Ec2UsageQueryService;
 import com.cloudcost.application.Pauser;
@@ -13,6 +14,7 @@ import com.cloudcost.application.UsageSettings;
 import com.cloudcost.application.WasteService;
 import com.cloudcost.application.port.AccessTokens;
 import com.cloudcost.application.port.AwsAccountRepository;
+import com.cloudcost.application.port.BudgetRepository;
 import com.cloudcost.application.port.CustomerAwsGateway;
 import com.cloudcost.application.port.Ec2InstanceRepository;
 import com.cloudcost.application.port.Ec2UsageRepository;
@@ -79,12 +81,13 @@ class ApplicationWiring {
             Ec2InstanceRepository instances,
             Ec2UsageRepository usage,
             SyncJobRepository syncJobs,
+            BudgetRepository budgets,
             CustomerAwsGateway gateway,
             UnitOfWork unitOfWork,
             Clock clock,
             CloudCostProperties properties) {
         return new AwsAccountService(
-                accounts, users, instances, usage, syncJobs, gateway, unitOfWork, clock,
+                accounts, users, instances, usage, syncJobs, budgets, gateway, unitOfWork, clock,
                 properties.connectionSettings());
     }
 
@@ -162,6 +165,18 @@ class ApplicationWiring {
             Clock clock,
             UsageSettings settings) {
         return new WasteService(accounts, refresher, instances, usage, prices, clock, settings);
+    }
+
+    @Bean
+    DashboardService dashboardService(
+            AwsAccountService accounts,
+            Ec2UsageQueryService queries,
+            DemoUsageService demo,
+            BudgetRepository budgets,
+            CurrencyService currencies,
+            Clock clock,
+            UsageSettings settings) {
+        return new DashboardService(accounts, queries, demo, budgets, currencies, clock, settings);
     }
 
     @Bean

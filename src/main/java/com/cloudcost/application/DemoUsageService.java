@@ -102,13 +102,27 @@ public class DemoUsageService {
         return query(setup, UsageAggregator::monthlyMinutes);
     }
 
+    /**
+     * 설정한 서버 구성으로 지정한 기간의 일별 비용을 계산한다. 서버는 여전히 setup.from 0시에 처음 켠 것으로 보므로
+     * 그 앞의 날은 0이다 (대시보드의 전월 비교용).
+     */
+    public UsageCostView<LocalDate> daily(DemoSetup setup, DateRange range) {
+        return query(setup, range, Function.identity());
+    }
+
     private <K> UsageCostView<K> query(
         DemoSetup setup,
+        Function<Map<LocalDate, Map<String, Long>>, Map<K, Map<String, Long>>> grouping) {
+        return query(setup, setup.range(), grouping);
+    }
+
+    private <K> UsageCostView<K> query(
+        DemoSetup setup,
+        DateRange range,
         Function<Map<LocalDate, Map<String, Long>>, Map<K, Map<String, Long>>> grouping) {
         Instant now = clock.instant();
         ZoneId zone = settings.zone();
         DemoFleet fleet = fleet(setup, now);
-        DateRange range = setup.range();
         Map<LocalDate, Map<String, Long>> daily = UsageAggregator.dailyMinutes(
             fleet.hourlySamples(range.startInclusive(zone), range.endExclusive(zone)), zone, range.from(), range.to());
         Map<String, InstancePrice> prices = prices(fleet);

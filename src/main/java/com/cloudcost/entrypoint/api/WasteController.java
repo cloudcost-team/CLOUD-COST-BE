@@ -1,6 +1,7 @@
 package com.cloudcost.entrypoint.api;
 
 import com.cloudcost.application.CurrencyService;
+import com.cloudcost.application.DashboardService;
 import com.cloudcost.application.WasteService;
 import com.cloudcost.domain.cost.DisplayCurrency.Currency;
 import com.cloudcost.entrypoint.api.auth.CurrentOwner;
@@ -23,10 +24,12 @@ import org.springframework.web.bind.annotation.RestController;
 class WasteController {
 
     private final WasteService waste;
+    private final DashboardService dashboards;
     private final CurrencyService currencies;
 
-    WasteController(WasteService waste, CurrencyService currencies) {
+    WasteController(WasteService waste, DashboardService dashboards, CurrencyService currencies) {
         this.waste = waste;
+        this.dashboards = dashboards;
         this.currencies = currencies;
     }
 
@@ -40,6 +43,8 @@ class WasteController {
             @PathVariable UUID accountId,
             @Parameter(description = "금액 통화: KRW(기본, 원화 환산) 또는 USD")
                     @RequestParam(defaultValue = "KRW") Currency currency) {
-        return WasteResponse.of(waste.waste(owner, accountId), currencies.resolve(currency), UsageDtos.DATA_SOURCE_AWS);
+        WasteService.WasteView view = waste.waste(owner, accountId);
+        return WasteResponse.of(view, dashboards.dashboard(owner, accountId).forecast(), currencies.resolve(currency),
+            UsageDtos.DATA_SOURCE_AWS);
     }
 }
