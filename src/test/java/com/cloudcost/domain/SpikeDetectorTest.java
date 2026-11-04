@@ -88,6 +88,17 @@ class SpikeDetectorTest {
     }
 
     @Test
+    void 처음_사용하기_전의_0원인_날은_평소에_넣지_않는다() {
+        // 기록 시작일(9/1)부터 15일은 서버가 없어 0원, 9/16부터 매일 $10. 0원을 평소에 넣으면 10/1 무렵 중앙값이 반으로 떨어져 급증으로 잡힌다
+        Map<LocalDate, Map<String, Long>> daily = new LinkedHashMap<>();
+        for (int i = 0; i < 46; i++) {
+            daily.put(START.plusDays(i), i < 15 ? new TreeMap<>() : new TreeMap<>(Map.of("i-web", 600L)));
+        }
+
+        assertThat(SpikeDetector.detect(CostEstimator.report(daily, PRICES), START, START, START.plusDays(45))).isEmpty();
+    }
+
+    @Test
     void 평소가_0원이면_판정하지_않는다() {
         Map<LocalDate, Map<String, Long>> daily = new LinkedHashMap<>();
         for (int i = 0; i < 30; i++) {
