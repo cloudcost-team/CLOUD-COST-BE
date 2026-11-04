@@ -126,14 +126,19 @@ public final class WasteDetector {
                     "지금 중지돼 있고 최근 " + STOPPED_FOR.toHours() / 24 + "일 동안 켜진 적이 없어 비용이 나지 않는 서버로 보고 판단하지 않았어요."));
                 continue;
             }
-            judged.add(info.instanceId());
-            BigDecimal monthlyHours = monthlyHours(c.usedMinutes());
-            if (isGpu(info) && (isIdle(c.stats()) || isOversized(c.stats()))) {
-                // GPU 작업은 CPU·네트워크를 거의 안 쓸 수 있어 이 지표만으로 중지·변경을 권하지 않는다
-                skipped.add(new Skipped(info.instanceId(), info.name(),
-                    "CPU를 적게 쓰지만 GPU 타입이라 CPU·네트워크 지표만으로 중지나 사양 변경을 추천하지 않았어요."));
+            Optional<Spec> spec = InstanceSpecs.find(info.instanceType());
+            if (spec.isEmpty() || spec.get().gpu()) {
+                // GPU 작업은 CPU·네트워크를 거의 안 쓸 수 있어 이 지표만으로 중지·변경을 권하지 않는다.
+                // 사양표에 없는 타입은 GPU인지 알 수 없어 같은 이유로 판단 대상(벤치마킹 포함)에서 뺀다.
+                if (isIdle(c.stats()) || isOversized(c.stats())) {
+                    skipped.add(new Skipped(info.instanceId(), info.name(), spec.isEmpty()
+                        ? "CPU를 적게 쓰지만 사양 정보(GPU 여부)를 몰라 CPU·네트워크 지표만으로 중지나 사양 변경을 추천하지 않았어요."
+                        : "CPU를 적게 쓰지만 GPU 타입이라 CPU·네트워크 지표만으로 중지나 사양 변경을 추천하지 않았어요."));
+                }
                 continue;
             }
+            judged.add(info.instanceId());
+            BigDecimal monthlyHours = monthlyHours(c.usedMinutes());
             if (isIdle(c.stats())) {
                 if (c.hourlyUsd() == null) {
                     skipped.add(new Skipped(info.instanceId(), info.name(), "유휴로 보이지만 온디맨드 단가를 몰라 절감액을 계산하지 못했어요."));
@@ -141,7 +146,7 @@ public final class WasteDetector {
                 }
                 BigDecimal monthly = c.hourlyUsd().multiply(monthlyHours);
                 findings.add(new WasteFinding(info, WasteKind.IDLE, c.stats(), monthlyHours,
-                    InstanceSpecs.find(info.instanceType()).orElse(null), c.hourlyUsd(), monthly,
+                    spec.get(), c.hourlyUsd(), monthly,
                     null, null, null, monthly, IDLE_REASON));
                 continue;
             }
@@ -160,10 +165,6 @@ public final class WasteDetector {
     private static boolean stoppedLongAgo(Candidate c, Instant windowEnd) {
         return windowEnd != null && InstanceStates.isStopped(c.instance().state()) && c.lastUsedHour() != null
             && c.lastUsedHour().isBefore(windowEnd.minus(STOPPED_FOR));
-    }
-
-    private static boolean isGpu(Ec2Instance info) {
-        return InstanceSpecs.find(info.instanceType()).filter(InstanceSpecs.Spec::gpu).isPresent();
     }
 
     /** 유휴: CPU 최대 5% 미만 + 네트워크를 알고 하루 평균 5MB 미만. 네트워크를 모르면 유휴로 보지 않는다. */
@@ -197,10 +198,12 @@ public final class WasteDetector {
             if (price == null || baseline.isEmpty() || price.compareTo(c.hourlyUsd()) >= 0) {
                 continue;
             }
-            BigDecimal projected = projectedP95(c.stats().cpuP95(), current.vcpu(), t.vcpu());
-            if (projected.compareTo(baseline.get()) > 0) {
+            // 반올림 전 값으로 비교한다: P95 × 현재 vCPU ≤ 기본 성능 × 새 vCPU (표시용 예상 P95는 반올림)
+            if (c.stats().cpuP95().multiply(BigDecimal.valueOf(current.vcpu()))
+                .compareTo(baseline.get().multiply(BigDecimal.valueOf(t.vcpu()))) > 0) {
                 continue;
             }
+            BigDecimal projected = projectedP95(c.stats().cpuP95(), current.vcpu(), t.vcpu());
             if (best == null || price.compareTo(best.hourlyUsd()) < 0
                 || (price.compareTo(best.hourlyUsd()) == 0 && t.memoryGib().compareTo(best.target().memoryGib()) > 0)) {
                 best = new Choice(t, price, projected, baseline.get());
