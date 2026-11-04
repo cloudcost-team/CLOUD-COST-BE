@@ -99,7 +99,8 @@ class WasteDetailApiTest extends IntegrationTestBase {
         JsonNode idle = item("USD", "i-batch:IDLE");
 
         assertThat(idle.at("/summary/0/detail").asText()).isEqualTo("14일 동안 CPU가 가장 높을 때도 2%예요");
-        assertThat(idle.at("/summary/1/title").asText()).isEqualTo("네트워크도 조용해요");
+        assertThat(idle.at("/summary/1/title").asText()).isEqualTo("네트워크도 거의 없어요");
+        assertThat(idle.at("/summary/1/detail").asText()).isEqualTo("하루 평균 입출력이 0.1MB 미만이에요");
         assertThat(idle.at("/summary/2/detail").asText()).isEqualTo("매달 $70.08 절감 예상 (추정)");
         assertThat(idle.at("/summaryNote").isNull()).isTrue();
         assertThat(idle.at("/basis").isNull()).isTrue();

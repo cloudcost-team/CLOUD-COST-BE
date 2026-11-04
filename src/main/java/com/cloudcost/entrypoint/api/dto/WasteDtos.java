@@ -160,29 +160,54 @@ public final class WasteDtos {
                     new ComparisonDto(current, recommended), f.cautions(), f.consoleSteps());
         }
 
-        /** 10초 요약. 금액은 요청 통화로 적는다 */
+        /**
+         * 10초 요약. 제목은 사용량 구간에 따라 바뀌고(아래), 설명은 서버마다 다른 숫자를 적는다. 금액은 요청 통화로 적는다.
+         * <ul>
+         *   <li>사용량: 평균(유휴는 최대) CPU 1% 미만 "사실상 쉬고 있어요" · 8% 미만 "거의 안 쓰고 있어요" · 그 밖 "적게 쓰고 있어요"
+         *   <li>여유(과다 사양): 예상 사용률이 기본 성능의 절반 이하 "줄여도 넉넉해요" · 그 밖 "줄여도 기본 성능 안이에요"
+         *   <li>가격(과다 사양): 다음 후보가 있으면 "조건을 만족하는 것 중 가장 싸요" · 없으면 "조건을 만족하는 타입은 이것뿐이에요"
+         *   <li>네트워크(유휴): 하루 평균 1MB 미만 "네트워크도 거의 없어요" · 그 밖 "네트워크도 조용해요"
+         * </ul>
+         */
         static List<SummaryLineDto> summary(WasteFinding f, DisplayCurrency d) {
             UtilizationStats s = f.stats();
             String max = WasteFinding.percent(s.cpuMax());
             if (f.kind() == WasteKind.IDLE) {
+                BigDecimal dailyMb = BigDecimal.valueOf(s.networkBytes())
+                        .divide(BigDecimal.valueOf(UtilizationStats.WINDOW.toDays() * 1024L * 1024L), 1, java.math.RoundingMode.HALF_UP);
+                String network = dailyMb.signum() == 0 ? "0.1MB 미만이에요" : plain(dailyMb) + "MB예요";
                 return List.of(
-                        new SummaryLineDto("거의 안 쓰고 있어요", "14일 동안 CPU가 가장 높을 때도 " + max + ending(max)),
-                        new SummaryLineDto("네트워크도 조용해요", "하루 평균 입출력이 5MB 미만이에요"),
+                        new SummaryLineDto(usageTitle(s.cpuMax()), "14일 동안 CPU가 가장 높을 때도 " + max + ending(max)),
+                        new SummaryLineDto(dailyMb.compareTo(BigDecimal.ONE) < 0 ? "네트워크도 거의 없어요" : "네트워크도 조용해요",
+                                "하루 평균 입출력이 " + network),
                         new SummaryLineDto("중지하면 그만큼 줄어요",
                                 "매달 " + money(d.cost(f.monthlySavingsUsd()), d) + " 절감 예상 (추정)"));
             }
             WasteFinding.DownsizeBasis b = f.basis();
             String projected = WasteFinding.percent(b.projectedCpuP95());
+            boolean roomy = b.projectedCpuP95().multiply(BigDecimal.valueOf(2)).compareTo(b.targetBaselinePercent()) <= 0;
             String price = "시간당 " + money(d.hourlyRate(f.targetHourlyUsd()), d);
             if (b.nextSpec() != null) {
                 price += " (다음 후보 " + b.nextSpec().instanceType() + " " + money(d.hourlyRate(b.nextHourlyUsd()), d) + ")";
             }
+            boolean spiky = s.cpuMax() != null && s.cpuMax().compareTo(SPIKY_MAX) >= 0;
             return List.of(
-                    new SummaryLineDto("거의 안 쓰고 있어요",
-                            "14일 평균 CPU " + WasteFinding.percent(s.cpuAvg()) + ", 가장 높을 때도 " + max + ending(max)),
-                    new SummaryLineDto("줄여도 넉넉해요",
+                    new SummaryLineDto(usageTitle(s.cpuAvg()), "14일 평균 CPU " + WasteFinding.percent(s.cpuAvg())
+                            + (spiky ? ", 가장 높을 땐 " + max + "까지 올라갔어요" : ", 가장 높을 때도 " + max + ending(max))),
+                    new SummaryLineDto(roomy ? "줄여도 넉넉해요" : "줄여도 기본 성능 안이에요",
                             "바꿔도 예상 사용률 " + projected + ", 기본 성능(" + plain(b.targetBaselinePercent()) + "%) 안이에요"),
-                    new SummaryLineDto("조건을 만족하는 것 중 가장 싸요", price));
+                    new SummaryLineDto(b.nextSpec() != null ? "조건을 만족하는 것 중 가장 싸요" : "조건을 만족하는 타입은 이것뿐이에요",
+                            price));
+        }
+
+        /** 최대 CPU가 이 이상이면 "가장 높을 때도"(낮다는 뉘앙스) 대신 "까지 올라갔어요"로 적는다 */
+        static final BigDecimal SPIKY_MAX = BigDecimal.valueOf(50);
+
+        private static String usageTitle(BigDecimal cpu) {
+            if (cpu.compareTo(BigDecimal.ONE) < 0) {
+                return "사실상 쉬고 있어요";
+            }
+            return cpu.compareTo(BigDecimal.valueOf(8)) < 0 ? "거의 안 쓰고 있어요" : "적게 쓰고 있어요";
         }
 
         static String summaryNote(WasteFinding f) {
