@@ -133,7 +133,7 @@ UNIQUE `(owner_id, event_key)` — 같은 일은 한 번만 만든다. 인덱스
 | account_id | UUID FK aws_accounts | 알림이 생긴 연결 |
 | type | VARCHAR(20) | BUDGET / SPIKE / WEEKLY_SUMMARY |
 | message | VARCHAR(500) | 만들 때 정한 한국어 문구 (금액은 그때의 통화·환율) |
-| event_key | VARCHAR(200) | `BUDGET:{연결}:{yyyy-MM}:{80|100|120}` · `SPIKE:{연결}:{날짜}` · `WEEKLY_SUMMARY:{연결}:{주 월요일}` |
+| event_key | VARCHAR(200) | `BUDGET:{연결}:{yyyy-MM}:{80\|100\|120}` · `SPIKE:{연결}:{날짜}` · `WEEKLY_SUMMARY:{연결}:{주 월요일}` |
 | created_at | TIMESTAMPTZ | |
 | read_at | TIMESTAMPTZ NULL | 읽지 않았으면 NULL |
 - 연결 삭제 순서: `ec2_usage_hourly` → `ec2_instances` → `sync_jobs` → `account_budgets` → **`notifications`** → `aws_accounts` (한 트랜잭션).
