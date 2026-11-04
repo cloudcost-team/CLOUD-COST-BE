@@ -108,7 +108,8 @@ class CollectionIntegrityTest extends IntegrationTestBase {
         JsonNode job = jobs().get(0);
         assertThat(job.at("/status").asText()).isEqualTo("PARTIAL");
         assertThat(job.at("/usageRefreshed").asBoolean()).isFalse();
-        assertThat(job.at("/cwRequestCount").asInt()).as("재시도도 고객 계정 호출 수에 센다").isEqualTo(7);
+        assertThat(job.at("/cwRequestCount").asInt())
+                .as("재시도도 고객 계정 호출 수에 센다. 네트워크는 사용 시간을 다 읽은 i-stop만 2건").isEqualTo(9);
         assertThat(job.at("/error/code").asText()).isEqualTo("UNAVAILABLE");
         assertThat(job.at("/error/message").asText()).contains("일시적으로 응답하지 않습니다");
         assertThat(account().at("/status").asText()).as("일시 오류는 상태를 바꾸지 않는다").isEqualTo("ACTIVE");
@@ -147,7 +148,7 @@ class CollectionIntegrityTest extends IntegrationTestBase {
         assertThat(body.at("/freshness/warnings")).isEmpty();
         JsonNode job = jobs().get(0);
         assertThat(job.at("/status").asText()).isEqualTo("SUCCEEDED");
-        assertThat(job.at("/cwRequestCount").asInt()).isEqualTo(8);
+        assertThat(job.at("/cwRequestCount").asInt()).as("CPU 8 + 네트워크 입출력 2 × 2대").isEqualTo(12);
     }
 
     @Test

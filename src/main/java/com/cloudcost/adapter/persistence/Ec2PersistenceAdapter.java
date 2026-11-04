@@ -6,6 +6,7 @@ import com.cloudcost.application.port.Ec2InstanceRepository;
 import com.cloudcost.application.port.Ec2UsageRepository;
 import com.cloudcost.domain.ec2.Ec2Instance;
 import com.cloudcost.domain.ec2.TrackedInstance;
+import com.cloudcost.domain.usage.HourlyNetwork;
 import com.cloudcost.domain.usage.HourlySample;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -70,6 +71,7 @@ class Ec2PersistenceAdapter implements Ec2InstanceRepository, Ec2UsageRepository
             e.usageCollectedUntil = t.usageCollectedUntil();
             e.firstSeenAt = t.firstSeenAt();
             e.lastSeenAt = t.lastSeenAt();
+            e.metricsCollectedUntil = t.metricsCollectedUntil();
             instances.save(e);
         }
     }
@@ -100,6 +102,12 @@ class Ec2PersistenceAdapter implements Ec2InstanceRepository, Ec2UsageRepository
                 e.instanceId = s.instanceId();
                 e.hourStart = s.hourStart();
                 e.sampleCount = s.sampleCount();
+                if (s.cpuAvg() != null) {
+                    e.cpuAvg = s.cpuAvg();
+                }
+                if (s.cpuMax() != null) {
+                    e.cpuMax = s.cpuMax();
+                }
                 e.collectedAt = collectedAt;
                 usage.save(e);
                 saved++;
@@ -109,12 +117,43 @@ class Ec2PersistenceAdapter implements Ec2InstanceRepository, Ec2UsageRepository
     }
 
     @Override
+    @Transactional
+    public int updateNetwork(String ownerId, UUID accountId, List<HourlyNetwork> network) {
+        Map<String, List<HourlyNetwork>> byInstance = network.stream()
+            .collect(Collectors.groupingBy(HourlyNetwork::instanceId, LinkedHashMap::new, Collectors.toList()));
+        int updated = 0;
+        for (Map.Entry<String, List<HourlyNetwork>> group : byInstance.entrySet()) {
+            Map<Instant, Ec2UsageHourlyEntity> existing = new HashMap<>();
+            usage.findByOwnerIdAndAccountIdAndInstanceIdAndHourStartIn(
+                    ownerId, accountId, group.getKey(),
+                    group.getValue().stream().map(HourlyNetwork::hourStart).distinct().toList())
+                .forEach(e -> existing.put(e.hourStart, e));
+            for (HourlyNetwork n : group.getValue()) {
+                Ec2UsageHourlyEntity e = existing.get(n.hourStart());
+                if (e == null) {
+                    continue;
+                }
+                if (n.inBytes() != null) {
+                    e.networkInBytes = n.inBytes();
+                }
+                if (n.outBytes() != null) {
+                    e.networkOutBytes = n.outBytes();
+                }
+                usage.save(e);
+                updated++;
+            }
+        }
+        return updated;
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<HourlySample> findHourly(String ownerId, UUID accountId, Instant start, Instant end) {
         return usage.findByOwnerIdAndAccountIdAndHourStartGreaterThanEqualAndHourStartLessThan(ownerId, accountId,
                 start, end)
             .stream()
-            .map(e -> new HourlySample(e.instanceId, e.hourStart, e.sampleCount))
+            .map(e -> new HourlySample(e.instanceId, e.hourStart, e.sampleCount, e.cpuAvg, e.cpuMax,
+                e.networkInBytes, e.networkOutBytes))
             .toList();
     }
 
@@ -136,6 +175,6 @@ class Ec2PersistenceAdapter implements Ec2InstanceRepository, Ec2UsageRepository
             e.platformDetails, e.tenancy, e.spot, e.detailedMonitoring);
         return new TrackedInstance(
             e.id, e.ownerId, e.accountId, info, e.present, e.activeSinceUsageSync, e.usageCollectedUntil,
-            e.firstSeenAt, e.lastSeenAt);
+            e.firstSeenAt, e.lastSeenAt, e.metricsCollectedUntil);
     }
 }

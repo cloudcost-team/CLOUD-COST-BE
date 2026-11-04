@@ -92,5 +92,15 @@ UNIQUE `(auth_provider, provider_subject)`. 비밀번호 컬럼은 없다. `user
 - 연결 삭제(`DELETE /aws/accounts/{id}`)는 `ec2_usage_hourly` → `ec2_instances` → `sync_jobs` → `aws_accounts` 순서로 `owner_id`·`account_id` 조건을 걸어 한 트랜잭션에서 지운다
   (FK에 ON DELETE CASCADE를 두지 않고 애플리케이션이 지운다). 연결 갱신(`save`)은 이미 지운 연결을 다시 만들지 않는다.
 
+## V6 (2026-11-04) — 낭비 탐지용 지표 (이슈 #24, ADR-009)
+- `ec2_usage_hourly`에 컬럼 추가 (모두 NULL 허용, 지표 수집 전 행은 NULL):
+  | 컬럼 | 설명 |
+  |---|---|
+  | cpu_avg, cpu_max | NUMERIC(7,3). 같은 CPUUtilization 조회의 Average·Maximum (%) |
+  | network_in_bytes, network_out_bytes | BIGINT. NetworkIn·NetworkOut Sum. **최근 14일만** 수집 |
+- `ec2_instances.metrics_collected_until` TIMESTAMPTZ: 이 시각 전까지 최근 14일 범위의 지표를 수집함. NULL이면 다음 수집 때 최근 14일을 읽는다
+  (지표 수집 전에 저장한 인스턴스는 CPU도 한 번 다시 읽는다). 성공한 구간 끝까지만 옮긴다.
+- 네트워크 값은 이미 있는 시간 행에만 채운다 (꺼져 있던 시간은 행이 없다).
+
 ## 보존 (백로그)
 ec2_usage_hourly는 455일, sync_jobs는 90일 정도로 정리하는 작업이 필요하다.

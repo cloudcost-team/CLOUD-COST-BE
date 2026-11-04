@@ -71,6 +71,9 @@ class Ec2InstanceEntity {
     @Column(name = "last_seen_at", nullable = false)
     Instant lastSeenAt;
 
+    @Column(name = "metrics_collected_until")
+    Instant metricsCollectedUntil;
+
     protected Ec2InstanceEntity() {
     }
 }

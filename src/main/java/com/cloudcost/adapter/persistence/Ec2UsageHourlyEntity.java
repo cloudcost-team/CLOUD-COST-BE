@@ -33,6 +33,18 @@ class Ec2UsageHourlyEntity {
     @Column(name = "sample_count", nullable = false, precision = 10, scale = 2)
     BigDecimal sampleCount;
 
+    @Column(name = "cpu_avg", precision = 7, scale = 3)
+    BigDecimal cpuAvg;
+
+    @Column(name = "cpu_max", precision = 7, scale = 3)
+    BigDecimal cpuMax;
+
+    @Column(name = "network_in_bytes")
+    Long networkInBytes;
+
+    @Column(name = "network_out_bytes")
+    Long networkOutBytes;
+
     @Column(name = "collected_at", nullable = false)
     Instant collectedAt;
 

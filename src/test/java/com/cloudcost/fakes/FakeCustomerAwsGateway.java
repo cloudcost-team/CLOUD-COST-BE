@@ -7,6 +7,7 @@ import com.cloudcost.domain.account.AwsRegion;
 import com.cloudcost.domain.account.ExternalId;
 import com.cloudcost.domain.account.RoleArn;
 import com.cloudcost.domain.ec2.Ec2Instance;
+import com.cloudcost.domain.usage.HourlyNetwork;
 import com.cloudcost.domain.usage.HourlySample;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -20,18 +21,26 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
 
     public final List<Ec2Instance> instances = new ArrayList<>();
     public final Map<String, List<HourlySample>> samples = new HashMap<>();
+    /** 인스턴스별 시간당 네트워크 (입력·출력 둘 다 채워 둔다) */
+    public final Map<String, List<HourlyNetwork>> network = new HashMap<>();
     public AwsAccessException assumeError;
     /** 앞에서 몇 번은 assumeError로 실패하고 그다음부터 성공 (IAM 반영 지연 재현) */
     public int assumeFailuresBeforeSuccess = -1;
     public AwsAccessException describeError;
     public AwsAccessException cloudWatchError;
+    /** NetworkIn·NetworkOut 조회만 실패시킬 오류 */
+    public AwsAccessException networkError;
     /** 요청("instanceId@start~end")별로 실패시킬 오류 (null이면 성공). 특정 구간·횟수만 실패시킬 때 쓴다. */
     public Function<String, AwsAccessException> cloudWatchFailure = request -> null;
 
     public int assumeCalls;
     public int verifyCalls;
     public int describeCalls;
+    /** CPUUtilization 조회 수 (사용 시간·CPU) */
     public int cloudWatchCalls;
+    /** NetworkIn·NetworkOut 조회 수 */
+    public int networkCalls;
+    public final List<String> networkRequests = new ArrayList<>();
     public final List<String> cloudWatchRequests = new ArrayList<>();
     public ExternalId lastExternalId;
     public RoleArn lastRoleArn;
@@ -40,10 +49,14 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
     public void reset() {
         instances.clear();
         samples.clear();
+        network.clear();
+        networkCalls = 0;
+        networkRequests.clear();
         assumeError = null;
         assumeFailuresBeforeSuccess = -1;
         describeError = null;
         cloudWatchError = null;
+        networkError = null;
         cloudWatchFailure = request -> null;
         assumeCalls = 0;
         verifyCalls = 0;
@@ -59,6 +72,22 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
         List<HourlySample> list = samples.computeIfAbsent(instanceId, k -> new ArrayList<>());
         for (int h = 0; h < hours; h++) {
             list.add(new HourlySample(instanceId, firstHour.plusSeconds(3600L * h), java.math.BigDecimal.valueOf(sampleCount)));
+        }
+    }
+
+    /** CPU 평균·최대가 있는 시간별 샘플 (켜져 있던 시간) */
+    public void addCpuHours(String instanceId, Instant firstHour, int hours, double cpuAvg, double cpuMax) {
+        List<HourlySample> list = samples.computeIfAbsent(instanceId, k -> new ArrayList<>());
+        for (int h = 0; h < hours; h++) {
+            list.add(HourlySample.cpu(instanceId, firstHour.plusSeconds(3600L * h), java.math.BigDecimal.valueOf(60),
+                    java.math.BigDecimal.valueOf(cpuAvg), java.math.BigDecimal.valueOf(cpuMax)));
+        }
+    }
+
+    public void addNetworkHours(String instanceId, Instant firstHour, int hours, long inBytes, long outBytes) {
+        List<HourlyNetwork> list = network.computeIfAbsent(instanceId, k -> new ArrayList<>());
+        for (int h = 0; h < hours; h++) {
+            list.add(new HourlyNetwork(instanceId, firstHour.plusSeconds(3600L * h), inBytes, outBytes));
         }
     }
 
@@ -96,7 +125,7 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
             }
 
             @Override
-            public List<HourlySample> hourlySampleCounts(String instanceId, Instant start, Instant end) {
+            public List<HourlySample> hourlyCpu(String instanceId, Instant start, Instant end) {
                 cloudWatchCalls++;
                 String request = instanceId + "@" + start + "~" + end;
                 cloudWatchRequests.add(request);
@@ -109,6 +138,25 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
                 }
                 return samples.getOrDefault(instanceId, List.of()).stream()
                         .filter(s -> !s.hourStart().isBefore(start) && s.hourStart().isBefore(end))
+                        .toList();
+            }
+
+            @Override
+            public List<HourlyNetwork> hourlyNetwork(
+                    String instanceId, NetworkDirection direction, Instant start, Instant end) {
+                networkCalls++;
+                networkRequests.add(direction + ":" + instanceId + "@" + start + "~" + end);
+                if (cloudWatchError != null) {
+                    throw cloudWatchError;
+                }
+                if (networkError != null) {
+                    throw networkError;
+                }
+                return network.getOrDefault(instanceId, List.of()).stream()
+                        .filter(n -> !n.hourStart().isBefore(start) && n.hourStart().isBefore(end))
+                        .map(n -> direction == NetworkDirection.IN
+                                ? new HourlyNetwork(instanceId, n.hourStart(), n.inBytes(), null)
+                                : new HourlyNetwork(instanceId, n.hourStart(), null, n.outBytes()))
                         .toList();
             }
 

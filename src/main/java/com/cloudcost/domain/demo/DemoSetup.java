@@ -24,10 +24,21 @@ public record DemoSetup(List<Server> servers, LocalDate from, LocalDate to) {
      * 서버 한 줄 = 같은 설정의 인스턴스 count대.
      *
      * @param hoursPerDay DAILY_HOURS일 때 하루 사용 시간 (1~24). 다른 패턴에서는 쓰지 않는다
+     * @param usage       켜져 있는 동안의 CPU·네트워크 사용 모양. 없으면 NORMAL
      */
-    public record Server(String name, String instanceType, Os os, int count, DemoSchedule schedule, int hoursPerDay) {
+    public record Server(
+        String name, String instanceType, Os os, int count, DemoSchedule schedule, int hoursPerDay,
+        DemoUsagePattern usage) {
+
+        /** 사용 모양을 고르지 않은 서버 (NORMAL) */
+        public Server(String name, String instanceType, Os os, int count, DemoSchedule schedule, int hoursPerDay) {
+            this(name, instanceType, os, count, schedule, hoursPerDay, DemoUsagePattern.NORMAL);
+        }
 
         public Server {
+            if (usage == null) {
+                usage = DemoUsagePattern.NORMAL;
+            }
             if (name == null || name.isBlank() || name.strip().length() > MAX_NAME) {
                 throw invalid("서버 이름은 1~" + MAX_NAME + "자로 입력해 주세요.");
             }

@@ -97,7 +97,7 @@
 ### `GET /aws/accounts/{accountId}/sync-jobs?limit=20`
 `[ { jobId, trigger, status, instancesRefreshed, usageRefreshed, ec2RequestCount, cwRequestCount, instanceCount, usageRows, error, warning, startedAt, finishedAt } ]`
 - `status`: `SUCCEEDED` / `PARTIAL`(일부만 저장. `error`에 첫 실패 원인, 실패한 구간은 다음 수집에서 다시 읽음) / `FAILED`(저장 없음).
-- `cwRequestCount`는 재시도를 포함한 실제 호출 수다.
+- `cwRequestCount`는 재시도를 포함한 실제 호출 수다. 낭비 탐지용 네트워크 조회(인스턴스당 수집마다 2건, ADR-009)도 포함한다.
 
 ## 2. EC2 사용량·추정 비용 (ADR-002, 통화는 ADR-005)
 모든 조회에 `currency=KRW|USD` (기본 **KRW**). 원화는 응답의 `exchangeRate`로 환산한 추정치다.
@@ -161,16 +161,20 @@ Google 로그인 없이 간이 로그인 → 서버 구성·기간 설정 → �
 
 ### `GET /demo/catalog`
 고를 수 있는 `instanceTypes`(타입별 Linux·Windows 시간당 USD), `os`(`LINUX`|`WINDOWS`),
-`schedules`(`ALWAYS` 24시간 · `WEEKDAY_OFFICE` 평일 09~19시 · `DAILY_HOURS` 매일 09시부터 N시간), 한도(`maxServers` 20, `maxCountPerServer` 10, `maxInstances` 50).
+`schedules`(`ALWAYS` 24시간 · `WEEKDAY_OFFICE` 평일 09~19시 · `DAILY_HOURS` 매일 09시부터 N시간),
+`usagePatterns`(켜져 있는 동안의 CPU·네트워크 모양: `NORMAL` 업무 시간 CPU 40~70% · `OVERSIZED` CPU 3~8% · `IDLE` CPU 1% 미만·네트워크 거의 없음),
+한도(`maxServers` 20, `maxCountPerServer` 10, `maxInstances` 50).
 
 ### 비용 조회: `POST /demo/instances` · `/demo/costs` · `/demo/costs/daily` · `/demo/costs/monthly` (`?currency=KRW|USD`)
 ```json
 { "from": "2026-10-01", "to": "2026-10-31",
-  "servers": [ { "name": "web", "instanceType": "m5.large", "os": "LINUX", "count": 2, "schedule": "ALWAYS" },
+  "servers": [ { "name": "web", "instanceType": "m5.large", "os": "LINUX", "count": 2, "schedule": "ALWAYS", "usagePattern": "OVERSIZED" },
                { "name": "gpu", "instanceType": "g4dn.xlarge", "os": "LINUX", "count": 1, "schedule": "DAILY_HOURS", "hoursPerDay": 6 } ] }
 ```
 - 응답은 §2의 실제 경로(`GET /aws/accounts/{accountId}/…`)와 같은 형식이다. 기간은 기본값 없이 요청의 `from`~`to`를 쓰고, 월별은 그 기간을 월로 나눈다.
 - 다른 점: `dataSource: "demo"`, `accountId`는 위 고정값, `notes` 맨 앞에 체험 데이터·예시 단가 안내, `freshness`의 시각은 모두 `null`, `availableFrom`은 요청의 `from`.
 - `from` 0시에 모든 서버를 처음 켰다고 보고, 지난 시간까지만 계산한다(현재 진행 중인 시간 제외). 인스턴스 이름은 대수가 2대 이상이면 `web-1`, `web-2`…
+- `usagePattern`은 선택이고 없으면 `NORMAL`이다. 지금의 비용 응답에는 드러나지 않고, 낭비 탐지·벤치마킹 체험(#10 이후)에 쓰인다.
+  값은 인스턴스 ID·시각으로 정한 결정적 값이라 같은 설정이면 항상 같다.
 - 단가는 서울 리전 온디맨드 단가를 고정값으로 쓴다 (Price List를 부르지 않음). 금액 계산은 실제 경로와 같은 domain 로직이다.
 - 잘못된 설정은 400 `DEMO_INVALID_SETUP` (이유는 `message`): 모르는 타입, 대수 1~10 밖, 합계 50대 초과, `to`가 오늘 이후 등. 기간 455일 초과는 `INVALID_PERIOD`.
