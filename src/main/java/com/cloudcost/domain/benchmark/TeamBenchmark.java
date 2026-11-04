@@ -102,33 +102,21 @@ public final class TeamBenchmark {
     }
 
     /**
-     * 우리보다 과다 사양 비율이 낮은(효율적인) 팀의 비율 (%). 백분위 표 사이는 직선으로 잇는다.
-     * 표가 없거나 우리 비율이 없으면 null.
+     * 우리보다 과다 사양 비율이 확실히 낮은(효율적인) 팀의 비율 (%). 백분위 표에서 비율이 우리보다 낮은 가장 큰 백분위다
+     * (표 간격 단위의 하한값, 예: 5% 단위). 서버 1~2대 팀은 비율이 0·50·100%뿐이라 같은 값이 많아, 표 사이를 직선으로 이으면
+     * 과다 사양 0%인 팀에도 "더 효율적인 팀 5%"처럼 틀린 값이 나온다. 표가 없거나 우리 비율이 없으면 null.
      */
     public static BigDecimal moreEfficientTeamsPercent(BigDecimal ratioPercent, List<Percentile> table) {
         if (ratioPercent == null || table.isEmpty()) {
             return null;
         }
-        List<Percentile> sorted = table.stream().sorted(Comparator.comparing(Percentile::ratioPercent)).toList();
-        Percentile first = sorted.getFirst();
-        if (ratioPercent.compareTo(first.ratioPercent()) <= 0) {
-            return ratioPercent.compareTo(first.ratioPercent()) < 0 ? BigDecimal.ZERO.setScale(1)
-                : first.percentile().setScale(1, RoundingMode.HALF_UP);
-        }
-        for (int k = 1; k < sorted.size(); k++) {
-            Percentile lo = sorted.get(k - 1);
-            Percentile hi = sorted.get(k);
-            if (ratioPercent.compareTo(hi.ratioPercent()) <= 0) {
-                BigDecimal span = hi.ratioPercent().subtract(lo.ratioPercent());
-                if (span.signum() == 0) {
-                    return hi.percentile().setScale(1, RoundingMode.HALF_UP);
-                }
-                BigDecimal t = ratioPercent.subtract(lo.ratioPercent()).divide(span, 6, RoundingMode.HALF_UP);
-                return lo.percentile().add(hi.percentile().subtract(lo.percentile()).multiply(t))
-                    .setScale(1, RoundingMode.HALF_UP);
+        BigDecimal best = BigDecimal.ZERO;
+        for (Percentile p : table) {
+            if (p.ratioPercent().compareTo(ratioPercent) < 0 && p.percentile().compareTo(best) > 0) {
+                best = p.percentile();
             }
         }
-        return BigDecimal.valueOf(100).setScale(1);
+        return best.setScale(1, RoundingMode.HALF_UP);
     }
 
     /** 월 지출이 범위 아래(min 미만)·안(min~max)·위(max 초과) */
