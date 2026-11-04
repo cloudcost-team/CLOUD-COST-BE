@@ -5,6 +5,7 @@ import com.cloudcost.domain.demo.DemoSetup.Server;
 import com.cloudcost.domain.ec2.Ec2Instance;
 import com.cloudcost.domain.usage.HourlySample;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
@@ -14,7 +15,7 @@ import java.util.Optional;
 
 /**
  * 체험 모드: 사용자가 정한 서버 구성({@link DemoSetup})을 실제 수집 결과와 같은 모양
- * (DescribeInstances의 인스턴스 + CloudWatch SampleCount 시간별 샘플)으로 만든다. DB에 저장하지 않는다.
+ * (DescribeInstances의 인스턴스 + CloudWatch 시간별 샘플: SampleCount·CPU 평균·최대·네트워크)으로 만든다. DB에 저장하지 않는다.
  *
  * <p>모든 서버는 기간 시작일 0시에 처음 켰다고 본다. 같은 설정·시각이면 항상 같은 결과다(무작위 없음).
  */
@@ -59,7 +60,8 @@ public final class DemoFleet {
     }
 
     /**
-     * CloudWatch SampleCount에 해당하는 시간별 샘플. 켜져 있던 시간마다 60(1분 샘플 60개)이다.
+     * CloudWatch 시간별 샘플. SampleCount는 켜져 있던 시간마다 60(1분 샘플 60개)이고,
+     * CPU·네트워크는 서버의 사용 모양({@link DemoUsagePattern})으로 만든다.
      * 기간 시작 전과 아직 끝나지 않은 현재 시간은 넣지 않는다.
      */
     public List<HourlySample> hourlySamples(Instant from, Instant to) {
@@ -69,11 +71,31 @@ public final class DemoFleet {
         for (Unit u : units) {
             for (Instant h = first; h.isBefore(end); h = h.plus(1, ChronoUnit.HOURS)) {
                 if (isOn(u, h)) {
-                    samples.add(new HourlySample(u.instanceId(), h, FULL_HOUR));
+                    samples.add(sample(u, h));
                 }
             }
         }
         return samples;
+    }
+
+    private HourlySample sample(Unit u, Instant hour) {
+        DemoUsagePattern.HourMetrics m = u.server().usage().at(hour.atZone(zone), jitter(u.instanceId(), hour));
+        return new HourlySample(
+            u.instanceId(), hour, FULL_HOUR, percent(m.cpuAvg()), percent(m.cpuMax()), m.networkInBytes(),
+            m.networkOutBytes());
+    }
+
+    /** 인스턴스 ID와 시각으로 정한 0 이상 1 미만의 값 (SplitMix64). 같은 입력이면 항상 같다. */
+    static double jitter(String instanceId, Instant hour) {
+        long z = instanceId.hashCode() * 0x9E3779B97F4A7C15L + hour.getEpochSecond();
+        z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
+        z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
+        z = z ^ (z >>> 31);
+        return (z >>> 11) * 0x1.0p-53;
+    }
+
+    private static BigDecimal percent(double value) {
+        return BigDecimal.valueOf(Math.min(100, value)).setScale(3, RoundingMode.HALF_UP);
     }
 
     private static List<Unit> expand(List<Server> servers) {

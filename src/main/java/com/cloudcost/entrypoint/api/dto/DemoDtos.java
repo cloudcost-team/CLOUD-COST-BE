@@ -5,6 +5,7 @@ import com.cloudcost.domain.demo.DemoCatalog;
 import com.cloudcost.domain.demo.DemoCatalog.Os;
 import com.cloudcost.domain.demo.DemoSchedule;
 import com.cloudcost.domain.demo.DemoSetup;
+import com.cloudcost.domain.demo.DemoUsagePattern;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
@@ -45,10 +46,13 @@ public final class DemoDtos {
             @Schema(example = "LINUX") Os os,
             @Schema(example = "2") int count,
             @Schema(example = "ALWAYS") DemoSchedule schedule,
-            @Schema(description = "schedule이 DAILY_HOURS일 때 하루 사용 시간 (1~24)", example = "8") Integer hoursPerDay) {
+            @Schema(description = "schedule이 DAILY_HOURS일 때 하루 사용 시간 (1~24)", example = "8") Integer hoursPerDay,
+            @Schema(description = "켜져 있는 동안의 CPU·네트워크 사용 모양. 없으면 NORMAL", example = "OVERSIZED")
+                    DemoUsagePattern usagePattern) {
 
         DemoSetup.Server toDomain() {
-            return new DemoSetup.Server(name, instanceType, os, count, schedule, hoursPerDay == null ? 0 : hoursPerDay);
+            return new DemoSetup.Server(
+                    name, instanceType, os, count, schedule, hoursPerDay == null ? 0 : hoursPerDay, usagePattern);
         }
     }
 
@@ -67,10 +71,13 @@ public final class DemoDtos {
 
     public record ScheduleDto(String code, String label) {}
 
+    public record UsagePatternDto(String code, String label) {}
+
     public record CatalogResponse(
             List<InstanceTypeDto> instanceTypes,
             List<String> os,
             List<ScheduleDto> schedules,
+            @Schema(description = "서버별로 고를 수 있는 CPU·네트워크 사용 모양 (낭비 탐지 체험용)") List<UsagePatternDto> usagePatterns,
             int maxServers,
             int maxCountPerServer,
             int maxInstances,
@@ -83,6 +90,7 @@ public final class DemoDtos {
                             .toList(),
                     Arrays.stream(Os.values()).map(Enum::name).toList(),
                     Arrays.stream(DemoSchedule.values()).map(s -> new ScheduleDto(s.name(), s.label())).toList(),
+                    Arrays.stream(DemoUsagePattern.values()).map(p -> new UsagePatternDto(p.name(), p.label())).toList(),
                     DemoSetup.MAX_SERVERS, DemoSetup.MAX_COUNT, DemoSetup.MAX_INSTANCES, priceNote);
         }
     }

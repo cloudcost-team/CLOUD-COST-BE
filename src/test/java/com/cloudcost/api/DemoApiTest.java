@@ -75,6 +75,7 @@ class DemoApiTest extends IntegrationTestBase {
 
         assertThat(body.at("/instanceTypes").size()).isGreaterThan(5);
         assertThat(body.at("/schedules/0/code").asText()).isEqualTo("ALWAYS");
+        assertThat(body.at("/usagePatterns").findValuesAsText("code")).containsExactly("NORMAL", "OVERSIZED", "IDLE");
         assertThat(body.at("/os").toString()).contains("WINDOWS");
     }
 

@@ -38,6 +38,8 @@ StackCallbackPoller → StackCallbackService: 연결 ID·External ID 확인 → 
 | 단가 (Price List) | 7일 (없음 결과는 1일) | DB |
 
 - 첫 CloudWatch 수집: 인스턴스마다 최근 90일을 30일씩 3회. 이후: 마지막 수집 2시간 전부터 1회.
+  CPUUtilization은 `SampleCount`(사용 시간)·`Average`·`Maximum`(CPU 사용률)을 한 요청으로 받는다.
+- 낭비 탐지용 네트워크(`NetworkIn`·`NetworkOut` Sum)는 사용 시간을 끝까지 읽은 인스턴스만, 최근 14일 범위에서 수집마다 2건 (ADR-009).
 - 지난 수집 이후 켜진 적이 없는 인스턴스는 CloudWatch를 부르지 않는다.
 - AWS 호출이 실패해도 이전 데이터가 있으면 그 데이터와 `freshness.warnings`를 준다. 처음이면 오류로 응답한다.
 
@@ -70,6 +72,7 @@ DISCONNECTED: 수집하지 않음. 새 스택으로 실제 검증에 성공할 �
 ## 계산 (domain, 순수 Java)
 | 클래스 | 하는 일 |
 |---|---|
+| `UtilizationStats` | 최근 14일 CPU 평균(가중)·P95(시간 평균의 95번째 백분위)·최대, 네트워크 합계 (낭비 탐지·벤치마킹 근거) |
 | `UsageCalculator` | 시간별 SampleCount → 사용 분. CPUUtilization은 켜져 있는 동안 1분마다 샘플을 남기므로 SampleCount = 사용 분 (최대 60) |
 | `UsageAggregator` | 시간별 → 일별(Asia/Seoul 날짜 경계) → 월별(일별 합산) |
 | `CostEstimator` | 사용 시간 × 온디맨드 단가 = 추정 비용. 단가 없으면 null |

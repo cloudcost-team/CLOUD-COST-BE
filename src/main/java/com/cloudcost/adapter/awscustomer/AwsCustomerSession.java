@@ -2,8 +2,10 @@ package com.cloudcost.adapter.awscustomer;
 
 import com.cloudcost.application.port.CustomerAwsSession;
 import com.cloudcost.domain.ec2.Ec2Instance;
+import com.cloudcost.domain.usage.HourlyNetwork;
 import com.cloudcost.domain.usage.HourlySample;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -90,27 +92,55 @@ final class AwsCustomerSession implements CustomerAwsSession {
     }
 
     @Override
-    public List<HourlySample> hourlySampleCounts(String instanceId, Instant start, Instant end) {
+    public List<HourlySample> hourlyCpu(String instanceId, Instant start, Instant end) {
+        GetMetricStatisticsResponse response = getMetricStatistics(
+            "CPUUtilization", instanceId, start, end, Statistic.SAMPLE_COUNT, Statistic.AVERAGE, Statistic.MAXIMUM);
+        return response.datapoints().stream()
+            .filter(d -> d.timestamp() != null && d.sampleCount() != null && d.sampleCount() > 0)
+            .sorted(Comparator.comparing(Datapoint::timestamp))
+            .map(d -> HourlySample.cpu(instanceId, d.timestamp(), BigDecimal.valueOf(d.sampleCount()),
+                percent(d.average()), percent(d.maximum())))
+            .toList();
+    }
+
+    @Override
+    public List<HourlyNetwork> hourlyNetwork(
+        String instanceId, NetworkDirection direction, Instant start, Instant end) {
+        GetMetricStatisticsResponse response =
+            getMetricStatistics(direction.metricName(), instanceId, start, end, Statistic.SUM);
+        return response.datapoints().stream()
+            .filter(d -> d.timestamp() != null && d.sum() != null)
+            .sorted(Comparator.comparing(Datapoint::timestamp))
+            .map(d -> {
+                long bytes = Math.round(d.sum());
+                return direction == NetworkDirection.IN
+                    ? new HourlyNetwork(instanceId, d.timestamp(), bytes, null)
+                    : new HourlyNetwork(instanceId, d.timestamp(), null, bytes);
+            })
+            .toList();
+    }
+
+    private GetMetricStatisticsResponse getMetricStatistics(
+        String metricName, String instanceId, Instant start, Instant end, Statistic... statistics) {
         GetMetricStatisticsRequest request = GetMetricStatisticsRequest.builder()
             .namespace("AWS/EC2")
-            .metricName("CPUUtilization")
+            .metricName(metricName)
             .dimensions(Dimension.builder().name("InstanceId").value(instanceId).build())
             .startTime(start)
             .endTime(end)
             .period(3600)
-            .statistics(Statistic.SAMPLE_COUNT)
+            .statistics(statistics)
             .build();
-        GetMetricStatisticsResponse response;
         try {
-            response = cloudWatch().getMetricStatistics(request);
+            return cloudWatch().getMetricStatistics(request);
         } catch (RuntimeException e) {
             throw CustomerAwsErrors.translate(e, GET_METRIC_STATISTICS);
         }
-        return response.datapoints().stream()
-            .filter(d -> d.timestamp() != null && d.sampleCount() != null && d.sampleCount() > 0)
-            .sorted(Comparator.comparing(Datapoint::timestamp))
-            .map(d -> new HourlySample(instanceId, d.timestamp(), BigDecimal.valueOf(d.sampleCount())))
-            .toList();
+    }
+
+    /** CPU 사용률(%)은 소수 셋째 자리까지 저장한다. */
+    private static BigDecimal percent(Double value) {
+        return value == null ? null : BigDecimal.valueOf(value).setScale(3, RoundingMode.HALF_UP);
     }
 
     private Ec2Client ec2() {

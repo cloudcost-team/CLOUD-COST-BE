@@ -4,6 +4,7 @@ import com.cloudcost.application.error.AwsAccessException;
 import com.cloudcost.application.port.AwsAccountRepository;
 import com.cloudcost.application.port.CustomerAwsGateway;
 import com.cloudcost.application.port.CustomerAwsSession;
+import com.cloudcost.application.port.CustomerAwsSession.NetworkDirection;
 import com.cloudcost.application.port.Ec2InstanceRepository;
 import com.cloudcost.application.port.Ec2UsageRepository;
 import com.cloudcost.application.port.SyncJobRepository;
@@ -14,7 +15,9 @@ import com.cloudcost.domain.ec2.TrackedInstance;
 import com.cloudcost.domain.sync.SyncJob;
 import com.cloudcost.domain.usage.CollectionWindows;
 import com.cloudcost.domain.usage.CollectionWindows.TimeWindow;
+import com.cloudcost.domain.usage.HourlyNetwork;
 import com.cloudcost.domain.usage.HourlySample;
+import com.cloudcost.domain.usage.UtilizationStats;
 import com.cloudcost.domain.usage.RefreshPolicy;
 import java.time.Clock;
 import java.time.Instant;
@@ -234,28 +237,38 @@ public class Ec2DataRefresher {
                     budgetHit = true;
                     break;
                 }
-                List<HourlySample> samples;
                 try {
-                    samples = retry.call(
-                        () -> session.hourlySampleCounts(instance.instanceId(), window.start(), window.end()),
-                        () -> {
-                            calls[0]++;
-                            job.addCloudWatchRequests(1, 0);
-                        },
-                        () -> calls[0] < budget);
+                    List<HourlySample> samples = cloudWatch(job, calls, budget,
+                        () -> session.hourlyCpu(instance.instanceId(), window.start(), window.end()));
+                    int rows = usage.upsertHourly(account.ownerId(), account.id(), samples, now);
+                    job.addCloudWatchRequests(0, rows);
                 } catch (AwsAccessException e) {
                     instanceDone = false;
                     failure = e;
                     break;
                 }
-                int rows = usage.upsertHourly(account.ownerId(), account.id(), samples, now);
-                job.addCloudWatchRequests(0, rows);
                 collectedUntil = window.end();
+            }
+
+            // 사용 시간을 끝까지 수집한 인스턴스만 낭비 탐지용 지표(최근 14일)를 이어서 수집한다.
+            Instant metricsUntil = instance.metricsCollectedUntil();
+            if (instanceDone) {
+                try {
+                    Instant cpuReadFrom = windows.isEmpty() ? null : windows.getFirst().start();
+                    metricsUntil = collectMetrics(session, account, instance, cpuReadFrom, job, calls, budget, now);
+                } catch (AwsAccessException e) {
+                    failure = e;
+                } catch (BudgetExhausted e) {
+                    budgetHit = true;
+                }
             }
 
             // 저장한 구간까지만 진행 표시를 옮긴다 (인스턴스마다 바로 저장해 이후 실패와 무관하게 남긴다).
             if (instanceDone) {
-                saveProgress(account, instance.usageCollected(collectedUntil));
+                saveProgress(account, instance.usageCollected(collectedUntil).metricsCollected(metricsUntil));
+                if (failure != null || budgetHit) {
+                    complete = false;
+                }
             } else {
                 complete = false;
                 if (collectedUntil != null && !collectedUntil.equals(instance.usageCollectedUntil())) {
@@ -283,10 +296,64 @@ public class Ec2DataRefresher {
         return new UsageOutcome(List.copyOf(warnings), firstFailure, complete);
     }
 
+    /** 호출 상한에 걸려 이번 수집에서 지표를 더 읽지 못함 */
+    private static final class BudgetExhausted extends RuntimeException {
+        BudgetExhausted() {
+            super(null, null, false, false);
+        }
+    }
+
+    /**
+     * 낭비 탐지용 지표를 최근 14일 범위에서 수집한다 (ADR-009).
+     * <ul>
+     *   <li>네트워크 입출력: 구간마다 NetworkIn·NetworkOut 2건
+     *   <li>CPU 평균·최대: 사용 시간 조회에서 함께 받으므로 보통 추가 호출이 없다. 단, 지표 수집 기능 이전에 저장한 인스턴스는
+     *       이번 사용 시간 조회가 그 구간을 덮지 않았을 때만 최근 14일 CPU를 한 번 다시 읽어 평균·최대를 채운다
+     * </ul>
+     *
+     * @param cpuReadFrom 이번 수집에서 CPU를 읽기 시작한 시각 (읽지 않았으면 null)
+     * 모두 성공한 구간의 끝을 돌려준다. 실패하면 예외를 던지고 진행 표시는 그대로다 (다음 수집 때 다시 읽는다).
+     */
+    private Instant collectMetrics(
+        CustomerAwsSession session, AwsAccount account, TrackedInstance instance, Instant cpuReadFrom, SyncJob job,
+        int[] calls, int budget, Instant now) {
+        Instant until = instance.metricsCollectedUntil();
+        for (TimeWindow window : CollectionWindows.plan(until, now, UtilizationStats.WINDOW, settings.overlap())) {
+            String id = instance.instanceId();
+            boolean cpuAlreadyRead = cpuReadFrom != null && !cpuReadFrom.isAfter(window.start());
+            if (until == null && !cpuAlreadyRead) {
+                List<HourlySample> cpu = cloudWatch(job, calls, budget,
+                    () -> session.hourlyCpu(id, window.start(), window.end()));
+                job.addCloudWatchRequests(0, usage.upsertHourly(account.ownerId(), account.id(), cpu, now));
+            }
+            for (NetworkDirection direction : NetworkDirection.values()) {
+                List<HourlyNetwork> network = cloudWatch(job, calls, budget,
+                    () -> session.hourlyNetwork(id, direction, window.start(), window.end()));
+                usage.updateNetwork(account.ownerId(), account.id(), network);
+            }
+            until = window.end();
+        }
+        return until;
+    }
+
+    /** CloudWatch 1건 (재시도 포함). 시도마다 호출 수를 세고, 상한에 닿았으면 부르지 않는다. */
+    private <T> T cloudWatch(SyncJob job, int[] calls, int budget, java.util.function.Supplier<T> call) {
+        if (calls[0] >= budget) {
+            throw new BudgetExhausted();
+        }
+        return retry.call(
+            call,
+            () -> {
+                calls[0]++;
+                job.addCloudWatchRequests(1, 0);
+            },
+            () -> calls[0] < budget);
+    }
+
     private static TrackedInstance partial(TrackedInstance instance, Instant collectedUntil) {
         return new TrackedInstance(
             instance.id(), instance.ownerId(), instance.accountId(), instance.info(), instance.present(),
-            true, collectedUntil, instance.firstSeenAt(), instance.lastSeenAt());
+            true, collectedUntil, instance.firstSeenAt(), instance.lastSeenAt(), instance.metricsCollectedUntil());
     }
 
     private void saveProgress(AwsAccount account, TrackedInstance updated) {

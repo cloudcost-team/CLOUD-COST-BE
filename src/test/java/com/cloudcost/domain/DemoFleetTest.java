@@ -8,8 +8,10 @@ import com.cloudcost.domain.demo.DemoFleet;
 import com.cloudcost.domain.demo.DemoSchedule;
 import com.cloudcost.domain.demo.DemoSetup;
 import com.cloudcost.domain.demo.DemoSetup.Server;
+import com.cloudcost.domain.demo.DemoUsagePattern;
 import com.cloudcost.domain.ec2.Ec2Instance;
 import com.cloudcost.domain.usage.UsageAggregator;
+import com.cloudcost.domain.usage.UtilizationStats;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -127,5 +129,51 @@ class DemoFleetTest {
 
         DemoSetup future = new DemoSetup(List.of(server("web", 1, DemoSchedule.ALWAYS, 0)), OCT_1, LocalDate.of(2026, 10, 9));
         assertThatThrownBy(() -> future.requireNotAfter(LocalDate.of(2026, 10, 8))).hasMessageContaining("오늘까지");
+    }
+
+    private static UtilizationStats stats(DemoUsagePattern usage) {
+        Server server = new Server("app", "m5.large", Os.LINUX, 1, DemoSchedule.ALWAYS, 0, usage);
+        DemoFleet fleet = new DemoFleet(
+                new DemoSetup(List.of(server), LocalDate.of(2026, 9, 20), LocalDate.of(2026, 10, 8)), NOW, KST);
+        Instant from = NOW.minus(UtilizationStats.WINDOW);
+        return UtilizationStats.byInstance(fleet.hourlySamples(from, NOW)).values().iterator().next();
+    }
+
+    @Test
+    void 사용_모양을_고르지_않으면_NORMAL이다() {
+        assertThat(server("web", 1, DemoSchedule.ALWAYS, 0).usage()).isEqualTo(DemoUsagePattern.NORMAL);
+        assertThat(new Server("web", "t3.medium", Os.LINUX, 1, DemoSchedule.ALWAYS, 0, null).usage())
+                .isEqualTo(DemoUsagePattern.NORMAL);
+    }
+
+    @Test
+    void 과다_사양은_14일_CPU_P95가_10퍼센트_미만이다() {
+        UtilizationStats oversized = stats(DemoUsagePattern.OVERSIZED);
+
+        assertThat(oversized.cpuHours()).isEqualTo(14 * 24);
+        assertThat(oversized.cpuAvg()).isBetween(new java.math.BigDecimal("3"), new java.math.BigDecimal("8"));
+        assertThat(oversized.cpuP95()).isLessThan(new java.math.BigDecimal("10"));
+        assertThat(oversized.cpuMax()).isLessThanOrEqualTo(new java.math.BigDecimal("23"));
+    }
+
+    @Test
+    void 유휴는_CPU_1퍼센트_미만이고_네트워크가_거의_없다() {
+        UtilizationStats idle = stats(DemoUsagePattern.IDLE);
+
+        assertThat(idle.cpuAvg()).isLessThan(java.math.BigDecimal.ONE);
+        assertThat(idle.networkBytes()).as("14일 합계 10MB 미만").isLessThan(10L * 1024 * 1024);
+    }
+
+    @Test
+    void 정상은_업무_시간에_CPU가_올라가_P95가_40퍼센트_이상이다() {
+        UtilizationStats normal = stats(DemoUsagePattern.NORMAL);
+
+        assertThat(normal.cpuP95()).isGreaterThanOrEqualTo(new java.math.BigDecimal("40"));
+        assertThat(normal.cpuMax()).isLessThanOrEqualTo(new java.math.BigDecimal("100"));
+    }
+
+    @Test
+    void 같은_설정이면_CPU와_네트워크가_항상_같다() {
+        assertThat(stats(DemoUsagePattern.NORMAL)).isEqualTo(stats(DemoUsagePattern.NORMAL));
     }
 }

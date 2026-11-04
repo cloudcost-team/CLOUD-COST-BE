@@ -1,5 +1,6 @@
 package com.cloudcost.application.port;
 
+import com.cloudcost.domain.usage.HourlyNetwork;
 import com.cloudcost.domain.usage.HourlySample;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -13,6 +14,13 @@ public interface Ec2UsageRepository {
      * (accountId, instanceId, hourStart)가 같으면 갱신, 없으면 추가. @return 저장한 행 수
      */
     int upsertHourly(String ownerId, UUID accountId, List<HourlySample> samples, Instant collectedAt);
+
+    /**
+     * 이미 저장된 시간 행에 네트워크 입출력을 채운다. 값이 null인 방향은 그대로 두고, 행이 없는 시간(꺼져 있던 시간)은 건너뛴다.
+     *
+     * @return 갱신한 행 수
+     */
+    int updateNetwork(String ownerId, UUID accountId, List<HourlyNetwork> network);
 
     /**
      * hourStart ∈ [start, end)
