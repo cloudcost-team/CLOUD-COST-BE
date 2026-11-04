@@ -217,15 +217,31 @@ public class NotificationService {
         }
         BigDecimal lastWeek = BigDecimal.ZERO;
         BigDecimal previousWeek = BigDecimal.ZERO;
+        // 쓴 날은 있는데 단가를 아는 날이 하나도 없는 주는 0원이 아니라 "모름"이다
+        boolean lastWeekUsed = false;
+        boolean lastWeekPriced = false;
+        boolean previousWeekUsed = false;
+        boolean previousWeekPriced = false;
         for (PeriodCost<LocalDate> p : daily.report().periods()) {
-            BigDecimal cost = p.estimatedCost() == null ? BigDecimal.ZERO : p.estimatedCost();
-            if (p.period().isBefore(lastMonday)) {
+            boolean previousWeekDay = p.period().isBefore(lastMonday);
+            boolean used = p.usedMinutes() > 0;
+            boolean priced = p.estimatedCost() != null;
+            BigDecimal cost = priced ? p.estimatedCost() : BigDecimal.ZERO;
+            if (previousWeekDay) {
                 previousWeek = previousWeek.add(cost);
+                previousWeekUsed |= used;
+                previousWeekPriced |= used && priced;
             } else {
                 lastWeek = lastWeek.add(cost);
+                lastWeekUsed |= used;
+                lastWeekPriced |= used && priced;
             }
         }
-        BigDecimal previous = availableFrom.isAfter(previousMonday) ? null : previousWeek;
+        if (lastWeekUsed && !lastWeekPriced) {
+            return Optional.empty();
+        }
+        BigDecimal previous = availableFrom.isAfter(previousMonday) || (previousWeekUsed && !previousWeekPriced)
+            ? null : previousWeek;
         DisplayCurrency display = currencies.resolve(Currency.KRW).display();
         return AlertRules.weeklySummary(account.id(), lastMonday, lastWeek, previous, display, current);
     }
