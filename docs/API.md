@@ -164,9 +164,9 @@
   "today": "2026-11-04", "month": "2026-11", "availableFrom": "2026-08-06",
   "monthToDate": { "from": "2026-11-01", "to": "2026-11-04", "usageHours": 1240.00, "estimatedCost": 128400 },
   "instanceCounts": { "running": 4, "stopped": 2 },
-  "forecast": { "monthEndCost": 312000, "costThroughYesterday": 96300, "dailyAverage": 7700,
+  "forecast": { "monthEndCost": 304200, "costThroughYesterday": 96300, "dailyAverage": 7700,
                 "basisFrom": "2026-10-28", "basisTo": "2026-11-03", "basisDays": 7, "remainingDays": 27 },
-  "budget": { "amount": 400000, "enteredAmount": 400000, "enteredCurrency": "KRW", "usageRate": 78.0, "thresholdReached": null },
+  "budget": { "amount": 400000, "enteredAmount": 400000, "enteredCurrency": "KRW", "usageRate": 76.1, "thresholdReached": null },
   "previousMonthSamePeriod": { "currentFrom": "2026-11-01", "currentTo": "2026-11-03", "currentCost": 96300,
                                "previousFrom": "2026-10-01", "previousTo": "2026-10-03", "previousCost": 86000,
                                "change": 10300, "changeRate": 12.0 },
@@ -249,7 +249,7 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 { "dataSource": "aws", "costBasis": "estimated_on_demand", "currency": "KRW", "exchangeRate": { … },
   "status": "OK", "availableAt": null,
   "window": { "from": "2026-10-21T02:00:00Z", "to": "2026-11-04T02:00:00Z" },
-  "totalMonthlySavings": 132000, "forecastMonthEndCost": 312000, "savingsRateOfForecast": 42.3, "findingCount": 3, "counts": { "oversized": 2, "idle": 1 }, "judgedCount": 5,
+  "totalMonthlySavings": 132000, "forecastMonthEndCost": 304200, "savingsRateOfForecast": 43.4, "findingCount": 3, "counts": { "oversized": 2, "idle": 1 }, "judgedCount": 5,
   "items": [ {
       "recommendationId": "i-0abc:OVERSIZED", "instanceId": "i-0abc", "name": "api-server", "instanceType": "m5.large",
       "state": "running", "kind": "OVERSIZED", "kindLabel": "과다 사양",
@@ -261,7 +261,8 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
         "current":     { "instanceType": "m5.large",  "vcpu": 2, "memoryGib": 8, "hourlyCost": 162.1, "monthlyCostAt730h": 118300 },
         "recommended": { "instanceType": "t3.medium", "vcpu": 2, "memoryGib": 4, "hourlyCost": 72.1,  "monthlyCostAt730h": 52600 } },
       "cautions": [ "메모리 사용률은 CloudWatch 기본 지표에 없어 판단에 넣지 않았어요. …", … ],
-      "consoleSteps": [ "EC2 → 인스턴스에서 api-server을(를) 중지해요 …", … ] } ],
+      "consoleSteps": [ "EC2 → 인스턴스에서 api-server을(를) 중지해요 …", … ] },
+    … (나머지 2건 생략) ],
   "skipped": [ { "instanceId": "i-0gpu", "name": "gpu-test", "reason": "CPU를 적게 쓰지만 GPU 타입이라 …" } ],
   "freshness": { … }, "notes": [ "…미연결 볼륨 · 미사용 고정 IP · 스냅샷 · 로드밸런서는 지금 연결 권한으로는 찾을 수 없어요." ], "asOf": "…" }
 ```
