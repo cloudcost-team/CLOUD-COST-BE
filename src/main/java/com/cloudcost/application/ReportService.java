@@ -91,10 +91,29 @@ public class ReportService {
 
     public ListView list(String ownerId, UUID accountId) {
         YearMonth current = YearMonth.from(today());
-        UsageCostView<YearMonth> monthly =
-            queries.monthly(ownerId, accountId, current.minusMonths(MAX_MONTHS - 1L), current);
-        return new ListView(accountId, monthly.availableFrom(), monthRows(monthly, current), monthly.freshness(),
-            listNotes(monthly), clock.instant());
+        YearMonth oldest = current.minusMonths(MAX_MONTHS - 1L);
+        UsageCostView<YearMonth> monthly = queries.monthly(ownerId, accountId, oldest, current);
+        List<MonthRow> rows = monthRows(monthly, current);
+        if (!rows.isEmpty() && rows.getLast().month().equals(oldest)
+            && YearMonth.from(monthly.availableFrom()).isBefore(oldest)) {
+            // 가장 오래된 달의 전월은 목록 조회 기간(455일 제한) 밖이라 따로 한 달만 읽어 비교한다
+            UsageCostView<YearMonth> before =
+                queries.monthly(ownerId, accountId, oldest.minusMonths(1), oldest.minusMonths(1));
+            rows = new ArrayList<>(rows);
+            rows.set(rows.size() - 1, withPrevious(rows.getLast(), before));
+            rows = List.copyOf(rows);
+        }
+        return new ListView(accountId, monthly.availableFrom(), rows, monthly.freshness(), listNotes(monthly),
+            clock.instant());
+    }
+
+    /** 전월 비용을 다른 조회 결과에서 채운다 */
+    static MonthRow withPrevious(MonthRow row, UsageCostView<YearMonth> previousMonth) {
+        BigDecimal previous = previousMonth.report().periods().stream()
+            .filter(p -> p.period().equals(row.month().minusMonths(1)))
+            .map(PeriodCost::estimatedCost).findFirst().orElse(null);
+        return new MonthRow(row.month(), row.status(), row.usedMinutes(), row.costUsd(), previous,
+            MonthlyReport.changeRate(row.costUsd(), previous));
     }
 
     public Detail detail(String ownerId, UUID accountId, YearMonth month) {
