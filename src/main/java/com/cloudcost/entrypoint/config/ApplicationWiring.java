@@ -211,11 +211,12 @@ class ApplicationWiring {
             BudgetRepository budgets,
             AlertSettingsRepository settings,
             NotificationRepository notifications,
+            UnitOfWork unitOfWork,
             CurrencyService currencies,
             Clock clock,
             UsageSettings usage) {
         return new NotificationService(
-                accounts, dashboards, queries, budgets, settings, notifications, currencies, clock, usage);
+                accounts, dashboards, queries, budgets, settings, notifications, unitOfWork, currencies, clock, usage);
     }
 
     @Bean
