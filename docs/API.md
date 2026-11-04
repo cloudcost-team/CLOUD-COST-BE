@@ -298,10 +298,10 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 - 적용 전(`before`) = 월말 예상(§2-1과 같은 값) × (1 + 증가율). 적용 후(`after`) = (월말 예상 − 고른 추천의 월 절감액 합) × (1 + 증가율), 0 아래로 내려가지 않는다.
   트래픽이 늘면 서버 사용량도 같은 비율로 는다고 가정한다.
 - `monthlySavings` = 적용 전 − 적용 후, `yearlySavings` = `monthlySavings` × 12 (USD로 계산한 뒤 환산).
-- `trafficGrowthPercent`는 0~100 정수, 없으면 0. `recommendationIds`가 없거나 비면 추천 없이 계산한다 (적용 전 = 적용 후). 중복 id는 한 번만 센다.
+- `trafficGrowthPercent`는 0~100 정수, 없으면 0. 소수(예: 20.5)는 버리지 않고 400으로 거절한다. `recommendationIds`가 없거나 비면 추천 없이 계산한다 (적용 전 = 적용 후). 중복 id는 한 번만 센다.
 - 예산이 있으면 `budgetRate`(예산 대비 %)와 `withinBudget`(적용 후 ≤ 예산), 없으면 `budget`·`budgetRate`·`withinBudget`이 `null`.
 - 월말 예상이 없으면(끝난 날 기록 없음·단가를 아는 서버 없음) `status: "NO_FORECAST"`이고 금액 필드가 `null`, `notes`에 안내.
-- 오류: 400 `UNKNOWN_RECOMMENDATION`(지금 추천 목록에 없는 id, `message`에 id), 400 `VALIDATION_ERROR`(증가율 범위 밖, id 200개 초과), 그 밖은 §2와 같다.
+- 오류: 400 `UNKNOWN_RECOMMENDATION`(지금 추천 목록에 없는 id, `message`에 id), 400 `VALIDATION_ERROR`(증가율 범위 밖·소수, id 200개 초과), 그 밖은 §2와 같다.
 
 ### `POST /demo/simulations?currency=KRW|USD` — 체험 모드
 §3 설정에 `recommendationIds`·`trafficGrowthPercent`·`budget`(모두 선택)을 더한다. 추천 id는 같은 설정의 `POST /demo/waste` 응답에서 나온 값이다.

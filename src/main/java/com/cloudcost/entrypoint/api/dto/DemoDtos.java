@@ -7,6 +7,7 @@ import com.cloudcost.domain.demo.DemoCatalog.Os;
 import com.cloudcost.domain.demo.DemoSchedule;
 import com.cloudcost.domain.demo.DemoSetup;
 import com.cloudcost.domain.demo.DemoUsagePattern;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import io.swagger.v3.oas.annotations.media.Schema;
 import com.cloudcost.domain.simulation.CostSimulation;
 import jakarta.validation.Valid;
@@ -73,6 +74,7 @@ public final class DemoDtos {
             @Schema(description = "트래픽 증가율 % 0~100 (선택, 기본 0). POST /demo/simulations에서 쓴다", example = "20")
                     @Min(value = 0, message = "0~100 사이로 입력해 주세요")
                     @Max(value = CostSimulation.MAX_GROWTH_PERCENT, message = "0~100 사이로 입력해 주세요")
+                    @JsonDeserialize(using = StrictIntegerDeserializer.class)
                     Integer trafficGrowthPercent) {
 
         public MonthlyBudget budgetOrNull() {

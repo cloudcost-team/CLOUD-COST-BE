@@ -97,6 +97,10 @@ class SimulationApiTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
                 .andExpect(jsonPath("$.error.details.trafficGrowthPercent").value("0~100 사이로 입력해 주세요"));
         simulate("{\"trafficGrowthPercent\":-1}").andExpect(status().isBadRequest());
+        // 소수는 버리지 않고 거절한다 (100.9가 100으로 바뀌어 범위 검사를 지나가지 않게)
+        simulate("{\"trafficGrowthPercent\":100.9}").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+        simulate("{\"trafficGrowthPercent\":20.5}").andExpect(status().isBadRequest());
     }
 
     @Test
@@ -131,6 +135,9 @@ class SimulationApiTest extends IntegrationTestBase {
         assertThat(body.at("/withinBudget").asBoolean()).isTrue();
         assertThat(body.at("/notes/0").asText()).contains("체험용 계정");
 
+        mvc.perform(post("/api/v1/demo/simulations").contentType(MediaType.APPLICATION_JSON)
+                        .content(setup.replace("\"trafficGrowthPercent\":20", "\"trafficGrowthPercent\":100.9")))
+                .andExpect(status().isBadRequest());
         mvc.perform(post("/api/v1/demo/simulations").contentType(MediaType.APPLICATION_JSON)
                         .content(setup.replace("i-0d3e0000000000002:IDLE", "nope")))
                 .andExpect(status().isBadRequest())
