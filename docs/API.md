@@ -355,13 +355,13 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 
 - 120%를 넘었는데 120% 알림을 꺼 두었으면 100%로 알린다. 80%에서 바로 120%로 오르면 120% 하나만 만든다.
 - 주간 요약 금액은 만들 때의 원화 환율로 적는다(환율이 없으면 달러). 전주 기록이 온전하지 않으면 비교 문구를 뺀다.
-- 연결 이름은 사용자가 붙인 이름, 없으면 `AWS 계정 1234****9012`.
+- 연결 이름은 사용자가 붙인 이름, 없으면 `이름 없는 연결` (기능명세서 F02 규칙).
 
 ### `GET /settings/alerts` — S14
 ```json
 { "budget80": true, "budget100": true, "budget120": true, "spike": true, "weeklySummary": true, "channel": "IN_APP",
   "budgets": [ { "accountId": "…", "name": "운영 서버", "status": "ACTIVE", "budget": { "amount": 400000, "currency": "KRW" } },
-               { "accountId": "…", "name": "AWS 계정 1234****9012", "status": "ACTIVE", "budget": null } ],
+               { "accountId": "…", "name": "이름 없는 연결", "status": "ACTIVE", "budget": null } ],
   "notes": [ "알림은 서비스 안 알림창(헤더 벨·알림 목록)으로만 보여 드려요. …" ] }
 ```
 정하지 않았으면 조건은 모두 `true`. `budgets`는 내 연결(1시간 넘게 대기 중인 연결 제외)과 월 예산(§2-1 `PUT /budget`과 같은 값).

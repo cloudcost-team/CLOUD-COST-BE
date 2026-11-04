@@ -25,7 +25,7 @@ import org.springframework.http.MediaType;
  */
 class NotificationApiTest extends IntegrationTestBase {
 
-    private static final String NAME = "AWS 계정 1234****9012";
+    private static final String NAME = "이름 없는 연결";
 
     private String accountId;
 
