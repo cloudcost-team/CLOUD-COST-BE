@@ -7,6 +7,7 @@ import com.cloudcost.domain.cost.CostNotes;
 import com.cloudcost.domain.cost.DisplayCurrency;
 import com.cloudcost.domain.demo.DemoFleet;
 import com.cloudcost.domain.ec2.InstanceSpecs.Spec;
+import com.cloudcost.domain.usage.CpuSeries;
 import com.cloudcost.domain.usage.UtilizationStats;
 import com.cloudcost.domain.waste.WasteDetector;
 import com.cloudcost.domain.waste.WasteFinding;
@@ -16,10 +17,13 @@ import com.cloudcost.entrypoint.api.dto.UsageDtos.ExchangeRateDto;
 import com.cloudcost.entrypoint.api.dto.UsageDtos.FreshnessDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 /**
@@ -64,6 +68,57 @@ public final class WasteDtos {
 
     public record ComparisonDto(SpecDto current, @Schema(description = "유휴(중지 검토)면 null") SpecDto recommended) {}
 
+    @Schema(description = "S07-2 10초 요약 한 줄 (굵은 제목 · 설명)")
+    public record SummaryLineDto(
+            @Schema(example = "거의 안 쓰고 있어요") String title,
+            @Schema(example = "14일 평균 CPU 6%, 가장 높을 때도 23%예요") String detail) {}
+
+    @Schema(description = "조건을 만족하는 다음으로 싼 타입")
+    public record CandidateDto(
+            @Schema(example = "t3.large") String instanceType,
+            @Schema(description = "시간당 단가 (currency 기준)", example = "144.2") BigDecimal hourlyCost) {}
+
+    @Schema(description = "과다 사양 추천의 계산 근거. 유휴면 null")
+    public record BasisDto(
+            @Schema(description = "바꾼 뒤 예상 P95 (%) = 현재 P95 × 현재 vCPU ÷ 새 vCPU", example = "9.0") BigDecimal projectedCpuP95,
+            @Schema(description = "추천 타입의 기본 성능 (%)", example = "20") BigDecimal targetBaselinePercent,
+            @Schema(description = "다음 후보. 조건을 만족하는 다른 타입이 없으면 null") CandidateDto nextCandidate) {
+
+        static BasisDto of(WasteFinding.DownsizeBasis b, DisplayCurrency d) {
+            if (b == null) {
+                return null;
+            }
+            return new BasisDto(b.projectedCpuP95(), b.targetBaselinePercent(), b.nextSpec() == null ? null
+                    : new CandidateDto(b.nextSpec().instanceType(), d.hourlyRate(b.nextHourlyUsd())));
+        }
+    }
+
+    @Schema(description = "그래프의 한 점 (CPU 지표가 있는 시간만. 꺼져 있던 시간은 없다)")
+    public record CpuPointDto(
+            @Schema(description = "시간 시작 (UTC)") Instant hour,
+            @Schema(description = "그 시간 평균 (%)", example = "5.80") BigDecimal avg,
+            @Schema(description = "그 시간 최대 (%)", example = "7.10") BigDecimal max) {}
+
+    @Schema(description = "S07-2 탐지 근거 · 최근 14일 CPU 사용률 그래프")
+    public record CpuChartDto(
+            List<CpuPointDto> points,
+            @Schema(description = "가장 높았던 값 (%) = metrics.cpuMax", example = "23.00") BigDecimal max,
+            @Schema(description = "가장 높았던 시간 (UTC). 같은 값이면 앞선 시간") Instant maxAt,
+            @Schema(description = "점선 기준선 = 추천 타입 기본 성능 (%). 유휴면 null", example = "20") BigDecimal baselinePercent,
+            @Schema(description = "기준선 이름. 유휴면 null", example = "t3.medium 기본 성능 20%") String baselineLabel) {
+
+        static CpuChartDto of(CpuSeries series, WasteFinding f) {
+            if (series == null) {
+                return null;
+            }
+            BigDecimal baseline = f.basis() == null ? null : f.basis().targetBaselinePercent();
+            return new CpuChartDto(
+                    series.points().stream().map(p -> new CpuPointDto(p.hour(), p.avg(), p.max())).toList(),
+                    series.max(), series.maxAt(), baseline,
+                    baseline == null ? null : f.targetSpec().instanceType() + " 기본 성능 " + plain(baseline) + "%");
+        }
+    }
+
     public record ItemDto(
             @Schema(description = "추천 id. 시뮬레이터·벤치마킹에 그대로 보낸다", example = "i-0abc:OVERSIZED") String recommendationId,
             String instanceId,
@@ -78,6 +133,12 @@ public final class WasteDtos {
                     String reason,
             @Schema(description = "메모리가 줄어드는 추천이면 true (메모리는 CloudWatch 기본 지표에 없어 직접 확인 필요)")
                     boolean memoryCheckNeeded,
+            @Schema(description = "S07-2 10초 요약 (3줄)") List<SummaryLineDto> summary,
+            @Schema(description = "10초 요약 아래 경고 한 줄. 메모리가 줄어드는 추천일 때만, 아니면 null",
+                    example = "메모리(8 → 4 GiB)는 확인하지 못했어요. 바꾸기 전에 서버에서 직접 확인해 주세요.")
+                    String summaryNote,
+            BasisDto basis,
+            CpuChartDto cpuChart,
             MetricsDto metrics,
             @Schema(description = "최근 14일 사용 시간을 월로 환산한 시간 (최대 730)") BigDecimal monthlyHours,
             @Schema(description = "지금 월 추정 비용 (currency 기준)", example = "118300") BigDecimal estimatedMonthlyCost,
@@ -86,17 +147,73 @@ public final class WasteDtos {
             @Schema(description = "바꾸기 전에 확인할 것") List<String> cautions,
             @Schema(description = "AWS 콘솔에서 직접 바꾸는 방법") List<String> consoleSteps) {
 
-        static ItemDto of(WasteFinding f, DisplayCurrency d) {
+        static ItemDto of(WasteFinding f, DisplayCurrency d, CpuSeries series) {
             String type = f.instance().instanceType();
             SpecDto current = SpecDto.of(type, f.currentSpec(), f.hourlyUsd(), d);
             SpecDto recommended = f.targetSpec() == null ? null
                     : SpecDto.of(f.targetSpec().instanceType(), f.targetSpec(), f.targetHourlyUsd(), d);
             return new ItemDto(f.recommendationId(), f.instance().instanceId(), f.instance().name(), type,
                     f.instance().state(), f.kind(), f.kind().label(), f.evidence(), f.action(), f.reason(),
-                    f.memoryCheckNeeded(), MetricsDto.of(f.stats()),
+                    f.memoryCheckNeeded(), summary(f, d), summaryNote(f), BasisDto.of(f.basis(), d),
+                    CpuChartDto.of(series, f), MetricsDto.of(f.stats()),
                     f.monthlyHours(), d.cost(f.monthlyCostUsd()), d.cost(f.monthlySavingsUsd()),
                     new ComparisonDto(current, recommended), f.cautions(), f.consoleSteps());
         }
+
+        /** 10초 요약. 금액은 요청 통화로 적는다 */
+        static List<SummaryLineDto> summary(WasteFinding f, DisplayCurrency d) {
+            UtilizationStats s = f.stats();
+            String max = WasteFinding.percent(s.cpuMax());
+            if (f.kind() == WasteKind.IDLE) {
+                return List.of(
+                        new SummaryLineDto("거의 안 쓰고 있어요", "14일 동안 CPU가 가장 높을 때도 " + max + ending(max)),
+                        new SummaryLineDto("네트워크도 조용해요", "하루 평균 입출력이 5MB 미만이에요"),
+                        new SummaryLineDto("중지하면 그만큼 줄어요",
+                                "매달 " + money(d.cost(f.monthlySavingsUsd()), d) + " 절감 예상 (추정)"));
+            }
+            WasteFinding.DownsizeBasis b = f.basis();
+            String projected = WasteFinding.percent(b.projectedCpuP95());
+            String price = "시간당 " + money(d.hourlyRate(f.targetHourlyUsd()), d);
+            if (b.nextSpec() != null) {
+                price += " (다음 후보 " + b.nextSpec().instanceType() + " " + money(d.hourlyRate(b.nextHourlyUsd()), d) + ")";
+            }
+            return List.of(
+                    new SummaryLineDto("거의 안 쓰고 있어요",
+                            "14일 평균 CPU " + WasteFinding.percent(s.cpuAvg()) + ", 가장 높을 때도 " + max + ending(max)),
+                    new SummaryLineDto("줄여도 넉넉해요",
+                            "바꿔도 예상 사용률 " + projected + ", 기본 성능(" + plain(b.targetBaselinePercent()) + "%) 안이에요"),
+                    new SummaryLineDto("조건을 만족하는 것 중 가장 싸요", price));
+        }
+
+        static String summaryNote(WasteFinding f) {
+            if (!f.memoryCheckNeeded()) {
+                return null;
+            }
+            return "메모리(" + plain(f.currentSpec().memoryGib()) + " → " + plain(f.targetSpec().memoryGib())
+                    + " GiB)는 확인하지 못했어요. 바꾸기 전에 서버에서 직접 확인해 주세요.";
+        }
+
+        /** "23%예요" · "1% 미만이에요" */
+        private static String ending(String percent) {
+            return percent.endsWith("미만") ? "이에요" : "예요";
+        }
+    }
+
+    private static final DecimalFormatSymbols SYMBOLS = DecimalFormatSymbols.getInstance(Locale.ROOT);
+
+    /** ₩72.1 · ₩65,700 · $0.0416 (이미 통화에 맞게 반올림한 값) */
+    static String money(BigDecimal amount, DisplayCurrency d) {
+        if (amount == null) {
+            return "-";
+        }
+        if (d.currency() == com.cloudcost.domain.cost.DisplayCurrency.Currency.KRW) {
+            return "₩" + new DecimalFormat("#,##0.#", SYMBOLS).format(amount);
+        }
+        return "$" + new DecimalFormat("#,##0.00##", SYMBOLS).format(amount);
+    }
+
+    private static String plain(BigDecimal value) {
+        return value.stripTrailingZeros().toPlainString();
     }
 
     public record SkippedDto(String instanceId, String name, String reason) {}
@@ -162,7 +279,8 @@ public final class WasteDtos {
                     savingsRate(r.totalMonthlySavingsUsd(), forecast), r.findings().size(),
                     new CountsDto(r.count(WasteKind.OVERSIZED), r.count(WasteKind.IDLE)), r.judgedCount(),
                     sort.name(), type == null ? null : type.name(),
-                    sort.apply(r.findings(), type).stream().map(f -> ItemDto.of(f, d)).toList(),
+                    sort.apply(r.findings(), type).stream()
+                            .map(f -> ItemDto.of(f, d, view.cpuSeries().get(f.instance().instanceId()))).toList(),
                     r.skipped().stream().map(s -> new SkippedDto(s.instanceId(), s.name(), s.reason())).toList(),
                     FreshnessDto.of(view.freshness()), List.copyOf(notes), view.asOf());
         }

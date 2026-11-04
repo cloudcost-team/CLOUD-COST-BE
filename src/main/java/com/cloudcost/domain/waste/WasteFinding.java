@@ -16,6 +16,7 @@ import java.util.List;
  * @param targetSpec          추천 타입 (유휴면 null)
  * @param monthlySavingsUsd   매달 절감 예상
  * @param reason              추천 이유 한 줄 (예: "바꿔도 P95 9%가 t3.medium 기본 성능 20% 안 · 조건에 맞는 타입 중 가장 저렴")
+ * @param basis               과다 사양 추천의 계산 근거 (S07-2 10초 요약·그래프 기준선). 유휴면 null
  */
 public record WasteFinding(
     Ec2Instance instance,
@@ -29,7 +30,29 @@ public record WasteFinding(
     BigDecimal targetHourlyUsd,
     BigDecimal targetMonthlyCostUsd,
     BigDecimal monthlySavingsUsd,
-    String reason) {
+    String reason,
+    DownsizeBasis basis) {
+
+    /**
+     * 과다 사양 추천을 고른 근거.
+     *
+     * @param projectedCpuP95       바꾼 뒤 예상 P95 (%, 소수 첫째 자리)
+     * @param targetBaselinePercent 추천 타입의 기본 성능 (%)
+     * @param nextSpec              조건을 만족하는 다음으로 싼 타입. 없으면 null
+     * @param nextHourlyUsd         그 타입의 시간당 단가. 없으면 null
+     */
+    public record DownsizeBasis(
+        BigDecimal projectedCpuP95, BigDecimal targetBaselinePercent, Spec nextSpec, BigDecimal nextHourlyUsd) {
+    }
+
+    /** 근거 없이 만든다 (유휴) */
+    public WasteFinding(
+        Ec2Instance instance, WasteKind kind, UtilizationStats stats, BigDecimal monthlyHours, Spec currentSpec,
+        BigDecimal hourlyUsd, BigDecimal monthlyCostUsd, Spec targetSpec, BigDecimal targetHourlyUsd,
+        BigDecimal targetMonthlyCostUsd, BigDecimal monthlySavingsUsd, String reason) {
+        this(instance, kind, stats, monthlyHours, currentSpec, hourlyUsd, monthlyCostUsd, targetSpec, targetHourlyUsd,
+            targetMonthlyCostUsd, monthlySavingsUsd, reason, null);
+    }
 
     /** 메모리가 줄어드는 사양 변경이면 true (메모리는 CloudWatch 기본 지표에 없어 사용자가 직접 확인해야 한다) */
     public boolean memoryCheckNeeded() {

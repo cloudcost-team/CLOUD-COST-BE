@@ -202,6 +202,27 @@ class WasteDetectorTest {
     }
 
     @Test
+    void 추천_근거로_예상_P95와_기본_성능과_다음_후보를_남긴다() {
+        // m5.xlarge(4 vCPU, $0.236) P95 12% → t3.large(2 vCPU, 30%): 12 × 4 ÷ 2 = 24% 안, $0.104 가장 쌈.
+        // 다음 후보 t3.xlarge(4 vCPU, 40%) $0.208. t3.2xlarge는 지금보다 비싸서 빠진다
+        WasteFinding f = WasteDetector.detect(List.of(candidate("i-x", "m5.xlarge",
+                stats("i-x", 336, "6", "12", "20", LOTS_OF_NETWORK), "0.236"))).findings().get(0);
+
+        assertThat(f.targetSpec().instanceType()).isEqualTo("t3.large");
+        assertThat(f.basis().projectedCpuP95()).isEqualByComparingTo("24.0");
+        assertThat(f.basis().targetBaselinePercent()).isEqualByComparingTo("30");
+        assertThat(f.basis().nextSpec().instanceType()).isEqualTo("t3.xlarge");
+        assertThat(f.basis().nextHourlyUsd()).isEqualByComparingTo("0.208");
+
+        // 조건을 만족하는 타입이 하나뿐이면 다음 후보는 없다
+        WasteFinding only = WasteDetector.detect(List.of(candidate("i-y", "m5.large",
+                stats("i-y", 336, "6", "9", "23", LOTS_OF_NETWORK), "0.118",
+                Map.of("t3.medium", new BigDecimal("0.052"))))).findings().get(0);
+        assertThat(only.basis().nextSpec()).isNull();
+        assertThat(only.basis().nextHourlyUsd()).isNull();
+    }
+
+    @Test
     void 예상_P95는_반올림_전_값으로_기본_성능과_비교한다() {
         // m5.large(2 vCPU) P95 20.01% → t3.medium(2 vCPU, 기본 20%)이면 20.01 > 20 이라 안 되고, 반올림하면 20.0이 되어 잘못 통과했다
         Result result = WasteDetector.detect(List.of(candidate("i-edge", "m5.large",

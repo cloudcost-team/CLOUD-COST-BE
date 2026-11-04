@@ -6,6 +6,7 @@ import com.cloudcost.domain.cost.InstancePrice;
 import com.cloudcost.domain.ec2.Ec2Instance;
 import com.cloudcost.domain.ec2.InstanceSpecs;
 import com.cloudcost.domain.ec2.TrackedInstance;
+import com.cloudcost.domain.usage.CpuSeries;
 import com.cloudcost.domain.usage.HourlySample;
 import com.cloudcost.domain.usage.UsageCalculator;
 import com.cloudcost.domain.usage.UtilizationStats;
@@ -54,6 +55,7 @@ public class WasteService {
      * @param windowEnd    판단 구간 끝 (제외)
      * @param instances    판단에 넣은 인스턴스 (남아 있는 것)
      * @param stats        instanceId → 최근 14일 사용률 (벤치마킹도 같은 값을 쓴다). INSUFFICIENT_HISTORY면 비어 있다
+     * @param cpuSeries    instanceId → 시간별 CPU (S07-2 그래프). 추천이 있는 서버만 들어 있다
      */
     public record WasteView(
         UUID accountId,
@@ -64,6 +66,7 @@ public class WasteService {
         Result result,
         List<Ec2Instance> instances,
         Map<String, UtilizationStats> stats,
+        Map<String, CpuSeries> cpuSeries,
         Freshness freshness,
         List<String> notes,
         Instant asOf) {
@@ -151,7 +154,8 @@ public class WasteService {
         LocalDate availableAt = availableFrom == null ? null : availableFrom.plusDays(UtilizationStats.WINDOW.toDays());
         if (availableAt != null && availableAt.isAfter(today)) {
             return new WasteView(accountId, Status.INSUFFICIENT_HISTORY, availableAt, start, end,
-                new Result(List.of(), List.of(), java.util.Set.of()), List.copyOf(infos), Map.of(), freshness, notes, asOf);
+                new Result(List.of(), List.of(), java.util.Set.of()), List.copyOf(infos), Map.of(), Map.of(), freshness, notes,
+                asOf);
         }
 
         Map<String, UtilizationStats> stats = UtilizationStats.byInstance(windowSamples);
@@ -170,8 +174,11 @@ public class WasteService {
             .toList();
         Result result = WasteDetector.detect(candidates, end);
         Status status = result.findings().isEmpty() ? Status.NONE_FOUND : Status.OK;
-        return new WasteView(
-            accountId, status, null, start, end, result, List.copyOf(infos), stats, freshness, notes, asOf);
+        Map<String, CpuSeries> series = new HashMap<>();
+        result.findings().forEach(f -> series.put(f.instance().instanceId(), CpuSeries.of(windowSamples.stream()
+            .filter(s -> s.instanceId().equals(f.instance().instanceId())).toList())));
+        return new WasteView(accountId, status, null, start, end, result, List.copyOf(infos), stats, Map.copyOf(series),
+            freshness, notes, asOf);
     }
 
     private static BigDecimal hourly(InstancePrice price) {

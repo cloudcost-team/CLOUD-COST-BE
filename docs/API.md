@@ -255,6 +255,16 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
       "state": "running", "kind": "OVERSIZED", "kindLabel": "과다 사양",
       "evidence": "최근 14일 CPU 평균 6% (P95 9%)", "action": "m5.large → t3.medium 으로 변경 검토",
       "reason": "바꿔도 P95 9%가 t3.medium 기본 성능 20% 안 · 조건에 맞는 타입 중 가장 저렴", "memoryCheckNeeded": true,
+      "summary": [
+        { "title": "거의 안 쓰고 있어요", "detail": "14일 평균 CPU 6%, 가장 높을 때도 23%예요" },
+        { "title": "줄여도 넉넉해요", "detail": "바꿔도 예상 사용률 9%, 기본 성능(20%) 안이에요" },
+        { "title": "조건을 만족하는 것 중 가장 싸요", "detail": "시간당 ₩72.1 (다음 후보 t3.large ₩144.2)" } ],
+      "summaryNote": "메모리(8 → 4 GiB)는 확인하지 못했어요. 바꾸기 전에 서버에서 직접 확인해 주세요.",
+      "basis": { "projectedCpuP95": 9.0, "targetBaselinePercent": 20,
+                 "nextCandidate": { "instanceType": "t3.large", "hourlyCost": 144.2 } },
+      "cpuChart": { "points": [ { "hour": "2026-10-21T02:00:00Z", "avg": 5.80, "max": 7.10 }, … ],
+                    "max": 23.00, "maxAt": "2026-10-29T05:00:00Z",
+                    "baselinePercent": 20, "baselineLabel": "t3.medium 기본 성능 20%" },
       "metrics": { "cpuAvg": 6.12, "cpuP95": 9.00, "cpuMax": 23.00, "networkBytes": 3523215360, "cpuHours": 336 },
       "monthlyHours": 730.00, "estimatedMonthlyCost": 118300, "estimatedMonthlySavings": 65700,
       "comparison": {
@@ -276,6 +286,14 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
       지금보다 싼 후보 중 **시간당 단가가 가장 싼 것** (예: m5.large P95 9% → t3.medium, m5.xlarge P95 12% → t3.large, P95 18% → t3.xlarge).
     - `reason`: 위 계산을 한 줄로 ("바꿔도 P95 9%가 t3.medium 기본 성능 20% 안 · 조건에 맞는 타입 중 가장 저렴").
     - `memoryCheckNeeded`: 메모리가 줄어드는 추천이면 `true`, `cautions` 첫 줄에 "메모리가 8GiB → 4GiB로 줄어요 … 직접 확인이 필요해요".
+- **S07-2 추천 상세** (와이어프레임 그대로 그리는 값. 프론트는 계산하지 않는다):
+  - `summary`: 10초 요약 3줄(`title` 굵게 · `detail`). 과다 사양 = 사용률(평균·최대) / 바꾼 뒤 예상 사용률과 기본 성능 / 시간당 단가와 다음 후보.
+    유휴 = 최대 CPU / 네트워크 / 매달 절감 예상. 금액은 요청 통화로 적는다.
+  - `summaryNote`: 요약 아래 경고 한 줄. 메모리가 줄어드는 추천일 때만, 아니면 `null`.
+  - `basis`(과다 사양만, 유휴면 `null`): `projectedCpuP95`(바꾼 뒤 예상 P95), `targetBaselinePercent`(추천 타입 기본 성능),
+    `nextCandidate`(조건을 만족하는 다음으로 싼 타입과 시간당 단가. 없으면 `null`).
+  - `cpuChart`: 최근 14일 시간별 CPU(`points`, UTC 정시. 꺼져 있던 시간은 점이 없다), 가장 높았던 값·시간(`max`·`maxAt`, KST 표시는 프론트),
+    점선 기준선 `baselinePercent`·`baselineLabel`(추천 타입 기본 성능. 유휴면 `null`). 추천이 있는 서버에만 준다.
     - 절감액 = 월 비용 차이. 사양을 모르는 타입·GPU 타입·단가를 모르거나 조건에 맞는 더 싼 타입이 없으면 추천하지 않고 `skipped`에 이유를 적는다.
 - **정렬·필터** (F05-5): `sort` = `SAVINGS`(절감액 큰 순, 기본) · `COST`(월 추정 비용 큰 순) · `UTILIZATION`(최근 14일 평균 CPU 낮은 순) · `NAME`(이름순).
   같으면 절감액 큰 순 → 이름순. `type` = `OVERSIZED` · `IDLE`(없으면 모두). 응답의 `sort`·`type`에 적용한 값을 돌려준다.

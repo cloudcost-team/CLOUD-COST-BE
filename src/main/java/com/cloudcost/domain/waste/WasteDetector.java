@@ -185,13 +185,16 @@ public final class WasteDetector {
             .divide(BigDecimal.valueOf(targetVcpu), 1, RoundingMode.HALF_UP);
     }
 
-    /** 고른 후보와 근거 */
+    /** 조건을 만족하는 후보와 근거 */
     private record Choice(Spec target, BigDecimal hourlyUsd, BigDecimal projectedP95, BigDecimal baselinePercent) {
     }
 
-    /** 예상 P95가 기본 성능 이하이고 지금보다 싼 후보 중 가장 싼 것 (단가가 같으면 메모리가 큰 것) */
-    private static Optional<Choice> choose(Candidate c, Spec current) {
-        Choice best = null;
+    /**
+     * 예상 P95가 기본 성능 이하이고 지금보다 싼 후보를 싼 순서로 (단가가 같으면 메모리가 큰 것 먼저).
+     * 첫째가 추천, 둘째가 S07-2의 "다음 후보"다.
+     */
+    private static List<Choice> qualifying(Candidate c, Spec current) {
+        List<Choice> result = new ArrayList<>();
         for (Spec t : InstanceSpecs.downsizeCandidates(current.instanceType())) {
             BigDecimal price = c.candidateHourlyUsd().get(t.instanceType());
             Optional<BigDecimal> baseline = InstanceSpecs.baselinePercent(t.instanceType());
@@ -203,13 +206,11 @@ public final class WasteDetector {
                 .compareTo(baseline.get().multiply(BigDecimal.valueOf(t.vcpu()))) > 0) {
                 continue;
             }
-            BigDecimal projected = projectedP95(c.stats().cpuP95(), current.vcpu(), t.vcpu());
-            if (best == null || price.compareTo(best.hourlyUsd()) < 0
-                || (price.compareTo(best.hourlyUsd()) == 0 && t.memoryGib().compareTo(best.target().memoryGib()) > 0)) {
-                best = new Choice(t, price, projected, baseline.get());
-            }
+            result.add(new Choice(t, price, projectedP95(c.stats().cpuP95(), current.vcpu(), t.vcpu()), baseline.get()));
         }
-        return Optional.ofNullable(best);
+        result.sort(Comparator.comparing(Choice::hourlyUsd)
+            .thenComparing(ch -> ch.target().memoryGib(), Comparator.reverseOrder()));
+        return result;
     }
 
     private static Optional<WasteFinding> oversized(Candidate c, BigDecimal monthlyHours) {
@@ -217,18 +218,21 @@ public final class WasteDetector {
         if (current.isEmpty() || c.hourlyUsd() == null) {
             return Optional.empty();
         }
-        Optional<Choice> choice = choose(c, current.get());
-        if (choice.isEmpty()) {
+        List<Choice> choices = qualifying(c, current.get());
+        if (choices.isEmpty()) {
             return Optional.empty();
         }
-        Choice ch = choice.get();
+        Choice ch = choices.get(0);
+        Choice next = choices.size() > 1 ? choices.get(1) : null;
         BigDecimal monthly = c.hourlyUsd().multiply(monthlyHours);
         BigDecimal targetMonthly = ch.hourlyUsd().multiply(monthlyHours);
         String projected = WasteFinding.percent(ch.projectedP95());
         String reason = "바꿔도 P95 " + projected + (projected.endsWith("미만") ? "이 " : "가 ") + ch.target().instanceType()
             + " 기본 성능 " + ch.baselinePercent().stripTrailingZeros().toPlainString() + "% 안 · 조건에 맞는 타입 중 가장 저렴";
         return Optional.of(new WasteFinding(c.instance(), WasteKind.OVERSIZED, c.stats(), monthlyHours, current.get(),
-            c.hourlyUsd(), monthly, ch.target(), ch.hourlyUsd(), targetMonthly, monthly.subtract(targetMonthly), reason));
+            c.hourlyUsd(), monthly, ch.target(), ch.hourlyUsd(), targetMonthly, monthly.subtract(targetMonthly), reason,
+            new WasteFinding.DownsizeBasis(ch.projectedP95(), ch.baselinePercent(),
+                next == null ? null : next.target(), next == null ? null : next.hourlyUsd())));
     }
 
     private static String oversizedSkipReason(Candidate c) {
