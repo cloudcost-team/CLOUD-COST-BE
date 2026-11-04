@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -144,6 +145,12 @@ class Ec2PersistenceAdapter implements Ec2InstanceRepository, Ec2UsageRepository
             }
         }
         return updated;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<Instant> findFirstUsedHour(String ownerId, UUID accountId) {
+        return Optional.ofNullable(usage.findFirstUsedHour(ownerId, accountId));
     }
 
     @Override

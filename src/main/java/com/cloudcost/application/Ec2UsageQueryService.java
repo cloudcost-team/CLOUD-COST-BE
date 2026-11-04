@@ -144,8 +144,11 @@ public class Ec2UsageQueryService {
         DateRange range = DateRange.resolve(from, to, today.minusDays(29), today);
         Loaded loaded = load(ownerId, accountId, range, range.from().minusDays(SpikeDetector.BASELINE_DAYS));
         CostReport<LocalDate> withBaseline = CostEstimator.report(loaded.daily(), loaded.priced().byInstanceId());
-        Map<LocalDate, Spike> spikes =
-            SpikeDetector.detect(withBaseline, loaded.availableFrom(), range.from(), range.to());
+        LocalDate firstUsed = usage.findFirstUsedHour(ownerId, accountId)
+            .map(h -> LocalDate.ofInstant(h, settings.zone()))
+            .orElse(null);
+        Map<LocalDate, Spike> spikes = SpikeDetector.detect(withBaseline,
+            SpikeDetector.baselineFrom(loaded.availableFrom(), firstUsed), range.from(), range.to());
         return new DailyView(view(loaded, Function.identity()), spikes);
     }
 
