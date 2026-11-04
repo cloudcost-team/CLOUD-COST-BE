@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface Ec2UsageRepository {
@@ -26,6 +27,9 @@ public interface Ec2UsageRepository {
      * hourStart ∈ [start, end)
      */
     List<HourlySample> findHourly(String ownerId, UUID accountId, Instant start, Instant end);
+
+    /** 가장 먼저 켜져 있던 시간 (SampleCount > 0). 기록이 없으면 empty */
+    Optional<Instant> findFirstUsedHour(String ownerId, UUID accountId);
 
     /** 연결 삭제용. @return 지운 행 수 */
     int deleteUsageByOwnerIdAndAccountId(String ownerId, UUID accountId);
