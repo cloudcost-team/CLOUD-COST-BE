@@ -84,6 +84,19 @@ class BenchmarkApiTest extends IntegrationTestBase {
     }
 
     @Test
+    void 월_지출에서_뺀_단가_모르는_서버를_안내에_보여_준다() throws Exception {
+        threeServers();
+        server("i-x", "x9.unknown", 50, 90, 50L * 1024 * 1024);
+
+        JsonNode body = benchmark("");
+
+        assertThat(body.at("/notes").toString()).as("대시보드 월말 예상에서 뺀 서버 안내").contains("단가를 찾지 못한 인스턴스 1개");
+        java.util.List<String> notes = new java.util.ArrayList<>();
+        body.at("/notes").forEach(n -> notes.add(n.asText()));
+        assertThat(notes).as("겹치는 문구는 한 번만").doesNotHaveDuplicates();
+    }
+
+    @Test
     void 추천을_주면_적용_후_위치도_준다() throws Exception {
         threeServers();
         JsonNode body = benchmark("&recommendationIds=i-batch:IDLE,i-api:OVERSIZED");

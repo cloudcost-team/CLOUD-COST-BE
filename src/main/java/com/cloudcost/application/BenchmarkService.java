@@ -111,7 +111,8 @@ public class BenchmarkService {
         BenchmarkReference reference, Instant asOf) {
         boolean simulate = recommendationIds != null && !recommendationIds.isEmpty();
         List<WasteFinding> applied = CostSimulation.select(wasteView.result().findings(), recommendationIds);
-        List<String> notes = new ArrayList<>();
+        // 월 지출 위치는 대시보드 월말 예상으로 잰다. 단가를 모르는 서버를 뺀 사실 등 그 계산의 안내도 함께 보여 준다
+        List<String> notes = new ArrayList<>(dashboard.notes());
         notes.add(WasteService.BASIS);
         notes.add("과다 사양 = 최근 14일 동안 24시간 이상 켜진 서버 중 CPU P95가 10% 미만인 서버예요. "
             + "비교 자료와 측정 방식(지표 간격·기간)이 달라 참고용으로 봐 주세요.");
