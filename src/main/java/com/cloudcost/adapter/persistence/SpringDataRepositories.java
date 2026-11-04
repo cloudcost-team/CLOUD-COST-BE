@@ -68,6 +68,10 @@ final class SpringDataRepositories {
         List<Ec2UsageHourlyEntity> findByOwnerIdAndAccountIdAndHourStartGreaterThanEqualAndHourStartLessThan(
             String ownerId, UUID accountId, Instant start, Instant end);
 
+        @Query("select min(e.hourStart) from Ec2UsageHourlyEntity e "
+            + "where e.ownerId = :ownerId and e.accountId = :accountId and e.sampleCount > 0")
+        Instant findFirstUsedHour(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);
+
         @Modifying(clearAutomatically = true, flushAutomatically = true)
         @Query("delete from Ec2UsageHourlyEntity e where e.ownerId = :ownerId and e.accountId = :accountId")
         int deleteByOwnerIdAndAccountId(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);

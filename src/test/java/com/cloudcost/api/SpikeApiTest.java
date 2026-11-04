@@ -131,4 +131,22 @@ class SpikeApiTest extends IntegrationTestBase {
         assertThat(latest.at("/baselineDays").asInt()).isEqualTo(30);
         assertThat(latest.at("/ratio").decimalValue()).isEqualByComparingTo("2.2");
     }
+
+    @Test
+    void 처음_쓰기_전_0원인_날은_평소에_넣지_않고_조회_기간이_달라도_판정이_같다() throws Exception {
+        // 기록 시작일(7/10) 뒤 9/1에 처음 켠 서버를 그 뒤로 일정하게 썼다 → 어느 기간으로 조회해도 급증이 없다
+        String accountId = activeAccount();
+        aws.instances.add(Fixtures.instance("i-new", "t3.medium", "running", Instant.parse("2026-09-01T00:00:00Z")));
+        aws.addHours("i-new", Instant.parse("2026-08-31T15:00:00Z"), 37 * 24 + 12, 60);
+        priceCatalog.hourlyByType.put("t3.medium", new BigDecimal("0.0416"));
+
+        for (String query : new String[] {"", "?from=2026-09-10&to=2026-10-08", "?from=2026-09-20&to=2026-10-08"}) {
+            JsonNode days = body(getJson("/api/v1/aws/accounts/" + accountId + "/costs/daily" + query)
+                    .andExpect(status().isOk())).at("/days");
+            for (JsonNode day : days) {
+                assertThat(day.at("/spike").isNull()).as(query + " " + day.at("/date").asText()).isTrue();
+            }
+        }
+        assertThat(body(getJson("/api/v1/aws/accounts/" + accountId + "/dashboard")).at("/latestSpike").isNull()).isTrue();
+    }
 }

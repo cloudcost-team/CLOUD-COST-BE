@@ -94,8 +94,16 @@ class SpikeDetectorTest {
         for (int i = 0; i < 46; i++) {
             daily.put(START.plusDays(i), i < 15 ? new TreeMap<>() : new TreeMap<>(Map.of("i-web", 600L)));
         }
+        CostReport<LocalDate> report = CostEstimator.report(daily, PRICES);
+        LocalDate firstUsed = START.plusDays(15);
 
-        assertThat(SpikeDetector.detect(CostEstimator.report(daily, PRICES), START, START, START.plusDays(45))).isEmpty();
+        assertThat(SpikeDetector.baselineFrom(START, firstUsed)).isEqualTo(firstUsed);
+        assertThat(SpikeDetector.baselineFrom(START, START.minusDays(3))).as("기록 시작일보다 앞서지 않는다").isEqualTo(START);
+        assertThat(SpikeDetector.baselineFrom(START, null)).isNull();
+        assertThat(SpikeDetector.detect(report, SpikeDetector.baselineFrom(START, firstUsed), START, START.plusDays(45)))
+            .isEmpty();
+        assertThat(SpikeDetector.detect(report, START, START, START.plusDays(45)))
+            .as("기록 시작일부터 재면 생기는 문제").isNotEmpty();
     }
 
     @Test
