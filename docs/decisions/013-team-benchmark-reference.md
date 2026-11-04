@@ -22,4 +22,4 @@
 
 ## 결과
 - 팀이 Azure 자료를 쓰지 않기로 하면 `oversized` 항목을 다른 자료로 바꾸거나, 화면에서 비교 영역을 숨겨야 한다 (API 형식은 그대로).
-- 백분위 표를 구하면 파일의 `percentiles`에 `{ "percentile": 50, "ratioPercent": 35 }` 형식으로 넣으면 된다.
+- 백분위 표를 구하면 파일의 `percentiles`에 `{ "percentile": 50, "ratioPercent": 35 }` 형식으로 넣으면 된다. 두 값은 0~100이고 위에서 아래로 줄지 않아야 하며, 어기면 시작할 때 실패한다.

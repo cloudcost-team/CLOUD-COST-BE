@@ -49,4 +49,29 @@ class JsonBenchmarkReferenceSourceTest {
             json.replace(",\"ratioPercent\":30", "").getBytes(StandardCharsets.UTF_8))))
             .isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    void 백분위_표는_0에서_100_사이이고_오름차순이어야_시작한다() {
+        String base = """
+            {"oversized":{"source":"x","description":"d","sampleSize":10,"averagePercent":40,"medianPercent":30,
+              "percentiles":%s},
+             "waste":{"source":"w","description":"d","averagePercent":20},
+             "spend":{"source":"s","description":"d","minUsd":50,"maxUsd":300}}
+            """;
+        String ok = "[{\"percentile\":25,\"ratioPercent\":10},{\"percentile\":75,\"ratioPercent\":50}]";
+        assertThat(JsonBenchmarkReferenceSource.read(resource(base.formatted(ok))).oversized().percentiles()).hasSize(2);
+
+        for (String bad : new String[] {
+            "[{\"percentile\":120,\"ratioPercent\":10}]",
+            "[{\"percentile\":50,\"ratioPercent\":-1}]",
+            "[{\"percentile\":75,\"ratioPercent\":10},{\"percentile\":25,\"ratioPercent\":50}]",
+            "[{\"percentile\":25,\"ratioPercent\":50},{\"percentile\":75,\"ratioPercent\":10}]"}) {
+            assertThatThrownBy(() -> JsonBenchmarkReferenceSource.read(resource(base.formatted(bad))))
+                .as(bad).isInstanceOf(IllegalStateException.class);
+        }
+    }
+
+    private static ByteArrayResource resource(String json) {
+        return new ByteArrayResource(json.getBytes(StandardCharsets.UTF_8));
+    }
 }

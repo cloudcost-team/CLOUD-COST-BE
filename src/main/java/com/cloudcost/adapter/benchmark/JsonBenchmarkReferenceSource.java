@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
@@ -42,10 +44,25 @@ class JsonBenchmarkReferenceSource implements BenchmarkReferenceSource {
                 .anyMatch(p -> p == null || p.percentile() == null || p.ratioPercent() == null)) {
                 throw new IllegalStateException("percentiles 항목마다 percentile·ratioPercent가 있어야 합니다: " + resource);
             }
+            // 보간(TeamBenchmark)이 맞으려면 두 값 모두 0~100이고 순서대로 줄지 않아야 한다
+            List<BenchmarkReference.Percentile> percentiles = ref.oversized().percentiles();
+            for (int i = 0; i < percentiles.size(); i++) {
+                BenchmarkReference.Percentile p = percentiles.get(i);
+                BenchmarkReference.Percentile prev = i == 0 ? null : percentiles.get(i - 1);
+                if (!inPercentRange(p.percentile()) || !inPercentRange(p.ratioPercent())
+                    || (prev != null && (p.percentile().compareTo(prev.percentile()) < 0
+                        || p.ratioPercent().compareTo(prev.ratioPercent()) < 0))) {
+                    throw new IllegalStateException("percentiles의 percentile·ratioPercent는 0~100이고 오름차순이어야 합니다: " + resource);
+                }
+            }
             return ref;
         } catch (IOException e) {
             throw new UncheckedIOException("벤치마킹 기준 파일을 읽지 못했습니다: " + resource, e);
         }
+    }
+
+    private static boolean inPercentRange(BigDecimal value) {
+        return value.signum() >= 0 && value.compareTo(BigDecimal.valueOf(100)) <= 0;
     }
 
     @Override
