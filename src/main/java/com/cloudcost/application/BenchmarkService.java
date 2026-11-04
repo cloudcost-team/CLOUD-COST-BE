@@ -3,7 +3,9 @@ package com.cloudcost.application;
 import com.cloudcost.application.DashboardService.DashboardView;
 import com.cloudcost.application.WasteService.WasteView;
 import com.cloudcost.application.port.BenchmarkReferenceSource;
+import com.cloudcost.domain.DomainValidationException;
 import com.cloudcost.domain.benchmark.BenchmarkReference;
+import com.cloudcost.domain.benchmark.BenchmarkReference.SizeBand;
 import com.cloudcost.domain.benchmark.TeamBenchmark;
 import com.cloudcost.domain.benchmark.TeamBenchmark.Position;
 import com.cloudcost.domain.benchmark.TeamBenchmark.Ratio;
@@ -27,7 +29,7 @@ public class BenchmarkService {
 
     public enum Status {
         OK,
-        /** 판단한 서버가 3대 미만이라 비율을 비교하지 않음 */
+        /** 판단한 서버가 없거나, 고른 서버 대수 구간의 비교 자료가 없어 비율을 비교하지 않음 */
         NOT_COMPARABLE,
         /** 기록 시작일부터 14일이 안 됨 */
         INSUFFICIENT_HISTORY,
@@ -44,10 +46,13 @@ public class BenchmarkService {
         "비교 자료에 백분위 표가 없어 \"우리보다 효율적인 팀 %\"는 계산하지 않았어요. 평균·중앙값과 비교해 주세요.";
 
     /**
-     * @param after 추천을 적용한 뒤 (추천 id를 주지 않았으면 null)
+     * @param after        추천을 적용한 뒤 (추천 id를 주지 않았으면 null)
+     * @param matchedBand  우리 서버 대수가 속한 구간 (판단한 서버가 없거나 어느 구간에도 안 들면 null)
+     * @param selectedBand 비교에 쓴 구간 (요청한 구간, 없으면 matchedBand)
      */
     public record OversizedSection(
-        Status status, List<ServerVerdict> servers, Ratio ratio, BigDecimal moreEfficientTeamsPercent, Ratio after) {
+        Status status, List<ServerVerdict> servers, Ratio ratio, BigDecimal moreEfficientTeamsPercent, Ratio after,
+        SizeBand matchedBand, SizeBand selectedBand) {
     }
 
     /**
@@ -95,19 +100,35 @@ public class BenchmarkService {
         this.clock = clock;
     }
 
-    public BenchmarkView benchmark(String ownerId, UUID accountId, List<String> recommendationIds) {
+    /**
+     * @param sizeBand 비교할 서버 대수 구간 키(예: "1-2"). null이면 우리 서버 대수에 맞는 구간
+     */
+    public BenchmarkView benchmark(String ownerId, UUID accountId, List<String> recommendationIds, String sizeBand) {
+        BenchmarkReference reference = references.reference();
+        requireKnownBand(reference, sizeBand);
         WasteView wasteView = waste.waste(ownerId, accountId);
         DashboardView dashboard = dashboards.dashboard(ownerId, accountId);
-        return compose(accountId, wasteView, dashboard, recommendationIds, references.reference(), clock.instant());
+        return compose(accountId, wasteView, dashboard, recommendationIds, sizeBand, reference, clock.instant());
     }
 
-    public BenchmarkView demoBenchmark(DemoSetup setup, List<String> recommendationIds) {
+    public BenchmarkView demoBenchmark(DemoSetup setup, List<String> recommendationIds, String sizeBand) {
+        BenchmarkReference reference = references.reference();
+        requireKnownBand(reference, sizeBand);
         return compose(DemoUsageService.ACCOUNT_ID, demo.waste(setup), dashboards.demoDashboard(setup, null),
-            recommendationIds, references.reference(), clock.instant());
+            recommendationIds, sizeBand, reference, clock.instant());
+    }
+
+    /** 모르는 구간 키는 400 */
+    static void requireKnownBand(BenchmarkReference reference, String sizeBand) {
+        if (sizeBand != null && reference.oversized().band(sizeBand).isEmpty()) {
+            String known = String.join(", ", reference.oversized().bands().stream().map(SizeBand::key).toList());
+            throw new DomainValidationException("VALIDATION_ERROR",
+                "sizeBand는 " + known + " 중 하나로 보내 주세요.");
+        }
     }
 
     static BenchmarkView compose(
-        UUID accountId, WasteView wasteView, DashboardView dashboard, List<String> recommendationIds,
+        UUID accountId, WasteView wasteView, DashboardView dashboard, List<String> recommendationIds, String sizeBand,
         BenchmarkReference reference, Instant asOf) {
         boolean simulate = recommendationIds != null && !recommendationIds.isEmpty();
         List<WasteFinding> applied = CostSimulation.select(wasteView.result().findings(), recommendationIds);
@@ -119,7 +140,7 @@ public class BenchmarkService {
             + "우리는 1시간 평균, 비교 자료는 5분 최대값으로 재서 정확한 순위가 아니라 참고용으로 봐 주세요.");
 
         boolean insufficient = wasteView.status() == WasteService.Status.INSUFFICIENT_HISTORY;
-        OversizedSection oversized = oversized(wasteView, insufficient, simulate, applied, reference, notes);
+        OversizedSection oversized = oversized(wasteView, insufficient, simulate, applied, sizeBand, reference, notes);
         if (simulate) {
             notes.add("적용 후: 과다 사양 추천을 적용한 서버는 적정, 유휴 추천(중지)을 적용한 서버는 판단 대상에서 빠진다고 봤어요.");
         }
@@ -131,27 +152,41 @@ public class BenchmarkService {
     }
 
     private static OversizedSection oversized(
-        WasteView wasteView, boolean insufficient, boolean simulate, List<WasteFinding> applied,
+        WasteView wasteView, boolean insufficient, boolean simulate, List<WasteFinding> applied, String sizeBand,
         BenchmarkReference reference, List<String> notes) {
+        BenchmarkReference.Oversized ref = reference.oversized();
+        SizeBand requested = sizeBand == null ? null : ref.band(sizeBand).orElseThrow();
         if (insufficient) {
             notes.add("기록이 14일 미만이라 " + wasteView.availableAt() + "부터 과다 사양 비율을 비교할 수 있어요.");
-            return new OversizedSection(Status.INSUFFICIENT_HISTORY, List.of(), null, null, null);
+            return new OversizedSection(Status.INSUFFICIENT_HISTORY, List.of(), null, null, null, null, requested);
         }
         List<ServerVerdict> verdicts = TeamBenchmark.verdicts(
             wasteView.instances(), wasteView.stats(), wasteView.result().judgedIds());
         Ratio ratio = TeamBenchmark.ratio(verdicts);
         Ratio after = simulate ? TeamBenchmark.ratioAfter(verdicts, applied) : null;
-        if (verdicts.size() < TeamBenchmark.MIN_SERVERS) {
-            notes.add("판단한 서버가 " + TeamBenchmark.MIN_SERVERS + "대 미만이라 과다 사양 비율은 다른 팀과 비교하지 않아요 "
-                + "(비교 자료는 VM 3대 이상 구독 기준).");
-            return new OversizedSection(Status.NOT_COMPARABLE, verdicts, ratio, null, after);
+        // 우리 서버 대수에 맞는 구간과 비교한다. 다른 구간을 고르면 "그 규모 팀과 비교하면"으로 본다
+        SizeBand matched = verdicts.isEmpty() ? null : ref.bandFor(verdicts.size()).orElse(null);
+        SizeBand selected = requested != null ? requested : matched;
+        if (verdicts.isEmpty()) {
+            notes.add("최근 14일 동안 24시간 이상 켜진 서버가 없어 과다 사양 비율을 비교하지 않았어요.");
+            return new OversizedSection(Status.NOT_COMPARABLE, verdicts, ratio, null, after, null, selected);
         }
-        BigDecimal moreEfficient =
-            TeamBenchmark.moreEfficientTeamsPercent(ratio.ratioPercent(), reference.oversized().percentiles());
+        if (selected == null) {
+            notes.add("판단한 서버 " + verdicts.size() + "대에 맞는 비교 구간이 없어 과다 사양 비율은 비교하지 않았어요.");
+            return new OversizedSection(Status.NOT_COMPARABLE, verdicts, ratio, null, after, null, null);
+        }
+        if (!selected.hasData()) {
+            notes.add(selected.label() + " 비교 자료는 아직 준비 중이라 과다 사양 비율은 비교하지 않았어요.");
+            return new OversizedSection(Status.NOT_COMPARABLE, verdicts, ratio, null, after, matched, selected);
+        }
+        if (requested != null && requested != matched) {
+            notes.add("우리는 서버 " + verdicts.size() + "대지만 " + selected.label() + " 팀 자료와 견줬어요.");
+        }
+        BigDecimal moreEfficient = TeamBenchmark.moreEfficientTeamsPercent(ratio.ratioPercent(), selected.percentiles());
         if (moreEfficient == null) {
             notes.add(NO_PERCENTILES);
         }
-        return new OversizedSection(Status.OK, verdicts, ratio, moreEfficient, after);
+        return new OversizedSection(Status.OK, verdicts, ratio, moreEfficient, after, matched, selected);
     }
 
     private static SpendSection spend(

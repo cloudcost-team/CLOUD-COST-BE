@@ -362,15 +362,19 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 기간의 마지막 날을 오늘로 보고 같은 계산을 한다.
 
 ## 4-2. 팀 벤치마킹 (이슈 #33, ADR-013)
-### `GET /aws/accounts/{accountId}/benchmark?recommendationIds=&currency=KRW|USD` — S09 · S09-2~4
+### `GET /aws/accounts/{accountId}/benchmark?recommendationIds=&sizeBand=&currency=KRW|USD` — S09 · S09-2~4
 비슷한 규모 팀의 공개 자료와 견준다. 비교 기준은 교체 가능한 파일(`CCI_BENCHMARK_REFERENCE`, 기본 `classpath:benchmark/reference.json`)이다.
 ```json
 { "dataSource": "aws", "currency": "KRW", "status": "OK", "availableAt": null, "window": { "from": "…", "to": "…" },
   "appliedRecommendationIds": [],
   "oversizedRatio": {
     "status": "OK", "ours": { "judgedCount": 4, "oversizedCount": 2, "ratio": 50.0 }, "moreEfficientTeamsPercent": null,
-    "reference": { "source": "Azure Public Dataset V2", "description": "마이크로소프트 내부 서비스 VM 30일 기록 중 VM 3~20대 구독 2,607곳 … 참고용", "sampleSize": 2607,
+    "matchedSizeBand": "3-20",
+    "reference": { "source": "Azure Public Dataset V2", "description": "마이크로소프트 내부 서비스 VM 30일 기록 중 같은 VM 대수 구간 구독들의 … 참고용",
+                   "sizeBand": "3-20", "sizeBandLabel": "서버 3~20대", "dataAvailable": true, "sampleSize": 2607,
                    "averageRatio": 42, "medianRatio": 35, "percentileAvailable": false },
+    "sizeBands": [ { "key": "1-2", "label": "서버 1~2대", "minServers": 1, "maxServers": 2, "dataAvailable": false, "matchesOurs": false },
+                   { "key": "3-20", "label": "서버 3~20대", "minServers": 3, "maxServers": 20, "dataAvailable": true, "matchesOurs": true } ],
     "servers": [ { "instanceId": "i-0abc", "name": "api-server", "instanceType": "m5.large", "cpuP95": 6.20, "cpuHours": 336,
                    "oversized": true, "verdict": "과다 사양 (P95 10% 미만)" } ],
     "afterSimulation": null },
@@ -384,7 +388,11 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 ```
 - **① 과다 사양 비율**(`oversizedRatio`) = CPU P95 < 10%인 서버 수 ÷ 판단한 서버 수 (최근 14일 중 **24시간 이상** 켜진, 지금 남아 있는 서버).
   §4 낭비 탐지와 같은 14일 구간·지표를 쓴다. `servers`는 P95 낮은 순 (S09-3).
-  - `status`: `OK` · `NOT_COMPARABLE`(판단한 서버 3대 미만 — 비율·목록은 주지만 비교하지 않음) · `INSUFFICIENT_HISTORY`(기록 14일 미만, `ours`·`servers` 비움).
+  - **서버 대수 구간**: 비교 자료는 서버(VM) 대수 구간별 분포다 (기본 `1-2`·`3-20`). 판단한 서버 수로 우리 구간(`matchedSizeBand`)을 정해 그 구간과 견준다.
+    `sizeBand`(예: `1-2`)를 주면 그 구간과 견준다 (S09 규모 선택, "그 규모 팀과 비교하면"). 고를 수 있는 값은 `sizeBands`, 모르는 값은 400 `VALIDATION_ERROR`.
+  - `status`: `OK` · `NOT_COMPARABLE`(판단한 서버가 없거나, 맞는 구간이 없거나, 고른 구간의 비교 자료가 아직 없음(`reference.dataAvailable: false`) — 비율·목록은 주지만 비교하지 않음) ·
+    `INSUFFICIENT_HISTORY`(기록 14일 미만, `ours`·`servers` 비움).
+  - 기본 파일의 `1-2` 구간은 아직 비어 있다. `3-20`의 숫자는 기획서 값이다. 둘 다 `scripts/benchmark/AzureOversized.java`로 원본에서 계산해 채운다 (ADR-013).
   - `moreEfficientTeamsPercent`: 우리보다 비율이 낮은 팀의 비율(%). 비교 기준 파일에 백분위 표(`percentiles`)가 있을 때만 계산하고(표 사이는 직선 보간), 없으면 `null` + `notes` 안내. **기본 파일에는 표가 없다.**
 - **② 전체 낭비 비율**(`wasteRatio`): 미연결 볼륨·스냅샷·고정 IP·로드밸런서를 지금 권한으로 볼 수 없어 항상 `UNAVAILABLE` + 사유. Flexera 평균은 참고값이다.
 - **③ 월 지출**(`monthlySpend`): 월말 예상(§2-1, USD)을 비교 범위($100~$500)와 견줘 `BELOW`(미만)·`WITHIN`·`ABOVE`(초과). 범위는 요청 통화로도 준다.
@@ -396,7 +404,7 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 - 오류: §2와 같다.
 
 ### `POST /demo/benchmark?currency=KRW|USD` — 체험 모드
-§3 설정에 `recommendationIds`(선택)를 더한다. 기간의 마지막 14일을 서버별 `usagePattern`으로 판단한다 (`OVERSIZED`·`IDLE`은 과다 사양, `NORMAL`은 적정).
+§3 설정에 `recommendationIds`(선택)를 더한다. `?sizeBand=`도 실제와 같다. 기간의 마지막 14일을 서버별 `usagePattern`으로 판단한다 (`OVERSIZED`·`IDLE`은 과다 사양, `NORMAL`은 적정).
 
 ## 5. 서비스 안 알림 (이슈 #35, ADR-014)
 알림은 **서비스 안 알림창(헤더 벨·알림 목록)으로만** 보여 준다. 이메일·Slack·Discord·푸시는 보내지 않는다.
