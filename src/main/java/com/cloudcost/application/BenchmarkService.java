@@ -135,7 +135,8 @@ public class BenchmarkService {
             notes.add("기록이 14일 미만이라 " + wasteView.availableAt() + "부터 과다 사양 비율을 비교할 수 있어요.");
             return new OversizedSection(Status.INSUFFICIENT_HISTORY, List.of(), null, null, null);
         }
-        List<ServerVerdict> verdicts = TeamBenchmark.verdicts(wasteView.instances(), wasteView.stats());
+        List<ServerVerdict> verdicts = TeamBenchmark.verdicts(
+            wasteView.instances(), wasteView.stats(), wasteView.result().judgedIds());
         Ratio ratio = TeamBenchmark.ratio(verdicts);
         Ratio after = simulate ? TeamBenchmark.ratioAfter(verdicts, applied) : null;
         if (verdicts.size() < TeamBenchmark.MIN_SERVERS) {
