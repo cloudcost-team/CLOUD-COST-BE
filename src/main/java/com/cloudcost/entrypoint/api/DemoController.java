@@ -17,6 +17,8 @@ import com.cloudcost.entrypoint.api.dto.UsageDtos.MonthlyCostResponse;
 import com.cloudcost.entrypoint.api.dto.WasteDtos.WasteResponse;
 import com.cloudcost.entrypoint.api.dto.DashboardDtos.DashboardResponse;
 import com.cloudcost.application.DashboardService;
+import com.cloudcost.application.SimulationService;
+import com.cloudcost.entrypoint.api.dto.SimulationDtos.SimulationResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -37,13 +39,19 @@ class DemoController {
 
     private final DemoUsageService demo;
     private final DashboardService dashboards;
+    private final SimulationService simulations;
     private final CurrencyService currencies;
     private final String timezone;
 
     DemoController(
-            DemoUsageService demo, DashboardService dashboards, CurrencyService currencies, UsageSettings settings) {
+            DemoUsageService demo,
+            DashboardService dashboards,
+            SimulationService simulations,
+            CurrencyService currencies,
+            UsageSettings settings) {
         this.demo = demo;
         this.dashboards = dashboards;
+        this.simulations = simulations;
         this.currencies = currencies;
         this.timezone = settings.zone().getId();
     }
@@ -111,6 +119,16 @@ class DemoController {
     DashboardResponse dashboard(
             @Valid @RequestBody SetupRequest setup, @RequestParam(defaultValue = "KRW") Currency currency) {
         return DashboardResponse.of(dashboards.demoDashboard(setup.toDomain(), setup.budgetOrNull()), timezone,
+                currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
+    }
+
+    @PostMapping("/simulations")
+    @Operation(summary = "설정한 구성의 비용 시뮬레이션 (실제: POST /aws/accounts/{id}/simulations)",
+            description = "요청에 recommendationIds·trafficGrowthPercent·budget(선택)을 더한다. 추천은 POST /demo/waste와 같은 설정에서 나온 id다.")
+    SimulationResponse simulations(
+            @Valid @RequestBody SetupRequest setup, @RequestParam(defaultValue = "KRW") Currency currency) {
+        return SimulationResponse.of(
+                simulations.demoSimulate(setup.toDomain(), setup.budgetOrNull(), setup.ids(), setup.growth()),
                 currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
     }
 }

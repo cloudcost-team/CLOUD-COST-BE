@@ -9,6 +9,7 @@ import com.cloudcost.application.DemoUsageService;
 import com.cloudcost.application.Ec2UsageQueryService;
 import com.cloudcost.application.Pauser;
 import com.cloudcost.application.PriceService;
+import com.cloudcost.application.SimulationService;
 import com.cloudcost.application.StackCallbackService;
 import com.cloudcost.application.UsageSettings;
 import com.cloudcost.application.WasteService;
@@ -177,6 +178,12 @@ class ApplicationWiring {
             Clock clock,
             UsageSettings settings) {
         return new DashboardService(accounts, queries, demo, budgets, currencies, clock, settings);
+    }
+
+    @Bean
+    SimulationService simulationService(
+            WasteService waste, DashboardService dashboards, DemoUsageService demo, Clock clock) {
+        return new SimulationService(waste, dashboards, demo, clock);
     }
 
     @Bean
