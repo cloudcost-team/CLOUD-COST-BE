@@ -193,7 +193,7 @@
 요청 { "amount": 400000, "currency": "KRW" }   응답 { "accountId": "…", "amount": 400000, "currency": "KRW" }
 ```
 - 입력한 통화 그대로 저장한다 (원화는 원 단위, 달러는 센트 단위로 반올림). 연결마다 하나이고 다시 보내면 바꾼다. 연결 상태와 관계없이 정할 수 있다.
-- 400 `VALIDATION_ERROR`: 0 이하, 1조 초과, 숫자가 아님, `amount`·`currency` 없음 (`details`에 필드별 문구). 남의 연결은 404.
+- 400 `VALIDATION_ERROR`: 0 이하, 1조 초과, 소수점 아래 18자리 초과(예: `1E-1000000000`), 숫자가 아님, `amount`·`currency` 없음 (`details`에 필드별 문구). 남의 연결은 404.
 ### `DELETE /aws/accounts/{accountId}/budget` → 204
 예산을 지운다 ("설정 안 함"). 연결을 삭제하면 예산도 함께 지운다.
 
