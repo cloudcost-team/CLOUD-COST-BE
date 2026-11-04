@@ -170,4 +170,24 @@ class SpikeDetectorTest {
 
         assertThat(s.causeInstanceId()).isEqualTo("i-web");
     }
+
+    @Test
+    void 단가를_하나도_모르는_날은_0원이_아니라_평소에서_뺀다() {
+        // 처음 10일은 단가 모르는 i-x만, 다음 10일은 i-web 8시간($8), 마지막 날 i-web 14시간($14)
+        Map<LocalDate, Map<String, Long>> daily = new LinkedHashMap<>();
+        for (int i = 0; i < 10; i++) {
+            daily.put(START.plusDays(i), new TreeMap<>(Map.of("i-x", 24L * 60)));
+        }
+        for (int i = 10; i < 20; i++) {
+            daily.put(START.plusDays(i), new TreeMap<>(Map.of("i-web", 8L * 60)));
+        }
+        daily.put(START.plusDays(20), new TreeMap<>(Map.of("i-web", 14L * 60)));
+
+        Spike s = SpikeDetector.detect(CostEstimator.report(daily, PRICES), START, START.plusDays(20), START.plusDays(20))
+            .get(START.plusDays(20));
+
+        assertThat(s.baselineDays()).as("단가를 모르는 10일은 0원으로 세지 않는다").isEqualTo(10);
+        assertThat(s.baselineUsd()).isEqualByComparingTo("8");
+        assertThat(s.ratio()).isEqualByComparingTo("1.8");
+    }
 }
