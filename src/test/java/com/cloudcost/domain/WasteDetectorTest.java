@@ -38,12 +38,16 @@ class WasteDetectorTest {
     }
 
     @Test
-    void 한_단계_줄인_타입은_t3에서_메모리_절반_vCPU_이하다() {
+    void 한_단계_줄인_타입은_t3에서_메모리_절반_이하_vCPU_이하_중_가장_큰_것이다() {
         assertThat(InstanceSpecs.downsizeTarget("m5.large")).map(Spec::instanceType).hasValue("t3.medium");
         assertThat(InstanceSpecs.downsizeTarget("m5.xlarge")).map(Spec::instanceType).hasValue("t3.large");
         assertThat(InstanceSpecs.downsizeTarget("t3.medium")).map(Spec::instanceType).hasValue("t3.small");
         assertThat(InstanceSpecs.downsizeTarget("c5.large")).map(Spec::instanceType).hasValue("t3.small");
         assertThat(InstanceSpecs.downsizeTarget("r5.large")).map(Spec::instanceType).hasValue("t3.large");
+        assertThat(InstanceSpecs.downsizeTarget("m5.4xlarge")).map(Spec::instanceType).hasValue("t3.2xlarge");
+        assertThat(InstanceSpecs.downsizeTarget("r5.4xlarge")).as("절반(64GiB)인 t3가 없으면 그 아래 가장 큰 t3")
+                .map(Spec::instanceType).hasValue("t3.2xlarge");
+        assertThat(InstanceSpecs.downsizeTarget("t2.micro")).as("vCPU가 지금보다 많은 t3는 고르지 않는다").isEmpty();
         assertThat(InstanceSpecs.downsizeTarget("t3.nano")).as("더 작은 t3 없음").isEmpty();
         assertThat(InstanceSpecs.downsizeTarget("g4dn.xlarge")).as("GPU는 추천하지 않음").isEmpty();
         assertThat(InstanceSpecs.downsizeTarget("x9.unknown")).isEmpty();

@@ -74,9 +74,10 @@ public final class InstanceSpecs {
     }
 
     /**
-     * 한 단계 줄인 타입: t3 패밀리에서 메모리가 지금의 절반이고 vCPU가 지금 이하인 타입.
-     * 예: m5.large(2 vCPU·8GiB) → t3.medium(2·4GiB), m5.xlarge(4·16) → t3.large(2·8), t3.medium → t3.small.
-     * 카탈로그에 없거나 GPU 타입이거나 맞는 타입이 없으면 비어 있다. 더 싼지는 단가로 따로 확인한다.
+     * 한 단계 줄인 타입: t3 패밀리에서 메모리가 지금의 절반 이하이고 vCPU가 지금 이하인 타입 중 가장 큰 것.
+     * 예: m5.large(2 vCPU·8GiB) → t3.medium(2·4GiB), m5.xlarge(4·16) → t3.large(2·8), t3.medium → t3.small,
+     * r5.4xlarge(16·128) → t3.2xlarge(8·32, t3 최대). 카탈로그에 없거나 GPU 타입이거나 맞는 타입이 없으면 비어 있다.
+     * 더 싼지는 단가로 따로 확인한다.
      */
     public static Optional<Spec> downsizeTarget(String instanceType) {
         Optional<Spec> current = find(instanceType).filter(s -> !s.gpu());
@@ -86,7 +87,7 @@ public final class InstanceSpecs {
         BigDecimal half = current.get().memoryGib().divide(BigDecimal.valueOf(2));
         return SPECS.values().stream()
             .filter(s -> s.instanceType().startsWith(TARGET_FAMILY + "."))
-            .filter(s -> s.memoryGib().compareTo(half) == 0 && s.vcpu() <= current.get().vcpu())
-            .min(Comparator.comparingInt(Spec::vcpu));
+            .filter(s -> s.memoryGib().compareTo(half) <= 0 && s.vcpu() <= current.get().vcpu())
+            .max(Comparator.comparing(Spec::memoryGib).thenComparing(Spec::vcpu, Comparator.reverseOrder()));
     }
 }
