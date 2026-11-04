@@ -222,11 +222,14 @@ public class Ec2DataRefresher {
         boolean complete = true;
 
         for (TrackedInstance instance : tracked) {
-            if (!instance.needsUsageCollection()) {
+            boolean needsUsage = instance.needsUsageCollection();
+            if (!needsUsage && !instance.needsMetricsCollection()) {
                 continue;
             }
-            List<TimeWindow> windows = CollectionWindows.plan(
-                instance.usageCollectedUntil(), now, settings.backfill(), settings.overlap());
+            // 꺼져 있어 사용 시간은 새로 읽을 필요가 없고 지표만 뒤처진 인스턴스는 지표만 수집한다.
+            List<TimeWindow> windows = needsUsage
+                ? CollectionWindows.plan(instance.usageCollectedUntil(), now, settings.backfill(), settings.overlap())
+                : List.of();
             Instant collectedUntil = instance.usageCollectedUntil();
             boolean instanceDone = true;
             boolean budgetHit = false;

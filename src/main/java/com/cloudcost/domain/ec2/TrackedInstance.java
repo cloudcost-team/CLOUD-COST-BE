@@ -62,6 +62,16 @@ public record TrackedInstance(
             || (present && InstanceStates.mayEmitMetrics(info.state()));
     }
 
+    /**
+     * 낭비 탐지용 지표(최근 14일)가 사용 시간 수집보다 뒤처져 있으면 다시 수집한다.
+     * 사용 시간 수집과 따로 판단해야, 지금 꺼져 있는 인스턴스도 지표 수집 전 기록이나 실패한 네트워크 구간을 채운다 (ADR-009).
+     * 소급 전(usageCollectedUntil 없음)이면 사용 시간 수집이 먼저다.
+     */
+    public boolean needsMetricsCollection() {
+        return usageCollectedUntil != null
+            && (metricsCollectedUntil == null || metricsCollectedUntil.isBefore(usageCollectedUntil));
+    }
+
     public String instanceId() {
         return info.instanceId();
     }

@@ -146,4 +146,60 @@ class MetricsCollectionTest extends IntegrationTestBase {
         assertThat(stored(FOURTEEN_DAYS_AGO)).filteredOn(s -> s.hourStart().equals(Instant.parse("2026-10-07T00:00:00Z")))
                 .singleElement().satisfies(s -> assertThat(s.networkInBytes()).isEqualTo(1_000L));
     }
+
+    private void addStoppedInstance() {
+        aws.instances.add(Fixtures.instance("i-stop", "m5.large", "stopped", Instant.parse("2026-10-01T00:00:00Z")));
+        aws.addCpuHours("i-stop", Instant.parse("2026-10-01T00:00:00Z"), 5, 4, 9);
+        aws.addNetworkHours("i-stop", Instant.parse("2026-10-01T00:00:00Z"), 5, 100, 100);
+    }
+
+    private TrackedInstance tracked(String instanceId) {
+        return instanceRepository.findAllByOwnerIdAndAccountId(owner, UUID.fromString(accountId)).stream()
+                .filter(t -> t.instanceId().equals(instanceId)).findFirst().orElseThrow();
+    }
+
+    @Test
+    void 지표_수집_전에_저장한_중지_인스턴스도_사용_시간과_따로_지표를_한_번_채운다() throws Exception {
+        addStoppedInstance();
+        summary();
+        instanceRepository.saveAll(owner, UUID.fromString(accountId), List.of(tracked("i-stop").metricsCollected(null)));
+        aws.cloudWatchRequests.clear();
+        aws.networkRequests.clear();
+        clock.advance(Duration.ofMinutes(61));
+
+        summary();
+
+        assertThat(aws.cloudWatchRequests).as("꺼져 있어 사용 시간은 새로 읽지 않고, 최근 14일 CPU만 한 번 다시 읽는다")
+                .filteredOn(r -> r.startsWith("i-stop@")).hasSize(1);
+        assertThat(aws.networkRequests).filteredOn(r -> r.contains("i-stop@")).hasSize(2);
+        assertThat(tracked("i-stop").metricsCollectedUntil()).isNotNull();
+        assertThat(tracked("i-stop").usageCollectedUntil()).as("사용 시간 진행은 그대로").isEqualTo(NOW);
+
+        aws.cloudWatchRequests.clear();
+        aws.networkRequests.clear();
+        clock.advance(Duration.ofMinutes(61));
+        summary();
+        assertThat(aws.cloudWatchRequests).noneMatch(r -> r.startsWith("i-stop@"));
+        assertThat(aws.networkRequests).as("따라잡은 뒤에는 꺼진 인스턴스를 부르지 않는다").noneMatch(r -> r.contains("i-stop@"));
+    }
+
+    @Test
+    void 네트워크_수집이_실패한_뒤_꺼져_있어도_다음_수집에서_다시_읽는다() throws Exception {
+        addStoppedInstance();
+        aws.networkError = new AwsAccessException(Category.UNAVAILABLE, "ServiceUnavailable",
+                "cloudwatch:GetMetricStatistics", "AWS 서비스가 일시적으로 응답하지 않습니다 (cloudwatch:GetMetricStatistics).");
+        summary();
+        assertThat(tracked("i-stop").metricsCollectedUntil()).isNull();
+
+        aws.networkError = null;
+        aws.networkRequests.clear();
+        clock.advance(Duration.ofMinutes(61));
+        summary();
+
+        assertThat(aws.networkRequests).filteredOn(r -> r.contains("i-stop@")).hasSize(2);
+        assertThat(tracked("i-stop").metricsCollectedUntil()).isNotNull();
+        assertThat(stored(Instant.parse("2026-10-01T00:00:00Z")))
+                .filteredOn(s -> s.instanceId().equals("i-stop"))
+                .allSatisfy(s -> assertThat(s.networkInBytes()).isEqualTo(100L));
+    }
 }
