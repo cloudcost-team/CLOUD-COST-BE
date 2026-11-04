@@ -11,6 +11,7 @@ import com.cloudcost.domain.waste.WasteFinding;
 import com.cloudcost.domain.waste.WasteKind;
 import com.cloudcost.entrypoint.api.dto.UsageDtos.ExchangeRateDto;
 import com.cloudcost.entrypoint.api.dto.UsageDtos.FreshnessDto;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -38,6 +39,7 @@ public final class SimulationDtos {
             @Schema(description = "트래픽 증가율 (%) 0~100. 없으면 0", example = "20")
                     @Min(value = 0, message = "0~100 사이로 입력해 주세요")
                     @Max(value = CostSimulation.MAX_GROWTH_PERCENT, message = "0~100 사이로 입력해 주세요")
+                    @JsonDeserialize(using = StrictIntegerDeserializer.class)
                     Integer trafficGrowthPercent) {
 
         public List<String> ids() {
