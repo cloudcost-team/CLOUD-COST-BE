@@ -174,7 +174,47 @@ Google 로그인 없이 간이 로그인 → 서버 구성·기간 설정 → �
 - 응답은 §2의 실제 경로(`GET /aws/accounts/{accountId}/…`)와 같은 형식이다. 기간은 기본값 없이 요청의 `from`~`to`를 쓰고, 월별은 그 기간을 월로 나눈다.
 - 다른 점: `dataSource: "demo"`, `accountId`는 위 고정값, `notes` 맨 앞에 체험 데이터·예시 단가 안내, `freshness`의 시각은 모두 `null`, `availableFrom`은 요청의 `from`.
 - `from` 0시에 모든 서버를 처음 켰다고 보고, 지난 시간까지만 계산한다(현재 진행 중인 시간 제외). 인스턴스 이름은 대수가 2대 이상이면 `web-1`, `web-2`…
-- `usagePattern`은 선택이고 없으면 `NORMAL`이다. 지금의 비용 응답에는 드러나지 않고, 낭비 탐지·벤치마킹 체험(#10 이후)에 쓰인다.
+- `usagePattern`은 선택이고 없으면 `NORMAL`이다. 비용 응답에는 드러나지 않고, 낭비 탐지(`POST /demo/waste`, §4)·벤치마킹 체험에 쓰인다.
   값은 인스턴스 ID·시각으로 정한 결정적 값이라 같은 설정이면 항상 같다.
 - 단가는 서울 리전 온디맨드 단가를 고정값으로 쓴다 (Price List를 부르지 않음). 금액 계산은 실제 경로와 같은 domain 로직이다.
 - 잘못된 설정은 400 `DEMO_INVALID_SETUP` (이유는 `message`): 모르는 타입, 대수 1~10 밖, 합계 50대 초과, `to`가 오늘 이후 등. 기간 455일 초과는 `INVALID_PERIOD`.
+
+### `POST /demo/waste` (`?currency=KRW|USD`) — 체험 모드 낭비 리소스
+요청은 위와 같은 설정. 기간의 **마지막 14일**(아직 지나지 않은 시간 제외)을 서버별 `usagePattern`으로 판단한다. 응답은 §4와 같다.
+기간이 14일보다 짧으면 `status: "INSUFFICIENT_HISTORY"`, `availableAt` = `from` + 14일.
+
+## 4. 낭비 리소스 (이슈 #10, ADR-010)
+### `GET /aws/accounts/{accountId}/waste?currency=KRW|USD`
+최근 14일(`window`, 정시 기준) EC2 사용률(#24, ADR-009)로 과다 사양·유휴 서버를 찾는다. **조언만 한다** (중지·변경 버튼 없음).
+S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 없음).
+```json
+{ "dataSource": "aws", "costBasis": "estimated_on_demand", "currency": "KRW", "exchangeRate": { … },
+  "status": "OK", "availableAt": null,
+  "window": { "from": "2026-10-21T02:00:00Z", "to": "2026-11-04T02:00:00Z" },
+  "totalMonthlySavings": 132000, "findingCount": 3, "counts": { "oversized": 2, "idle": 1 }, "judgedCount": 5,
+  "items": [ {
+      "recommendationId": "i-0abc:OVERSIZED", "instanceId": "i-0abc", "name": "api-server", "instanceType": "m5.large",
+      "state": "running", "kind": "OVERSIZED", "kindLabel": "과다 사양",
+      "evidence": "최근 14일 CPU 평균 6% (P95 9%)", "action": "m5.large → t3.medium 으로 변경 검토",
+      "metrics": { "cpuAvg": 6.12, "cpuP95": 9.00, "cpuMax": 23.00, "networkBytes": 3523215360, "cpuHours": 336 },
+      "monthlyHours": 730.00, "estimatedMonthlyCost": 118300, "estimatedMonthlySavings": 65700,
+      "comparison": {
+        "current":     { "instanceType": "m5.large",  "vcpu": 2, "memoryGib": 8, "hourlyCost": 162.1, "monthlyCostAt730h": 118300 },
+        "recommended": { "instanceType": "t3.medium", "vcpu": 2, "memoryGib": 4, "hourlyCost": 72.1,  "monthlyCostAt730h": 52600 } },
+      "cautions": [ "메모리 사용률은 CloudWatch 기본 지표에 없어 판단에 넣지 않았어요. …", … ],
+      "consoleSteps": [ "EC2 → 인스턴스에서 api-server을(를) 중지해요 …", … ] } ],
+  "skipped": [ { "instanceId": "i-0gpu", "name": "gpu-test", "reason": "CPU를 적게 쓰지만 GPU 타입이라 …" } ],
+  "freshness": { … }, "notes": [ "…미연결 볼륨 · 미사용 고정 IP · 스냅샷 · 로드밸런서는 지금 연결 권한으로는 찾을 수 없어요." ], "asOf": "…" }
+```
+- `status`: `OK`(추천 있음) · `NONE_FOUND`(판단했지만 줄일 서버 없음, S07-3 A) · `INSUFFICIENT_HISTORY`(기록 시작일부터 14일 미만, S07-3 B. `availableAt`부터 판단).
+  연결 오류(S07-3 D)는 §2처럼 저장된 기록으로 판단하고 `freshness.warnings`에 원인이 붙는다.
+- 규칙 (최근 14일 동안 **24시간 이상** 켜져 있던 서버만 판단, `judgedCount`):
+  - **유휴** `IDLE`: CPU 평균 < 1% 그리고 네트워크 입출력 하루 평균 < 5MB → 중지 검토. 절감액 = 월 추정 비용 전부. 네트워크를 아직 모르면 유휴로 보지 않는다.
+  - **과다 사양** `OVERSIZED`: CPU P95 < 10% → t3 패밀리에서 메모리 절반·vCPU 이하 타입으로 변경 검토 (예: m5.large → t3.medium, m5.xlarge → t3.large).
+    절감액 = 월 비용 차이. 사양을 모르는 타입·GPU 타입·더 작은 타입이 없거나 더 싸지 않거나 단가를 모르면 추천하지 않고 `skipped`에 이유를 적는다.
+- 월 추정 비용 = 최근 14일 사용 시간을 한 달(730시간)로 환산(최대 730) × 온디맨드 단가. 사양 비교의 `monthlyCostAt730h`는 730시간 고정.
+- `items`는 절감액 큰 순. `recommendationId`(`{instanceId}:{kind}`)는 시뮬레이터·벤치마킹에 그대로 보낸다.
+- 지금 꺼져 있어도 최근 14일 안에 켜져 있었으면 판단한다. 삭제된 인스턴스(`present=false`)는 빼고, 14일 동안 한 번도 안 켜진 서버는 목록에 넣지 않는다.
+- "이번 달 예상 비용 대비 %"(S07)는 월말 예상(대시보드 요약)이 생기면 추가한다.
+- 오류: §2와 같다 (404 남의 연결, 409 대기·끊긴 연결, 429/502 AWS).
+

@@ -14,6 +14,7 @@ import com.cloudcost.entrypoint.api.dto.UsageDtos.CostSummaryResponse;
 import com.cloudcost.entrypoint.api.dto.UsageDtos.DailyCostResponse;
 import com.cloudcost.entrypoint.api.dto.UsageDtos.InstancesResponse;
 import com.cloudcost.entrypoint.api.dto.UsageDtos.MonthlyCostResponse;
+import com.cloudcost.entrypoint.api.dto.WasteDtos.WasteResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -86,5 +87,13 @@ class DemoController {
             @Valid @RequestBody SetupRequest setup, @RequestParam(defaultValue = "KRW") Currency currency) {
         return MonthlyCostResponse.of(
                 demo.monthly(setup.toDomain()), timezone, currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
+    }
+
+    @PostMapping("/waste")
+    @Operation(summary = "설정한 구성의 낭비 리소스 (실제: GET /aws/accounts/{id}/waste)",
+            description = "기간의 마지막 14일을 서버별 usagePattern으로 판단한다. 기간이 14일보다 짧으면 INSUFFICIENT_HISTORY.")
+    WasteResponse waste(
+            @Valid @RequestBody SetupRequest setup, @RequestParam(defaultValue = "KRW") Currency currency) {
+        return WasteResponse.of(demo.waste(setup.toDomain()), currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
     }
 }

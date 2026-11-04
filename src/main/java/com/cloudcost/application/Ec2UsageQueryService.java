@@ -159,6 +159,10 @@ public class Ec2UsageQueryService {
      * 그보다 앞의 기간은 조회해도 0이다.
      */
     private LocalDate availableFrom(Collection<TrackedInstance> tracked) {
+        return availableFrom(tracked, settings);
+    }
+
+    static LocalDate availableFrom(Collection<TrackedInstance> tracked, UsageSettings settings) {
         return tracked.stream()
             .map(TrackedInstance::firstSeenAt)
             .min(Comparator.naturalOrder())

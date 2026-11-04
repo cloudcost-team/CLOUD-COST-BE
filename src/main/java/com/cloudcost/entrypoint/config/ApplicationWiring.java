@@ -10,6 +10,7 @@ import com.cloudcost.application.Pauser;
 import com.cloudcost.application.PriceService;
 import com.cloudcost.application.StackCallbackService;
 import com.cloudcost.application.UsageSettings;
+import com.cloudcost.application.WasteService;
 import com.cloudcost.application.port.AccessTokens;
 import com.cloudcost.application.port.AwsAccountRepository;
 import com.cloudcost.application.port.CustomerAwsGateway;
@@ -149,6 +150,18 @@ class ApplicationWiring {
             Clock clock,
             UsageSettings settings) {
         return new Ec2UsageQueryService(accounts, refresher, instances, usage, prices, clock, settings);
+    }
+
+    @Bean
+    WasteService wasteService(
+            AwsAccountService accounts,
+            Ec2DataRefresher refresher,
+            Ec2InstanceRepository instances,
+            Ec2UsageRepository usage,
+            PriceService prices,
+            Clock clock,
+            UsageSettings settings) {
+        return new WasteService(accounts, refresher, instances, usage, prices, clock, settings);
     }
 
     @Bean
