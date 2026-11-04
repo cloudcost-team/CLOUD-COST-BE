@@ -15,8 +15,10 @@ import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Component
 class NotificationPersistenceAdapter implements NotificationRepository, AlertSettingsRepository {
@@ -26,10 +28,14 @@ class NotificationPersistenceAdapter implements NotificationRepository, AlertSet
 
     private final NotificationJpa notifications;
     private final AlertSettingsJpa settings;
+    private final TransactionTemplate requiresNew;
 
-    NotificationPersistenceAdapter(NotificationJpa notifications, AlertSettingsJpa settings) {
+    NotificationPersistenceAdapter(
+        NotificationJpa notifications, AlertSettingsJpa settings, PlatformTransactionManager transactionManager) {
         this.notifications = notifications;
         this.settings = settings;
+        this.requiresNew = new TransactionTemplate(transactionManager);
+        this.requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     @Override
@@ -55,9 +61,10 @@ class NotificationPersistenceAdapter implements NotificationRepository, AlertSet
 
     /**
      * 알림마다 따로 커밋한다. 동시에 같은 알림을 만들려다 UNIQUE에 걸리면 이미 있는 것으로 본다.
+     * 트랜잭션을 이 메서드 안({@link TransactionTemplate})에서 열고 닫아, 위반으로 롤백된 트랜잭션의 커밋 예외
+     * (UnexpectedRollbackException)가 아니라 원래 위반을 catch에서 받는다.
      */
     @Override
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean insertIfAbsent(Notification n) {
         if (notifications.existsByOwnerIdAndEventKey(n.ownerId(), n.eventKey())) {
             return false;
@@ -72,8 +79,8 @@ class NotificationPersistenceAdapter implements NotificationRepository, AlertSet
         e.createdAt = n.createdAt();
         e.readAt = n.readAt();
         try {
-            // 바로 flush해 UNIQUE 위반이 이 try 안에서 나게 한다 (커밋 때 나면 catch를 지나 조회가 500이 된다)
-            notifications.saveAndFlush(e);
+            // 바로 flush해 UNIQUE 위반이 트랜잭션 안에서 나게 하고, 커밋까지 이 try 안에서 끝낸다
+            requiresNew.executeWithoutResult(status -> notifications.saveAndFlush(e));
             return true;
         } catch (DataIntegrityViolationException e2) {
             if (isEventKeyDuplicate(e2)) {
