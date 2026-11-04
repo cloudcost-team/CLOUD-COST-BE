@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.spy;
 
@@ -39,23 +40,19 @@ class AlertSettingsAtomicityTest extends IntegrationTestBase {
     @Autowired UsageSettings usage;
 
     @Test
-    void 두_번째_예산_저장이_실패하면_조건과_첫_예산도_저장하지_않는다() throws Exception {
+    void 예산_저장이_도중에_실패하면_조건과_앞선_예산도_저장하지_않는다() throws Exception {
         UUID first = UUID.fromString(activeAccount());
-        String secondId = createAccount();
-        registerRole(secondId, "arn:aws:iam::999999999999:role/CloudCostReadOnlyRole")
-            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
-        UUID second = UUID.fromString(secondId);
-        // 확인을 통과한 뒤 두 번째 연결이 지워진 상황을 흉내 낸다
+        // 같은 연결의 예산을 두 번 바꾸고, 두 번째 저장에서 확인 뒤 연결이 지워진 상황을 흉내 낸다
         DashboardService failing = spy(dashboards);
-        doThrow(new NotFoundException("NOT_FOUND", "연결을 찾을 수 없어요."))
-            .when(failing).setBudget(eq(owner), eq(second), any());
+        doCallRealMethod().doThrow(new NotFoundException("NOT_FOUND", "연결을 찾을 수 없어요."))
+            .when(failing).setBudget(eq(owner), eq(first), any());
         NotificationService service = new NotificationService(
             accounts, failing, queries, budgets, settings, notifications, unitOfWork, currencies, clock, usage);
         MonthlyBudget budget = new MonthlyBudget(new BigDecimal("100"), Currency.USD);
         AlertSettings off = new AlertSettings(false, false, false, false, false);
 
         assertThatThrownBy(() -> service.updateSettings(owner, off,
-                List.of(new BudgetChange(first, budget), new BudgetChange(second, budget))))
+                List.of(new BudgetChange(first, budget), new BudgetChange(first, budget))))
             .isInstanceOf(NotFoundException.class);
 
         assertThat(settings.findByOwnerId(owner)).as("조건도 저장하지 않는다").isEmpty();
