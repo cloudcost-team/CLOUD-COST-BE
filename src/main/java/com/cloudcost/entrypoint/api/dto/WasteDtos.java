@@ -11,6 +11,7 @@ import com.cloudcost.domain.usage.UtilizationStats;
 import com.cloudcost.domain.waste.WasteDetector;
 import com.cloudcost.domain.waste.WasteFinding;
 import com.cloudcost.domain.waste.WasteKind;
+import com.cloudcost.domain.waste.WasteSort;
 import com.cloudcost.entrypoint.api.dto.UsageDtos.ExchangeRateDto;
 import com.cloudcost.entrypoint.api.dto.UsageDtos.FreshnessDto;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -73,6 +74,10 @@ public final class WasteDtos {
             @Schema(example = "과다 사양") String kindLabel,
             @Schema(description = "탐지 근거", example = "최근 14일 CPU 평균 6% (P95 9%)") String evidence,
             @Schema(description = "추천 조치", example = "m5.large → t3.medium 으로 변경 검토") String action,
+            @Schema(description = "추천 이유 (계산 근거 한 줄)", example = "바꿔도 P95 9%가 t3.medium 기본 성능 20% 안 · 조건에 맞는 타입 중 가장 저렴")
+                    String reason,
+            @Schema(description = "메모리가 줄어드는 추천이면 true (메모리는 CloudWatch 기본 지표에 없어 직접 확인 필요)")
+                    boolean memoryCheckNeeded,
             MetricsDto metrics,
             @Schema(description = "최근 14일 사용 시간을 월로 환산한 시간 (최대 730)") BigDecimal monthlyHours,
             @Schema(description = "지금 월 추정 비용 (currency 기준)", example = "118300") BigDecimal estimatedMonthlyCost,
@@ -87,7 +92,8 @@ public final class WasteDtos {
             SpecDto recommended = f.targetSpec() == null ? null
                     : SpecDto.of(f.targetSpec().instanceType(), f.targetSpec(), f.targetHourlyUsd(), d);
             return new ItemDto(f.recommendationId(), f.instance().instanceId(), f.instance().name(), type,
-                    f.instance().state(), f.kind(), f.kind().label(), f.evidence(), f.action(), MetricsDto.of(f.stats()),
+                    f.instance().state(), f.kind(), f.kind().label(), f.evidence(), f.action(), f.reason(),
+                    f.memoryCheckNeeded(), MetricsDto.of(f.stats()),
                     f.monthlyHours(), d.cost(f.monthlyCostUsd()), d.cost(f.monthlySavingsUsd()),
                     new ComparisonDto(current, recommended), f.cautions(), f.consoleSteps());
         }
@@ -114,7 +120,10 @@ public final class WasteDtos {
             int findingCount,
             CountsDto counts,
             @Schema(description = "판단한 서버 수 (최근 14일 동안 24시간 이상 켜져 있던 서버)") int judgedCount,
-            @Schema(description = "절감액 큰 순") List<ItemDto> items,
+            @Schema(description = "적용한 정렬: SAVINGS(절감액 큰 순, 기본) · COST(월 추정 비용 큰 순) · UTILIZATION(평균 CPU 낮은 순) · NAME")
+                    String sort,
+            @Schema(description = "적용한 종류 필터 (OVERSIZED | IDLE). 없으면 null") String type,
+            @Schema(description = "정렬·필터를 적용한 추천 목록. 합계·건수(counts)는 필터와 상관없이 전체 기준") List<ItemDto> items,
             @Schema(description = "판단하지 않았거나 추천하지 못한 서버와 이유") List<SkippedDto> skipped,
             FreshnessDto freshness,
             List<String> notes,
@@ -125,6 +134,12 @@ public final class WasteDtos {
          */
         public static WasteResponse of(
                 WasteView view, MonthEndForecast forecast, Resolved currency, String dataSource) {
+            return of(view, forecast, currency, dataSource, WasteSort.SAVINGS, null);
+        }
+
+        public static WasteResponse of(
+                WasteView view, MonthEndForecast forecast, Resolved currency, String dataSource, WasteSort sort,
+                WasteKind type) {
             DisplayCurrency d = currency.display();
             WasteDetector.Result r = view.result();
             List<String> notes = new ArrayList<>();
@@ -146,7 +161,8 @@ public final class WasteDtos {
                     d.cost(r.totalMonthlySavingsUsd()), forecast == null ? null : d.cost(forecast.monthEndUsd()),
                     savingsRate(r.totalMonthlySavingsUsd(), forecast), r.findings().size(),
                     new CountsDto(r.count(WasteKind.OVERSIZED), r.count(WasteKind.IDLE)), r.judgedCount(),
-                    r.findings().stream().map(f -> ItemDto.of(f, d)).toList(),
+                    sort.name(), type == null ? null : type.name(),
+                    sort.apply(r.findings(), type).stream().map(f -> ItemDto.of(f, d)).toList(),
                     r.skipped().stream().map(s -> new SkippedDto(s.instanceId(), s.name(), s.reason())).toList(),
                     FreshnessDto.of(view.freshness()), List.copyOf(notes), view.asOf());
         }

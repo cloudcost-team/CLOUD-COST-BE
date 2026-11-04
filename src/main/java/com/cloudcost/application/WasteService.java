@@ -118,10 +118,10 @@ public class WasteService {
             .toList();
         List<Ec2Instance> infos = tracked.stream().map(TrackedInstance::info).toList();
 
-        // 지금 타입과 줄인 타입의 단가를 한 번에 조회한다 (줄인 타입은 같은 OS·테넌시의 가상 인스턴스로 묻는다).
+        // 지금 타입과 사양 변경 후보 타입의 단가를 한 번에 조회한다 (후보는 같은 OS·테넌시의 가상 인스턴스로 묻는다).
         List<Ec2Instance> toPrice = new ArrayList<>(infos);
-        infos.forEach(i -> InstanceSpecs.downsizeTarget(i.instanceType())
-            .ifPresent(t -> toPrice.add(asType(i, t.instanceType()))));
+        infos.forEach(i -> InstanceSpecs.downsizeCandidates(i.instanceType())
+            .forEach(t -> toPrice.add(asType(i, t.instanceType()))));
         PriceService.PriceResult priced = prices.pricesFor(toPrice);
         Map<String, InstancePrice> byId = priced.byInstanceId();
 
@@ -129,7 +129,7 @@ public class WasteService {
         List<HourlySample> samples = usage.findHourly(ownerId, accountId, start, end);
         return analyze(accountId, infos, samples, start, end, availableFrom,
             i -> hourly(byId.get(i.instanceId())),
-            i -> hourly(byId.get(targetId(i.instanceId()))),
+            i -> candidatePrices(i, byId),
             freshness.withWarnings(priced.warnings()), now, settings);
     }
 
@@ -138,12 +138,13 @@ public class WasteService {
      *
      * @param availableFrom 기록 시작일. null이면 아직 본 인스턴스가 없다
      * @param hourly        인스턴스 → 지금 타입 단가 (모르면 null)
-     * @param targetHourly  인스턴스 → 줄인 타입 단가 (후보가 없거나 모르면 null)
+     * @param candidateHourly 인스턴스 → 사양 변경 후보 타입별 단가 (모르는 타입은 빠진다)
      */
     static WasteView analyze(
         UUID accountId, List<Ec2Instance> infos, List<HourlySample> windowSamples, Instant start, Instant end,
         LocalDate availableFrom, Function<Ec2Instance, BigDecimal> hourly,
-        Function<Ec2Instance, BigDecimal> targetHourly, Freshness freshness, Instant asOf, UsageSettings settings) {
+        Function<Ec2Instance, Map<String, BigDecimal>> candidateHourly, Freshness freshness, Instant asOf,
+        UsageSettings settings) {
         // 판단 구간 끝 날짜 기준: 실제 연결은 오늘, 체험 모드는 설정한 기간의 다음 날 0시
         LocalDate today = LocalDate.ofInstant(end, settings.zone());
         List<String> notes = List.of(BASIS, MONTHLY_BASIS, ADVICE_ONLY, NOT_COVERED);
@@ -165,7 +166,7 @@ public class WasteService {
         }
         List<Candidate> candidates = infos.stream()
             .map(i -> new Candidate(i, stats.get(i.instanceId()), minutes.getOrDefault(i.instanceId(), 0L),
-                hourly.apply(i), targetHourly.apply(i), lastUsed.get(i.instanceId())))
+                hourly.apply(i), candidateHourly.apply(i), lastUsed.get(i.instanceId())))
             .toList();
         Result result = WasteDetector.detect(candidates, end);
         Status status = result.findings().isEmpty() ? Status.NONE_FOUND : Status.OK;
@@ -177,13 +178,24 @@ public class WasteService {
         return price == null ? null : price.hourlyUsd();
     }
 
-    private static String targetId(String instanceId) {
-        return instanceId + "#downsize";
+    private static String targetId(String instanceId, String instanceType) {
+        return instanceId + "#" + instanceType;
+    }
+
+    private static Map<String, BigDecimal> candidatePrices(Ec2Instance i, Map<String, InstancePrice> byId) {
+        Map<String, BigDecimal> result = new HashMap<>();
+        for (InstanceSpecs.Spec t : InstanceSpecs.downsizeCandidates(i.instanceType())) {
+            BigDecimal price = hourly(byId.get(targetId(i.instanceId(), t.instanceType())));
+            if (price != null) {
+                result.put(t.instanceType(), price);
+            }
+        }
+        return result;
     }
 
     /** 단가 조회용: 같은 OS·테넌시·수명주기로 타입만 바꾼 가상 인스턴스 */
     private static Ec2Instance asType(Ec2Instance i, String instanceType) {
-        return new Ec2Instance(targetId(i.instanceId()), i.name(), instanceType, i.region(), i.availabilityZone(),
+        return new Ec2Instance(targetId(i.instanceId(), instanceType), i.name(), instanceType, i.region(), i.availabilityZone(),
             i.state(), i.launchTime(), i.platformDetails(), i.tenancy(), i.spot(), i.detailedMonitoring());
     }
 }

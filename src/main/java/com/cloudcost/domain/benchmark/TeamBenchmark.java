@@ -25,6 +25,9 @@ import java.util.stream.Collectors;
  */
 public final class TeamBenchmark {
 
+    /** 과다 사양 비율의 기준: CPU P95 10% 미만 (기능명세서 F07-1, 비교 자료와 같은 정의. 낭비 탐지 추천 기준과 다르다) */
+    public static final BigDecimal OVERSIZED_P95 = BigDecimal.TEN;
+
     /** 이보다 적은 서버로는 비율을 비교하지 않는다 */
     public static final int MIN_SERVERS = 3;
 
@@ -73,7 +76,7 @@ public final class TeamBenchmark {
                 continue;
             }
             result.add(new ServerVerdict(i, s.cpuP95(), s.cpuHours(),
-                s.cpuP95().compareTo(WasteDetector.OVERSIZED_CPU_P95) < 0));
+                s.cpuP95().compareTo(OVERSIZED_P95) < 0));
         }
         result.sort(Comparator.comparing(ServerVerdict::cpuP95).thenComparing(v -> v.instance().instanceId()));
         return List.copyOf(result);

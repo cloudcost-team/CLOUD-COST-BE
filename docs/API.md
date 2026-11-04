@@ -237,11 +237,12 @@ Google 로그인 없이 간이 로그인 → 서버 구성·기간 설정 → �
 기간의 마지막 날(`to`)을 오늘로 본다. 서버는 `from` 0시에 처음 켰다고 보므로 그 앞의 날은 0이고, `from`이 전월 1일보다 늦으면 전월 비교는 `null`이다.
 
 ### `POST /demo/waste` (`?currency=KRW|USD`) — 체험 모드 낭비 리소스
-요청은 위와 같은 설정. 기간의 **마지막 14일**(아직 지나지 않은 시간 제외)을 서버별 `usagePattern`으로 판단한다. 응답은 §4와 같다.
+요청은 위와 같은 설정. 기간의 **마지막 14일**(아직 지나지 않은 시간 제외)을 서버별 `usagePattern`으로 판단한다. 응답은 §4와 같다 (`?sort=&type=`도 같다).
+체험 단가 카탈로그에 있는 t3(micro·small·medium·large)만 후보가 된다.
 기간이 14일보다 짧으면 `status: "INSUFFICIENT_HISTORY"`, `availableAt` = `from` + 14일.
 
 ## 4. 낭비 리소스 (이슈 #10, ADR-010)
-### `GET /aws/accounts/{accountId}/waste?currency=KRW|USD`
+### `GET /aws/accounts/{accountId}/waste?currency=KRW|USD&sort=SAVINGS&type=`
 최근 14일(`window`, 정시 기준) EC2 사용률(#24, ADR-009)로 과다 사양·유휴 서버를 찾는다. **조언만 한다** (중지·변경 버튼 없음).
 S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 없음).
 ```json
@@ -253,6 +254,7 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
       "recommendationId": "i-0abc:OVERSIZED", "instanceId": "i-0abc", "name": "api-server", "instanceType": "m5.large",
       "state": "running", "kind": "OVERSIZED", "kindLabel": "과다 사양",
       "evidence": "최근 14일 CPU 평균 6% (P95 9%)", "action": "m5.large → t3.medium 으로 변경 검토",
+      "reason": "바꿔도 P95 9%가 t3.medium 기본 성능 20% 안 · 조건에 맞는 타입 중 가장 저렴", "memoryCheckNeeded": true,
       "metrics": { "cpuAvg": 6.12, "cpuP95": 9.00, "cpuMax": 23.00, "networkBytes": 3523215360, "cpuHours": 336 },
       "monthlyHours": 730.00, "estimatedMonthlyCost": 118300, "estimatedMonthlySavings": 65700,
       "comparison": {
@@ -265,13 +267,19 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 ```
 - `status`: `OK`(추천 있음) · `NONE_FOUND`(판단했지만 줄일 서버 없음, S07-3 A) · `INSUFFICIENT_HISTORY`(기록 시작일부터 14일 미만, S07-3 B. `availableAt`부터 판단).
   연결 오류(S07-3 D)는 §2처럼 저장된 기록으로 판단하고 `freshness.warnings`에 원인이 붙는다.
-- 규칙 (최근 14일 동안 **24시간 이상** 켜져 있던 서버만 판단, `judgedCount`):
-  - **유휴** `IDLE`: CPU 평균 < 1% 그리고 네트워크 입출력 하루 평균 < 5MB → 중지 검토. 절감액 = 월 추정 비용 전부. 네트워크를 아직 모르면 유휴로 보지 않는다.
-  - **과다 사양** `OVERSIZED`: CPU P95 < 10% → t3 패밀리에서 메모리 절반 이하·vCPU 이하 중 가장 큰 타입으로 변경 검토
-    (예: m5.large → t3.medium, m5.xlarge → t3.large, r5.4xlarge → t3.2xlarge).
-    절감액 = 월 비용 차이. 사양을 모르는 타입·GPU 타입·더 작은 타입이 없거나 더 싸지 않거나 단가를 모르면 추천하지 않고 `skipped`에 이유를 적는다.
-- 월 추정 비용 = 최근 14일 사용 시간을 한 달(730시간)로 환산(최대 730) × 온디맨드 단가. 사양 비교의 `monthlyCostAt730h`는 730시간 고정.
-- `items`는 절감액 큰 순. `recommendationId`(`{instanceId}:{kind}`)는 시뮬레이터·벤치마킹에 그대로 보낸다.
+- 규칙 (하네스 기능명세서 F05, ADR-016. 최근 14일 동안 **24시간 이상** 켜져 있던 서버만 판단, `judgedCount`):
+  - **유휴** `IDLE`: CPU **최대** < 5% 그리고 네트워크 입출력 하루 평균 < 5MB → 중지 검토. 절감액 = 월 추정 비용 전부. 네트워크를 아직 모르면 유휴로 보지 않는다.
+  - **과다 사양** `OVERSIZED`: CPU **평균** < 10% 그리고 **P95** < 40% (유휴 아님) → 바꿀 타입을 아래로 고른다.
+    - 후보: t3 패밀리 중 메모리가 지금의 **절반 이상**인 타입 (메모리를 절반 아래로 줄이지 않는다).
+    - 바꾼 뒤 예상 P95 = 현재 P95 × 현재 vCPU ÷ 새 vCPU 가 새 타입 **기본 성능**(vCPU당, t3.nano 5% · micro 10% · small·medium 20% · large 30% · xlarge·2xlarge 40%) 이하이고
+      지금보다 싼 후보 중 **시간당 단가가 가장 싼 것** (예: m5.large P95 9% → t3.medium, m5.xlarge P95 12% → t3.large, P95 18% → t3.xlarge).
+    - `reason`: 위 계산을 한 줄로 ("바꿔도 P95 9%가 t3.medium 기본 성능 20% 안 · 조건에 맞는 타입 중 가장 저렴").
+    - `memoryCheckNeeded`: 메모리가 줄어드는 추천이면 `true`, `cautions` 첫 줄에 "메모리가 8GiB → 4GiB로 줄어요 … 직접 확인이 필요해요".
+    - 절감액 = 월 비용 차이. 사양을 모르는 타입·GPU 타입·단가를 모르거나 조건에 맞는 더 싼 타입이 없으면 추천하지 않고 `skipped`에 이유를 적는다.
+- **정렬·필터** (F05-5): `sort` = `SAVINGS`(절감액 큰 순, 기본) · `COST`(월 추정 비용 큰 순) · `UTILIZATION`(최근 14일 평균 CPU 낮은 순) · `NAME`(이름순).
+  같으면 절감액 큰 순 → 이름순. `type` = `OVERSIZED` · `IDLE`(없으면 모두). 응답의 `sort`·`type`에 적용한 값을 돌려준다.
+  `items`만 정렬·필터하고, `findingCount`·`counts`·`totalMonthlySavings`는 전체 기준이다. 모르는 값은 400 `VALIDATION_ERROR`.
+- `recommendationId`(`{instanceId}:{kind}`)는 시뮬레이터·벤치마킹에 그대로 보낸다.
 - 지금 꺼져 있어도 최근 14일 안에 켜져 있었으면 판단한다. 단, **지금 중지돼 있고 최근 3일 동안 한 번도 안 켜진 서버**는 이미 비용이 나지 않으므로
   판단하지 않고 `skipped`에 이유를 적는다 (밤·주말에 꺼지는 서버가 조회 시각에 따라 빠지지 않게 "지금 중지"만으로는 빼지 않는다).
   삭제된 인스턴스(`present=false`)는 빼고, 14일 동안 한 번도 안 켜진 서버는 목록에 넣지 않는다.

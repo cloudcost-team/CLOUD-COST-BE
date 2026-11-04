@@ -121,10 +121,15 @@ class DemoController {
     @Operation(summary = "설정한 구성의 낭비 리소스 (실제: GET /aws/accounts/{id}/waste)",
             description = "기간의 마지막 14일을 서버별 usagePattern으로 판단한다. 기간이 14일보다 짧으면 INSUFFICIENT_HISTORY.")
     WasteResponse waste(
-            @Valid @RequestBody SetupRequest setup, @RequestParam(defaultValue = "KRW") Currency currency) {
+            @Valid @RequestBody SetupRequest setup,
+            @RequestParam(defaultValue = "KRW") Currency currency,
+            @Parameter(description = "정렬: SAVINGS(기본) · COST · UTILIZATION · NAME")
+                    @RequestParam(defaultValue = "SAVINGS") com.cloudcost.domain.waste.WasteSort sort,
+            @Parameter(description = "종류 필터: OVERSIZED · IDLE")
+                    @RequestParam(required = false) com.cloudcost.domain.waste.WasteKind type) {
         var domain = setup.toDomain();
         return WasteResponse.of(demo.waste(domain), dashboards.demoDashboard(domain, null).forecast(),
-                currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
+                currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO, sort, type);
     }
 
     @PostMapping("/dashboard")

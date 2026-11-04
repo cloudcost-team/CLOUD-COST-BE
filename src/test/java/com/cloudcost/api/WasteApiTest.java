@@ -124,4 +124,26 @@ class WasteApiTest extends IntegrationTestBase {
         assertThat(body.at("/skipped/0/instanceId").asText()).isEqualTo("i-old");
         assertThat(body.at("/skipped/0/reason").asText()).contains("지금 중지돼 있고");
     }
+
+    @Test
+    void 추천_이유와_메모리_확인_표시를_주고_정렬과_종류_필터를_적용한다() throws Exception {
+        threeServers();
+
+        JsonNode api = waste("USD").at("/items/1");
+        assertThat(api.at("/reason").asText()).isEqualTo("바꿔도 P95 6%가 t3.medium 기본 성능 20% 안 · 조건에 맞는 타입 중 가장 저렴");
+        assertThat(api.at("/memoryCheckNeeded").asBoolean()).as("m5.large 8GiB → t3.medium 4GiB").isTrue();
+
+        JsonNode byUtilization = body(getJson("/api/v1/aws/accounts/" + accountId + "/waste?sort=UTILIZATION")
+                .andExpect(status().isOk()));
+        assertThat(byUtilization.at("/sort").asText()).isEqualTo("UTILIZATION");
+        assertThat(byUtilization.at("/items").findValuesAsText("instanceId")).containsExactly("i-batch", "i-api");
+
+        JsonNode oversizedOnly = body(getJson("/api/v1/aws/accounts/" + accountId + "/waste?type=OVERSIZED&sort=NAME")
+                .andExpect(status().isOk()));
+        assertThat(oversizedOnly.at("/type").asText()).isEqualTo("OVERSIZED");
+        assertThat(oversizedOnly.at("/items").findValuesAsText("instanceId")).containsExactly("i-api");
+        assertThat(oversizedOnly.at("/findingCount").asInt()).as("건수·합계는 필터와 상관없이 전체").isEqualTo(2);
+
+        getJson("/api/v1/aws/accounts/" + accountId + "/waste?sort=CHEAPEST").andExpect(status().isBadRequest());
+    }
 }

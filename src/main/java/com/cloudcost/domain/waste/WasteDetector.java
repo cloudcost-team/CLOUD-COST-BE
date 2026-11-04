@@ -11,17 +11,19 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.List;
 import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 /**
- * EC2 사용률로 낭비를 찾는다 (최근 14일, 이슈 #10).
+ * EC2 사용률로 낭비를 찾는다 (최근 14일, 이슈 #10 → 기준은 하네스 기능명세서 F05, 이슈 #39).
  *
  * <ul>
- *   <li><b>유휴</b>: CPU 평균 1% 미만이고 네트워크가 하루 평균 5MB 미만 → 쓰지 않는다면 중지 검토. 절감액 = 월 추정 비용 전부
- *   <li><b>과다 사양</b>: CPU P95 10% 미만 (유휴 아님) → {@link InstanceSpecs#downsizeTarget} 타입으로 변경 검토.
+ *   <li><b>유휴</b>: CPU 최대 5% 미만이고 네트워크가 하루 평균 5MB 미만 → 쓰지 않는다면 중지 검토. 절감액 = 월 추정 비용 전부
+ *   <li><b>과다 사양</b>: CPU 평균 10% 미만이고 P95 40% 미만 (유휴 아님) → 바꾼 뒤 예상 P95(= 현재 P95 × 현재 vCPU ÷ 새 vCPU)가
+ *       새 타입 기본 성능 이하인 후보({@link InstanceSpecs#downsizeCandidates}) 중 시간당 단가가 가장 싼 타입으로 변경 검토.
  *       절감액 = 월 비용 차이. 더 싸지 않으면 추천하지 않는다
  * </ul>
  * 월 추정 비용 = 최근 14일 사용 시간을 한 달(730시간)로 환산 × 온디맨드 단가. 금액은 USD다 (응답에서 환산).
@@ -29,9 +31,10 @@ import java.util.Set;
  */
 public final class WasteDetector {
 
-    public static final BigDecimal IDLE_CPU_AVG = BigDecimal.ONE;
+    public static final BigDecimal IDLE_CPU_MAX = BigDecimal.valueOf(5);
     public static final long IDLE_NETWORK_BYTES_PER_DAY = 5L * 1024 * 1024;
-    public static final BigDecimal OVERSIZED_CPU_P95 = BigDecimal.TEN;
+    public static final BigDecimal OVERSIZED_CPU_AVG = BigDecimal.TEN;
+    public static final BigDecimal OVERSIZED_CPU_P95 = BigDecimal.valueOf(40);
     /** 이보다 적게 켜져 있었으면 판단하지 않는다 */
     public static final int MIN_CPU_HOURS = 24;
     public static final BigDecimal HOURS_PER_MONTH = BigDecimal.valueOf(730);
@@ -50,20 +53,24 @@ public final class WasteDetector {
     /**
      * 판단할 인스턴스 1대.
      *
-     * @param stats           최근 14일 사용률. 켜진 적이 없으면 null
-     * @param usedMinutes     최근 14일 동안 켜져 있던 분
-     * @param hourlyUsd       지금 타입의 온디맨드 단가. 모르면 null
-     * @param targetHourlyUsd 줄인 타입({@link InstanceSpecs#downsizeTarget})의 단가. 후보가 없거나 모르면 null
-     * @param lastUsedHour    판단 구간 안에서 마지막으로 켜져 있던 시간. 모르면 null
+     * @param stats              최근 14일 사용률. 켜진 적이 없으면 null
+     * @param usedMinutes        최근 14일 동안 켜져 있던 분
+     * @param hourlyUsd          지금 타입의 온디맨드 단가. 모르면 null
+     * @param candidateHourlyUsd 사양 변경 후보 타입 → 단가 ({@link InstanceSpecs#downsizeCandidates}). 단가를 모르는 타입은 빠져 있다
+     * @param lastUsedHour       판단 구간 안에서 마지막으로 켜져 있던 시간. 모르면 null
      */
     public record Candidate(
         Ec2Instance instance, UtilizationStats stats, long usedMinutes, BigDecimal hourlyUsd,
-        BigDecimal targetHourlyUsd, Instant lastUsedHour) {
+        Map<String, BigDecimal> candidateHourlyUsd, Instant lastUsedHour) {
+
+        public Candidate {
+            candidateHourlyUsd = candidateHourlyUsd == null ? Map.of() : Map.copyOf(candidateHourlyUsd);
+        }
 
         public Candidate(
             Ec2Instance instance, UtilizationStats stats, long usedMinutes, BigDecimal hourlyUsd,
-            BigDecimal targetHourlyUsd) {
-            this(instance, stats, usedMinutes, hourlyUsd, targetHourlyUsd, null);
+            Map<String, BigDecimal> candidateHourlyUsd) {
+            this(instance, stats, usedMinutes, hourlyUsd, candidateHourlyUsd, null);
         }
     }
 
@@ -129,10 +136,10 @@ public final class WasteDetector {
                 BigDecimal monthly = c.hourlyUsd().multiply(monthlyHours);
                 findings.add(new WasteFinding(info, WasteKind.IDLE, c.stats(), monthlyHours,
                     InstanceSpecs.find(info.instanceType()).orElse(null), c.hourlyUsd(), monthly,
-                    null, null, null, monthly));
+                    null, null, null, monthly, IDLE_REASON));
                 continue;
             }
-            if (c.stats().cpuP95() != null && c.stats().cpuP95().compareTo(OVERSIZED_CPU_P95) < 0) {
+            if (isOversized(c.stats())) {
                 oversized(c, monthlyHours).ifPresentOrElse(findings::add, () -> skipped.add(new Skipped(
                     info.instanceId(), info.name(), oversizedSkipReason(c))));
             }
@@ -142,28 +149,73 @@ public final class WasteDetector {
         return new Result(List.copyOf(findings), List.copyOf(skipped), judged);
     }
 
+    static final String IDLE_REASON = "최근 14일 CPU 최대 5% 미만이고 네트워크도 하루 5MB 미만이라 쓰지 않는 서버로 보여요.";
+
     private static boolean stoppedLongAgo(Candidate c, Instant windowEnd) {
         return windowEnd != null && InstanceStates.isStopped(c.instance().state()) && c.lastUsedHour() != null
             && c.lastUsedHour().isBefore(windowEnd.minus(STOPPED_FOR));
     }
 
-    /** 유휴: CPU 평균 1% 미만 + 네트워크를 알고 하루 평균 5MB 미만. 네트워크를 모르면 유휴로 보지 않는다. */
+    /** 유휴: CPU 최대 5% 미만 + 네트워크를 알고 하루 평균 5MB 미만. 네트워크를 모르면 유휴로 보지 않는다. */
     static boolean isIdle(UtilizationStats stats) {
-        return stats.cpuAvg() != null && stats.cpuAvg().compareTo(IDLE_CPU_AVG) < 0
+        return stats.cpuMax() != null && stats.cpuMax().compareTo(IDLE_CPU_MAX) < 0
             && stats.networkBytes() != null && stats.networkBytes() < IDLE_NETWORK_BYTES_PER_DAY * WINDOW_DAYS;
     }
 
+    /** 과다 사양: CPU 평균 10% 미만 그리고 P95 40% 미만 */
+    static boolean isOversized(UtilizationStats stats) {
+        return stats.cpuAvg() != null && stats.cpuAvg().compareTo(OVERSIZED_CPU_AVG) < 0
+            && stats.cpuP95() != null && stats.cpuP95().compareTo(OVERSIZED_CPU_P95) < 0;
+    }
+
+    /** 바꾼 뒤 예상 P95 = 현재 P95 × 현재 vCPU ÷ 새 vCPU (소수 첫째 자리) */
+    public static BigDecimal projectedP95(BigDecimal p95, int currentVcpu, int targetVcpu) {
+        return p95.multiply(BigDecimal.valueOf(currentVcpu))
+            .divide(BigDecimal.valueOf(targetVcpu), 1, RoundingMode.HALF_UP);
+    }
+
+    /** 고른 후보와 근거 */
+    private record Choice(Spec target, BigDecimal hourlyUsd, BigDecimal projectedP95, BigDecimal baselinePercent) {
+    }
+
+    /** 예상 P95가 기본 성능 이하이고 지금보다 싼 후보 중 가장 싼 것 (단가가 같으면 메모리가 큰 것) */
+    private static Optional<Choice> choose(Candidate c, Spec current) {
+        Choice best = null;
+        for (Spec t : InstanceSpecs.downsizeCandidates(current.instanceType())) {
+            BigDecimal price = c.candidateHourlyUsd().get(t.instanceType());
+            Optional<BigDecimal> baseline = InstanceSpecs.baselinePercent(t.instanceType());
+            if (price == null || baseline.isEmpty() || price.compareTo(c.hourlyUsd()) >= 0) {
+                continue;
+            }
+            BigDecimal projected = projectedP95(c.stats().cpuP95(), current.vcpu(), t.vcpu());
+            if (projected.compareTo(baseline.get()) > 0) {
+                continue;
+            }
+            if (best == null || price.compareTo(best.hourlyUsd()) < 0
+                || (price.compareTo(best.hourlyUsd()) == 0 && t.memoryGib().compareTo(best.target().memoryGib()) > 0)) {
+                best = new Choice(t, price, projected, baseline.get());
+            }
+        }
+        return Optional.ofNullable(best);
+    }
+
     private static Optional<WasteFinding> oversized(Candidate c, BigDecimal monthlyHours) {
-        Optional<Spec> current = InstanceSpecs.find(c.instance().instanceType());
-        Optional<Spec> target = InstanceSpecs.downsizeTarget(c.instance().instanceType());
-        if (current.isEmpty() || target.isEmpty() || c.hourlyUsd() == null || c.targetHourlyUsd() == null
-            || c.targetHourlyUsd().compareTo(c.hourlyUsd()) >= 0) {
+        Optional<Spec> current = InstanceSpecs.find(c.instance().instanceType()).filter(s -> !s.gpu());
+        if (current.isEmpty() || c.hourlyUsd() == null) {
             return Optional.empty();
         }
+        Optional<Choice> choice = choose(c, current.get());
+        if (choice.isEmpty()) {
+            return Optional.empty();
+        }
+        Choice ch = choice.get();
         BigDecimal monthly = c.hourlyUsd().multiply(monthlyHours);
-        BigDecimal targetMonthly = c.targetHourlyUsd().multiply(monthlyHours);
+        BigDecimal targetMonthly = ch.hourlyUsd().multiply(monthlyHours);
+        String projected = WasteFinding.percent(ch.projectedP95());
+        String reason = "바꿔도 P95 " + projected + (projected.endsWith("미만") ? "이 " : "가 ") + ch.target().instanceType()
+            + " 기본 성능 " + ch.baselinePercent().stripTrailingZeros().toPlainString() + "% 안 · 조건에 맞는 타입 중 가장 저렴";
         return Optional.of(new WasteFinding(c.instance(), WasteKind.OVERSIZED, c.stats(), monthlyHours, current.get(),
-            c.hourlyUsd(), monthly, target.get(), c.targetHourlyUsd(), targetMonthly, monthly.subtract(targetMonthly)));
+            c.hourlyUsd(), monthly, ch.target(), ch.hourlyUsd(), targetMonthly, monthly.subtract(targetMonthly), reason));
     }
 
     private static String oversizedSkipReason(Candidate c) {
@@ -171,14 +223,13 @@ public final class WasteDetector {
         if (InstanceSpecs.find(type).filter(InstanceSpecs.Spec::gpu).isPresent()) {
             return "CPU를 적게 쓰지만 GPU 타입이라 CPU 사용률만으로 사양 변경을 추천하지 않았어요.";
         }
-        if (InstanceSpecs.downsizeTarget(type).isEmpty()) {
-            return "CPU를 적게 쓰지만 " + type + "보다 한 단계 작은 타입을 정하지 못해 추천하지 않았어요.";
+        if (InstanceSpecs.downsizeCandidates(type).isEmpty()) {
+            return "CPU를 적게 쓰지만 " + type + "의 사양을 몰라 바꿀 타입을 정하지 못해 추천하지 않았어요.";
         }
-        if (c.hourlyUsd() == null || c.targetHourlyUsd() == null) {
+        if (c.hourlyUsd() == null || c.candidateHourlyUsd().isEmpty()) {
             return "CPU를 적게 쓰지만 온디맨드 단가를 몰라 절감액을 계산하지 못했어요.";
         }
-        return "CPU를 적게 쓰지만 더 작은 타입(" + InstanceSpecs.downsizeTarget(type).get().instanceType()
-            + ")이 더 싸지 않아 추천하지 않았어요.";
+        return "CPU를 적게 쓰지만 바꾼 뒤에도 기본 성능 안에 들면서 더 싼 t3 타입이 없어 추천하지 않았어요.";
     }
 
     /** 최근 14일 사용 시간을 한 달(730시간)로 환산. 730시간을 넘지 않는다. */

@@ -85,7 +85,7 @@ DISCONNECTED: 수집하지 않음. 새 스택으로 실제 검증에 성공할 �
 | `MonthlyReport` | 리포트 상태(EMPTY·FIRST_MONTH·PREVIEW·FINAL), 전월 대비, 서버별 비중 상위 3 + 기타 (ADR-015) |
 | `TeamBenchmark` · `BenchmarkReference` | 과다 사양 비율(P95 10% 미만 ÷ 판단한 서버)·적용 후 비율·백분위 위치, 월 지출 범위 위치 (ADR-013) |
 | `CostSimulation` | 추천 적용·트래픽 증가 반영 전후 월 비용, 월·연 절감, 예산 안인지 (ADR-012) |
-| `WasteDetector` · `InstanceSpecs` | 유휴·과다 사양 판단, 한 단계 줄인 t3 타입, 월 절감액 (ADR-010) |
+| `WasteDetector` · `InstanceSpecs` · `WasteSort` | 유휴(최대 CPU 5% 미만)·과다 사양(평균 10%·P95 40% 미만) 판단, 예상 P95가 기본 성능 안인 가장 싼 t3, 추천 이유, 목록 정렬 (ADR-010, ADR-016) |
 | `UtilizationStats` | 최근 14일 CPU 평균(가중)·P95(시간 평균의 95번째 백분위)·최대, 네트워크 합계 (낭비 탐지·벤치마킹 근거) |
 | `UsageCalculator` | 시간별 SampleCount → 사용 분. CPUUtilization은 켜져 있는 동안 1분마다 샘플을 남기므로 SampleCount = 사용 분 (최대 60) |
 | `UsageAggregator` | 시간별 → 일별(Asia/Seoul 날짜 경계) → 월별(일별 합산) |

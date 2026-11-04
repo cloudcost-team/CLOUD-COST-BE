@@ -15,6 +15,7 @@ import java.util.List;
  * @param monthlyCostUsd      지금 타입의 월 추정 비용 = 단가 × monthlyHours
  * @param targetSpec          추천 타입 (유휴면 null)
  * @param monthlySavingsUsd   매달 절감 예상
+ * @param reason              추천 이유 한 줄 (예: "바꿔도 P95 9%가 t3.medium 기본 성능 20% 안 · 조건에 맞는 타입 중 가장 저렴")
  */
 public record WasteFinding(
     Ec2Instance instance,
@@ -27,7 +28,14 @@ public record WasteFinding(
     Spec targetSpec,
     BigDecimal targetHourlyUsd,
     BigDecimal targetMonthlyCostUsd,
-    BigDecimal monthlySavingsUsd) {
+    BigDecimal monthlySavingsUsd,
+    String reason) {
+
+    /** 메모리가 줄어드는 사양 변경이면 true (메모리는 CloudWatch 기본 지표에 없어 사용자가 직접 확인해야 한다) */
+    public boolean memoryCheckNeeded() {
+        return kind == WasteKind.OVERSIZED && currentSpec != null && targetSpec != null
+            && targetSpec.memoryGib().compareTo(currentSpec.memoryGib()) < 0;
+    }
 
     /** 시뮬레이터·벤치마킹이 같은 추천을 가리킬 때 쓰는 결정적 id */
     public String recommendationId() {
@@ -41,7 +49,7 @@ public record WasteFinding(
     /** 예: "최근 14일 CPU 평균 6% (P95 9%)" */
     public String evidence() {
         if (kind == WasteKind.IDLE) {
-            return "최근 14일 CPU 1% 미만 · 사용 흔적 거의 없음";
+            return "최근 14일 CPU 최대 " + percent(stats.cpuMax()) + " · 네트워크 하루 5MB 미만";
         }
         return "최근 14일 CPU 평균 " + percent(stats.cpuAvg()) + " (P95 " + percent(stats.cpuP95()) + ")";
     }
@@ -62,10 +70,16 @@ public record WasteFinding(
                 "중지해도 EBS 볼륨 비용은 계속 나가요 (이 추정 비용에는 EBS가 들어 있지 않아요).",
                 "판단 근거는 CloudWatch 기본 지표(CPU·네트워크)뿐이에요.");
         }
-        return List.of(
-            "메모리 사용률은 CloudWatch 기본 지표에 없어 판단에 넣지 않았어요. 서버 안에서 메모리를 먼저 확인해 주세요.",
-            "t3는 CPU 크레딧 방식이라 순간적으로 많이 쓰는 작업이 길면 느려질 수 있어요.",
-            "P95는 1시간 평균값 기준이라 1분 단위로 잠깐 튀는 사용량은 반영되지 않아요.");
+        List<String> cautions = new java.util.ArrayList<>();
+        if (memoryCheckNeeded()) {
+            cautions.add("메모리가 " + gib(currentSpec.memoryGib()) + " → " + gib(targetSpec.memoryGib())
+                + "로 줄어요. 메모리 사용률은 CloudWatch 기본 지표에 없어 직접 확인이 필요해요.");
+        } else {
+            cautions.add("메모리 사용률은 CloudWatch 기본 지표에 없어 판단에 넣지 않았어요.");
+        }
+        cautions.add("t3는 CPU 크레딧 방식이라 기본 성능보다 많이 쓰는 시간이 길면 느려지거나 추가 요금이 날 수 있어요.");
+        cautions.add("P95는 1시간 평균값 기준이라 1분 단위로 잠깐 튀는 사용량은 반영되지 않아요.");
+        return List.copyOf(cautions);
     }
 
     /** S07-2 "AWS 콘솔에서 직접 바꾸는 방법" */
@@ -82,8 +96,12 @@ public record WasteFinding(
             "인스턴스를 다시 시작해요");
     }
 
+    private static String gib(BigDecimal value) {
+        return value.stripTrailingZeros().toPlainString() + "GiB";
+    }
+
     /** 1% 미만은 "1% 미만", 그 밖은 반올림한 정수 % */
-    static String percent(BigDecimal value) {
+    public static String percent(BigDecimal value) {
         if (value == null) {
             return "-";
         }
