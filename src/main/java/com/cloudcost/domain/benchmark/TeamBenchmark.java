@@ -25,9 +25,6 @@ import java.util.stream.Collectors;
  */
 public final class TeamBenchmark {
 
-    /** 이보다 적은 서버로는 비율을 비교하지 않는다 */
-    public static final int MIN_SERVERS = 3;
-
     private TeamBenchmark() {
     }
 
