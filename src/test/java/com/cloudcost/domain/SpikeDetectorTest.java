@@ -155,4 +155,19 @@ class SpikeDetectorTest {
         assertThat(s.causeInstanceId()).isNull();
         assertThat(s.message(null)).isEqualTo("9/10 비용 급증 · 평소의 3.0배");
     }
+
+    @Test
+    void 단가를_모르는_서버는_원인으로_고르지_않는다() {
+        // i-web($1)은 마지막 날 8 → 20시간, 단가 모르는 i-x는 0 → 24시간. 급증 비용은 i-web 때문이다
+        Map<LocalDate, Map<String, Long>> daily = new LinkedHashMap<>();
+        for (int i = 0; i < 10; i++) {
+            daily.put(START.plusDays(i), new TreeMap<>(Map.of("i-web", 8L * 60)));
+        }
+        daily.put(START.plusDays(10), new TreeMap<>(Map.of("i-web", 20L * 60, "i-x", 24L * 60)));
+
+        Spike s = SpikeDetector.detect(CostEstimator.report(daily, PRICES), START, START.plusDays(10), START.plusDays(10))
+            .get(START.plusDays(10));
+
+        assertThat(s.causeInstanceId()).isEqualTo("i-web");
+    }
 }

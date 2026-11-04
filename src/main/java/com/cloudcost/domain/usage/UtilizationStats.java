@@ -16,7 +16,7 @@ import java.util.Map;
  *   <li>CPU 평균: 시간별 평균을 켜져 있던 분(SampleCount)으로 가중 평균
  *   <li>CPU P95: 시간별 평균 값들의 95번째 백분위 (nearest-rank). 1분 단위 P95가 아니라 "시간 평균의 P95"다
  *   <li>CPU 최대: 시간별 최대의 최댓값
- *   <li>네트워크: 입력 + 출력 합계 (바이트)
+ *   <li>네트워크: 입력 + 출력 합계 (바이트). 켜져 있던 시간 중 하나라도 값이 비어 있으면 null (모름)
  * </ul>
  * 꺼져 있던 시간은 데이터 포인트가 없으므로 계산에 들어가지 않는다 (켜져 있는 동안의 사용률).
  *
@@ -66,17 +66,24 @@ public record UtilizationStats(
             .map(v -> v.setScale(SCALE, RoundingMode.HALF_UP))
             .orElse(null);
 
+        // 켜져 있던 시간 중 하나라도 입력·출력 네트워크가 비어 있으면 합계를 모르는 것으로 본다
+        // (일부만 더하면 실제보다 적게 잡혀 쓰는 서버가 유휴로 보일 수 있다)
         int networkHours = 0;
         long networkBytes = 0;
+        boolean complete = true;
         for (HourlySample s : samples) {
-            if (s.networkInBytes() == null && s.networkOutBytes() == null) {
+            if (UsageCalculator.usedMinutes(s.sampleCount()) <= 0) {
+                continue;
+            }
+            if (s.networkInBytes() == null || s.networkOutBytes() == null) {
+                complete = false;
                 continue;
             }
             networkHours++;
-            networkBytes += valueOrZero(s.networkInBytes()) + valueOrZero(s.networkOutBytes());
+            networkBytes += s.networkInBytes() + s.networkOutBytes();
         }
-        return new UtilizationStats(
-            instanceId, cpu.size(), avg, p95, max, networkHours, networkHours == 0 ? null : networkBytes);
+        return new UtilizationStats(instanceId, cpu.size(), avg, p95, max, networkHours,
+            complete && networkHours > 0 ? networkBytes : null);
     }
 
     /** nearest-rank: 정렬한 값의 ceil(0.95 × n)번째 */
@@ -84,9 +91,5 @@ public record UtilizationStats(
         List<BigDecimal> sorted = values.stream().sorted().toList();
         int rank = (int) Math.ceil(0.95 * sorted.size());
         return sorted.get(Math.max(rank, 1) - 1).setScale(SCALE, RoundingMode.HALF_UP);
-    }
-
-    private static long valueOrZero(Long value) {
-        return value == null ? 0 : value;
     }
 }
