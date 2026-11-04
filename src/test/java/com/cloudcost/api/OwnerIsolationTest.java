@@ -35,6 +35,7 @@ class OwnerIsolationTest extends IntegrationTestBase {
                 "/api/v1/aws/accounts/" + accountOfA + "/waste",
                 "/api/v1/aws/accounts/" + accountOfA + "/dashboard",
                 "/api/v1/aws/accounts/" + accountOfA + "/benchmark",
+                "/api/v1/aws/accounts/" + accountOfA + "/budget",
                 "/api/v1/aws/accounts/" + accountOfA + "/reports",
                 "/api/v1/aws/accounts/" + accountOfA + "/reports/2026-10");
         for (String path : paths) {

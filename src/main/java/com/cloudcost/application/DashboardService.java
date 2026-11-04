@@ -87,6 +87,18 @@ public class DashboardService {
         Instant asOf) {
     }
 
+    /** 예산 화면에 보여 줄 지난 달 수 */
+    public static final int RECENT_MONTHS = 3;
+
+    /**
+     * 월 예산 화면 (기능명세서 F08-1, 이슈 #41): 대시보드의 예산 대비 + 지난 3개월 평균.
+     *
+     * @param basisMonths      평균에 쓴 달 (끝난 달 중 기록 시작일 이후 온전한 달, 최대 3개)
+     * @param recentAverageUsd 그 달들의 평균 추정 비용. 쓸 달이 없으면 null
+     */
+    public record BudgetGuide(DashboardView dashboard, List<YearMonth> basisMonths, BigDecimal recentAverageUsd) {
+    }
+
     private final AwsAccountService accountService;
     private final Ec2UsageQueryService queries;
     private final DemoUsageService demo;
@@ -135,6 +147,44 @@ public class DashboardService {
         MonthlyBudget budget = budgets.findByOwnerIdAndAccountId(ownerId, accountId).orElse(null);
         return compose(accountId, today, daily, present, budget, krwRateFor(budget),
             daily.costs().freshness().withWarnings(instances.freshness().warnings()), clock.instant());
+    }
+
+    public BudgetGuide budgetGuide(String ownerId, UUID accountId) {
+        DashboardView view = dashboard(ownerId, accountId);
+        YearMonth month = view.month();
+        UsageCostView<YearMonth> monthly =
+            queries.monthly(ownerId, accountId, month.minusMonths(RECENT_MONTHS), month.minusMonths(1));
+        return guide(view, monthly);
+    }
+
+    /** 체험 모드 예산 화면: 설정한 기간의 마지막 날이 속한 달 앞의 3개월 */
+    public BudgetGuide demoBudgetGuide(DemoSetup setup, MonthlyBudget budget) {
+        DashboardView view = demoDashboard(setup, budget);
+        YearMonth month = view.month();
+        UsageCostView<YearMonth> monthly = demo.monthly(setup,
+            new DateRange(month.minusMonths(RECENT_MONTHS).atDay(1), month.minusMonths(1).atEndOfMonth()));
+        return guide(view, monthly);
+    }
+
+    /** 끝난 달 중 첫날이 기록 시작일 이후인(온전한) 달만 평균에 넣는다. 처음 쓰기 전의 달·단가를 모르는 달은 뺀다 */
+    static BudgetGuide guide(DashboardView view, UsageCostView<YearMonth> monthly) {
+        LocalDate availableFrom = monthly.availableFrom();
+        List<YearMonth> months = new ArrayList<>();
+        BigDecimal sum = BigDecimal.ZERO;
+        boolean used = false;
+        for (PeriodCost<YearMonth> p : monthly.report().periods()) {
+            used = used || p.usedMinutes() > 0;
+            // 처음 쓰기 전의 0원인 달은 "안 썼다"가 아니라 서버가 없던 달이라 평균에 넣지 않는다
+            if (!used || availableFrom == null || p.period().atDay(1).isBefore(availableFrom)
+                || p.estimatedCost() == null) {
+                continue;
+            }
+            months.add(p.period());
+            sum = sum.add(p.estimatedCost());
+        }
+        BigDecimal average = months.isEmpty() ? null
+            : sum.divide(BigDecimal.valueOf(months.size()), 6, RoundingMode.HALF_UP);
+        return new BudgetGuide(view, List.copyOf(months), average);
     }
 
     /**

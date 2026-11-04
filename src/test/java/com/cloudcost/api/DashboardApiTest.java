@@ -152,4 +152,48 @@ class DashboardApiTest extends IntegrationTestBase {
         assertThat(body.at("/budget/usageRate").isNull()).as("0%로 보이지 않게").isTrue();
         assertThat(body.at("/notes").toString()).contains("단가를 아는 서버가 없어");
     }
+
+    @Test
+    void 예산_화면은_지난_3개월_평균과_슬라이더_범위를_준다() throws Exception {
+        // 7월은 기록 시작일(7/10) 전이 섞여 있고 8월은 서버를 켜기 전이라 평균에서 빠지고, 9월(711시간 × $0.0416)만 쓴다
+        JsonNode body = body(getJson("/api/v1/aws/accounts/" + accountId + "/budget?currency=USD")
+                .andExpect(status().isOk()));
+
+        assertThat(body.at("/budget").isNull()).isTrue();
+        assertThat(body.at("/forecastMonthEndCost").decimalValue()).isEqualByComparingTo("30.95");
+        assertThat(body.at("/recentAverage/monthlyCost").decimalValue()).isEqualByComparingTo("29.58");
+        assertThat(body.at("/recentAverage/months").toString()).isEqualTo("[\"2026-09\"]");
+        assertThat(body.at("/slider/step").decimalValue()).isEqualByComparingTo("10");
+        assertThat(body.at("/slider/max").decimalValue()).as("29.58 × 2 = 59.16 → 60").isEqualByComparingTo("60");
+        assertThat(body.at("/slider/suggested").decimalValue()).isEqualByComparingTo("30");
+
+        putBudget("{\"amount\":52000,\"currency\":\"KRW\"}").andExpect(status().isOk());
+        JsonNode krw = body(getJson("/api/v1/aws/accounts/" + accountId + "/budget").andExpect(status().isOk()));
+        assertThat(krw.at("/budget/amount").decimalValue()).isEqualByComparingTo("52000");
+        assertThat(krw.at("/budget/usageRate").decimalValue()).isEqualByComparingTo("77.4");
+        assertThat(krw.at("/slider/step").decimalValue()).isEqualByComparingTo("10000");
+        assertThat(krw.at("/slider/max").decimalValue()).as("max(76,908, 60,354, 78,000) → 80,000").isEqualByComparingTo("80000");
+        assertThat(krw.at("/slider/suggested").decimalValue()).as("지금 예산 52,000 → 60,000").isEqualByComparingTo("60000");
+
+        mvc.perform(as("someone-else", org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/v1/aws/accounts/" + accountId + "/budget")))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void 체험_모드도_예산_화면을_준다() throws Exception {
+        String setup = """
+            {"from":"2026-06-01","to":"2026-10-07","budget":{"amount":40,"currency":"USD"},"servers":[
+              {"name":"web","instanceType":"t3.medium","os":"LINUX","count":1,"schedule":"ALWAYS"}]}
+            """;
+        JsonNode body = body(mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/v1/demo/budget?currency=USD").contentType(MediaType.APPLICATION_JSON).content(setup))
+                .andExpect(status().isOk()));
+
+        assertThat(body.at("/dataSource").asText()).isEqualTo("demo");
+        assertThat(body.at("/recentAverage/months").size()).as("7·8·9월").isEqualTo(3);
+        assertThat(body.at("/recentAverage/monthlyCost").decimalValue())
+                .as("$0.052 × 24 × (31 + 31 + 30) ÷ 3").isEqualByComparingTo("38.27");
+        assertThat(body.at("/slider/suggested").decimalValue()).isEqualByComparingTo("40");
+    }
 }

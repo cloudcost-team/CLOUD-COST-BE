@@ -1,6 +1,7 @@
 package com.cloudcost.entrypoint.api.dto;
 
 import com.cloudcost.application.CurrencyService.Resolved;
+import com.cloudcost.application.DashboardService;
 import com.cloudcost.application.DashboardService.BudgetStatus;
 import com.cloudcost.application.DashboardService.DashboardView;
 import com.cloudcost.application.DashboardService.LatestSpike;
@@ -179,6 +180,61 @@ public final class DashboardDtos {
                     new InstanceCountsDto(v.runningCount(), v.stoppedCount()),
                     ForecastDto.of(v.forecast(), d), BudgetDto.of(v.budget(), d), PreviousMonthDto.of(v.previous(), d),
                     LatestSpikeDto.of(v.latestSpike(), d), FreshnessDto.of(v.freshness()), List.copyOf(notes), v.asOf());
+        }
+    }
+
+    @Schema(description = "지난 3개월 평균 (끝난 달 중 기록 시작일 이후 온전한 달). 쓸 달이 없으면 null")
+    public record RecentAverageDto(
+            @Schema(description = "평균 월 추정 비용 (currency 기준)", example = "286000") BigDecimal monthlyCost,
+            @Schema(description = "평균에 쓴 달", example = "[\"2026-08\",\"2026-09\",\"2026-10\"]") List<String> months) {}
+
+    @Schema(description = "수정 모드 슬라이더 (currency 기준). 프론트는 이 값 그대로 그린다")
+    public record SliderDto(
+            @Schema(example = "10000") BigDecimal min,
+            @Schema(example = "820000") BigDecimal max,
+            @Schema(description = "한 칸 (원화 1만 원, 달러 10달러)", example = "10000") BigDecimal step,
+            @Schema(description = "처음 위치: 지금 예산 → 지난 3개월 평균 → 월말 예상 순", example = "400000") BigDecimal suggested) {}
+
+    /** 월 예산 화면 (S14 예산, 기능명세서 F08-1) */
+    public record BudgetGuideResponse(
+            String dataSource,
+            String costBasis,
+            @Schema(description = "금액 통화: KRW(기본) 또는 USD") String currency,
+            ExchangeRateDto exchangeRate,
+            UUID accountId,
+            @Schema(description = "보기 모드: 지금 예산과 월말 예상 대비 %. 정하지 않았으면 null") BudgetDto budget,
+            @Schema(description = "월말 예상 (대시보드와 같은 값). 없으면 null") BigDecimal forecastMonthEndCost,
+            RecentAverageDto recentAverage,
+            SliderDto slider,
+            List<String> notes,
+            Instant asOf) {
+
+        public static BudgetGuideResponse of(DashboardService.BudgetGuide g, Resolved currency, String dataSource) {
+            DisplayCurrency d = currency.display();
+            DashboardView v = g.dashboard();
+            BudgetDto budget = BudgetDto.of(v.budget(), d);
+            BigDecimal forecast = v.forecast() == null ? null : d.cost(v.forecast().monthEndUsd());
+            BigDecimal average = d.cost(g.recentAverageUsd());
+            com.cloudcost.domain.budget.BudgetSlider slider = com.cloudcost.domain.budget.BudgetSlider.of(
+                    d.currency(), average, forecast, budget == null ? null : budget.amount());
+            List<String> notes = new ArrayList<>();
+            if (UsageDtos.DATA_SOURCE_DEMO.equals(dataSource)) {
+                notes.add(DemoFleet.NOTE);
+            }
+            notes.add("슬라이더 범위는 지난 3개월 평균·월말 예상·지금 예산으로 정했어요. 정확한 금액은 직접 입력해 주세요.");
+            if (g.recentAverageUsd() == null) {
+                notes.add("지난 3개월 중 처음부터 끝까지 기록이 있는 달이 없어 평균을 보여 드리지 못해요.");
+            }
+            if (d.conversionNote() != null) {
+                notes.add(d.conversionNote());
+            }
+            notes.addAll(currency.warnings());
+            return new BudgetGuideResponse(dataSource, CostNotes.COST_BASIS, d.currency().name(), ExchangeRateDto.of(d),
+                    v.accountId(), budget, forecast,
+                    average == null ? null : new RecentAverageDto(average,
+                            g.basisMonths().stream().map(java.time.YearMonth::toString).toList()),
+                    new SliderDto(slider.min(), slider.max(), slider.step(), slider.suggested()),
+                    List.copyOf(notes), v.asOf());
         }
     }
 }

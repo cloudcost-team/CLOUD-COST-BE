@@ -5,6 +5,7 @@ import com.cloudcost.application.DashboardService;
 import com.cloudcost.application.UsageSettings;
 import com.cloudcost.domain.cost.DisplayCurrency.Currency;
 import com.cloudcost.entrypoint.api.auth.CurrentOwner;
+import com.cloudcost.entrypoint.api.dto.DashboardDtos.BudgetGuideResponse;
 import com.cloudcost.entrypoint.api.dto.DashboardDtos.BudgetRequest;
 import com.cloudcost.entrypoint.api.dto.DashboardDtos.BudgetResponse;
 import com.cloudcost.entrypoint.api.dto.DashboardDtos.DashboardResponse;
@@ -52,6 +53,18 @@ class DashboardController {
             @Parameter(description = "금액 통화: KRW(기본, 원화 환산) 또는 USD")
                     @RequestParam(defaultValue = "KRW") Currency currency) {
         return DashboardResponse.of(dashboards.dashboard(owner, accountId), timezone, currencies.resolve(currency),
+            UsageDtos.DATA_SOURCE_AWS);
+    }
+
+    @GetMapping("/budget")
+    @Operation(summary = "월 예산 화면 (S14 예산 · 기능명세서 F08-1)",
+        description = "보기 모드(예산·월말 예상 대비 %)와 수정 모드 슬라이더 범위·지난 3개월 평균을 준다. 저장은 PUT /budget.")
+    BudgetGuideResponse budget(
+            @CurrentOwner String owner,
+            @PathVariable UUID accountId,
+            @Parameter(description = "금액 통화: KRW(기본, 원화 환산) 또는 USD")
+                    @RequestParam(defaultValue = "KRW") Currency currency) {
+        return BudgetGuideResponse.of(dashboards.budgetGuide(owner, accountId), currencies.resolve(currency),
             UsageDtos.DATA_SOURCE_AWS);
     }
 

@@ -188,6 +188,24 @@
 - 환율은 원화 예산이 있을 때만 조회한다 (응답 통화 환산은 §2와 같다).
 - 오류: §2와 같다.
 
+### `GET /aws/accounts/{accountId}/budget?currency=KRW|USD` — 월 예산 화면 (기능명세서 F08-1, 이슈 #41)
+보기 모드(금액 + 예산 대비 %)와 수정 모드 슬라이더를 프론트 계산 없이 그린다. 저장은 아래 `PUT /budget`.
+```json
+{ "dataSource": "aws", "currency": "KRW", "exchangeRate": { … }, "accountId": "…",
+  "budget": { "amount": 400000, "enteredAmount": 400000, "enteredCurrency": "KRW", "usageRate": 78.0, "thresholdReached": null },
+  "forecastMonthEndCost": 312000,
+  "recentAverage": { "monthlyCost": 286000, "months": ["2026-08", "2026-09", "2026-10"] },
+  "slider": { "min": 10000, "max": 600000, "step": 10000, "suggested": 400000 },
+  "notes": [ … ], "asOf": "…" }
+```
+- `budget`은 §2-1 대시보드의 `budget`과 같다 (없으면 `null`). `forecastMonthEndCost`도 같은 값이다.
+- `recentAverage`: 이번 달 앞 **3개월** 중 기록 시작일 이후 **온전한 달**의 평균 추정 비용. 처음 쓰기 전의 달·단가를 모르는 달은 뺀다. 쓸 달이 없으면 `null` + `notes`.
+- `slider` (요청 통화 기준): `step` 원화 1만 원 · 달러 10달러, `min` = 한 칸,
+  `max` = 지난 3개월 평균 × 2 · 월말 예상 × 1.5 · 지금 예산 × 1.5 중 큰 값을 한 칸 단위로 올림 (근거가 없으면 100만 원 · 1,000달러),
+  `suggested`(처음 위치) = 지금 예산 → 지난 3개월 평균 → 월말 예상 순으로 있는 값을 올림.
+- 대시보드처럼 조회할 수 있는 연결이어야 한다 (대기·끊긴 연결은 409). 남의 연결은 404.
+- 체험 모드: `POST /demo/budget` (§3 설정 + 선택 `budget`). 기간의 마지막 날이 속한 달 앞의 3개월로 평균을 낸다.
+
 ### `PUT /aws/accounts/{accountId}/budget` → 200
 ```json
 요청 { "amount": 400000, "currency": "KRW" }   응답 { "accountId": "…", "amount": 400000, "currency": "KRW" }

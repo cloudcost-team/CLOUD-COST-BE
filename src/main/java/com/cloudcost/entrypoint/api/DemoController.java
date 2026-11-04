@@ -178,4 +178,14 @@ class DemoController {
         return ReportDetailResponse.of(reports.demoDetail(setup.toDomain(), month), currencies.resolve(currency),
                 UsageDtos.DATA_SOURCE_DEMO);
     }
+
+    @PostMapping("/budget")
+    @Operation(summary = "설정한 구성의 월 예산 화면 (실제: GET /aws/accounts/{id}/budget)",
+            description = "요청의 budget(선택)을 지금 예산으로 본다. 기간의 마지막 날이 속한 달 앞의 3개월로 평균을 낸다.")
+    com.cloudcost.entrypoint.api.dto.DashboardDtos.BudgetGuideResponse budget(
+            @Valid @RequestBody SetupRequest setup, @RequestParam(defaultValue = "KRW") Currency currency) {
+        return com.cloudcost.entrypoint.api.dto.DashboardDtos.BudgetGuideResponse.of(
+                dashboards.demoBudgetGuide(setup.toDomain(), setup.budgetOrNull()), currencies.resolve(currency),
+                UsageDtos.DATA_SOURCE_DEMO);
+    }
 }
