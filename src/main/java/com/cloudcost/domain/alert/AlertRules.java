@@ -6,10 +6,12 @@ import com.cloudcost.domain.spike.SpikeDetector.Spike;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.temporal.TemporalAdjusters;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -85,9 +87,11 @@ public final class AlertRules {
     /** ₩28,400 · $21.30 */
     static String money(BigDecimal usd, DisplayCurrency display) {
         BigDecimal amount = display.cost(usd);
+        // 문구는 DB에 저장되므로 서버 기본 로케일과 상관없이 같은 기호(쉼표·점)를 쓴다
+        DecimalFormatSymbols symbols = DecimalFormatSymbols.getInstance(Locale.US);
         if (display.currency() == Currency.KRW) {
-            return "₩" + new DecimalFormat("#,##0").format(amount);
+            return "₩" + new DecimalFormat("#,##0", symbols).format(amount);
         }
-        return "$" + new DecimalFormat("#,##0.00").format(amount);
+        return "$" + new DecimalFormat("#,##0.00", symbols).format(amount);
     }
 }

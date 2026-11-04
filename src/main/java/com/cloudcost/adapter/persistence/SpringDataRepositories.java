@@ -107,6 +107,8 @@ final class SpringDataRepositories {
     interface NotificationJpa extends Repository<NotificationEntity, UUID> {
         NotificationEntity save(NotificationEntity entity);
 
+        NotificationEntity saveAndFlush(NotificationEntity entity);
+
         boolean existsByOwnerIdAndEventKey(String ownerId, String eventKey);
 
         List<NotificationEntity> findByOwnerIdOrderByCreatedAtDescIdDesc(String ownerId, Limit limit);
