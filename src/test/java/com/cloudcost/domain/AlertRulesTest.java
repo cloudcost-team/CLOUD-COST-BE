@@ -74,4 +74,18 @@ class AlertRulesTest {
         assertThat(AlertRules.weeklySummary(ACCOUNT, monday, BigDecimal.TEN, BigDecimal.TEN, DisplayCurrency.usd(),
             new AlertSettings(true, true, true, true, false))).isEmpty();
     }
+
+    @Test
+    void 금액_기호는_서버_로케일과_상관없다() {
+        java.util.Locale before = java.util.Locale.getDefault();
+        try {
+            java.util.Locale.setDefault(java.util.Locale.GERMANY);
+            assertThat(AlertRules.weeklySummary(ACCOUNT, LocalDate.of(2026, 9, 28), new BigDecimal("21.846"), null, KRW,
+                ALL)).get().extracting(Candidate::message).isEqualTo("지난주 추정 비용 ₩28,400");
+            assertThat(AlertRules.weeklySummary(ACCOUNT, LocalDate.of(2026, 9, 28), new BigDecimal("1234.5"), null,
+                DisplayCurrency.usd(), ALL)).get().extracting(Candidate::message).isEqualTo("지난주 추정 비용 $1,234.50");
+        } finally {
+            java.util.Locale.setDefault(before);
+        }
+    }
 }

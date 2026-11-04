@@ -152,6 +152,9 @@ class WasteDetectorTest {
                 .as("최근 14일 동안 안 켜진 서버는 목록에도 넣지 않는다").containsExactly("i-new", "i-gpu", "i-nop", "i-tight");
         assertThat(result.skipped().get(0).reason()).contains("24시간 미만");
         assertThat(result.skipped().get(1).reason()).contains("GPU");
+        assertThat(WasteDetector.detect(List.of(candidate("i-gpu-idle", "g4dn.xlarge",
+                stats("i-gpu-idle", 336, "0.4", "0.9", "1.5", 100L), "0.647"))).findings())
+                .as("GPU는 유휴처럼 보여도 중지를 권하지 않는다").isEmpty();
         assertThat(result.skipped().get(2).reason()).contains("단가");
         assertThat(result.skipped().get(3).reason())
                 .as("t3.small이면 30% > 20%, 기본 성능이 넉넉한 타입은 더 비쌈").contains("기본 성능 안에 들면서 더 싼");

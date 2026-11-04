@@ -164,7 +164,10 @@ public final class SpikeDetector {
     private static Map<String, Long> minutes(PeriodCost<LocalDate> p) {
         Map<String, Long> result = new HashMap<>();
         for (InstanceCost c : p.instances()) {
-            result.merge(c.instanceId(), c.usedMinutes(), Long::sum);
+            // 비용에 들어간 서버만 원인 후보로 본다 (단가를 모르는 서버는 급증 비용에 들어가지 않는다)
+            if (c.hourlyUsd() != null) {
+                result.merge(c.instanceId(), c.usedMinutes(), Long::sum);
+            }
         }
         return result;
     }

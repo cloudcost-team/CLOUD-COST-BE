@@ -128,6 +128,12 @@ public final class WasteDetector {
             }
             judged.add(info.instanceId());
             BigDecimal monthlyHours = monthlyHours(c.usedMinutes());
+            if (isGpu(info) && (isIdle(c.stats()) || isOversized(c.stats()))) {
+                // GPU 작업은 CPU·네트워크를 거의 안 쓸 수 있어 이 지표만으로 중지·변경을 권하지 않는다
+                skipped.add(new Skipped(info.instanceId(), info.name(),
+                    "CPU를 적게 쓰지만 GPU 타입이라 CPU·네트워크 지표만으로 중지나 사양 변경을 추천하지 않았어요."));
+                continue;
+            }
             if (isIdle(c.stats())) {
                 if (c.hourlyUsd() == null) {
                     skipped.add(new Skipped(info.instanceId(), info.name(), "유휴로 보이지만 온디맨드 단가를 몰라 절감액을 계산하지 못했어요."));
@@ -154,6 +160,10 @@ public final class WasteDetector {
     private static boolean stoppedLongAgo(Candidate c, Instant windowEnd) {
         return windowEnd != null && InstanceStates.isStopped(c.instance().state()) && c.lastUsedHour() != null
             && c.lastUsedHour().isBefore(windowEnd.minus(STOPPED_FOR));
+    }
+
+    private static boolean isGpu(Ec2Instance info) {
+        return InstanceSpecs.find(info.instanceType()).filter(InstanceSpecs.Spec::gpu).isPresent();
     }
 
     /** 유휴: CPU 최대 5% 미만 + 네트워크를 알고 하루 평균 5MB 미만. 네트워크를 모르면 유휴로 보지 않는다. */
