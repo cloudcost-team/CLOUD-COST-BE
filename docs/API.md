@@ -422,6 +422,7 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 | `FIRST_MONTH` | 기록이 시작된 첫 달. 전월과 비교하지 않고, 기록 시작일부터의 값이다 |
 | `PREVIEW` | 진행 중인 이번 달 (오늘까지의 값, 달이 끝나면 확정) |
 | `FINAL` | 끝난 달 |
+
 판정 순서는 EMPTY → FIRST_MONTH → PREVIEW → FINAL.
 
 ### `GET /aws/accounts/{accountId}/reports?currency=KRW|USD` — S10-2

@@ -35,7 +35,7 @@ public final class WasteDetector {
     public static final long IDLE_NETWORK_BYTES_PER_DAY = 5L * 1024 * 1024;
     public static final BigDecimal OVERSIZED_CPU_AVG = BigDecimal.TEN;
     public static final BigDecimal OVERSIZED_CPU_P95 = BigDecimal.valueOf(40);
-    /** 이보다 적게 켜져 있었으면 판단하지 않는다 */
+    /** CPU 기록이 있는 시간이 이보다 적으면 판단하지 않는다 (P95를 믿을 만한 표본 수. 켜진 시간이 길어도 CPU 기록이 빠지면 제외) */
     public static final int MIN_CPU_HOURS = 24;
     public static final BigDecimal HOURS_PER_MONTH = BigDecimal.valueOf(730);
     /**
@@ -118,7 +118,7 @@ public final class WasteDetector {
             }
             if (c.stats().cpuHours() < MIN_CPU_HOURS) {
                 skipped.add(new Skipped(info.instanceId(), info.name(),
-                    "최근 14일 동안 켜져 있던 시간이 " + MIN_CPU_HOURS + "시간 미만이라 판단하지 않았어요."));
+                    "최근 14일 동안 CPU 기록이 있는 시간이 " + MIN_CPU_HOURS + "시간 미만이라 판단하지 않았어요."));
                 continue;
             }
             if (stoppedLongAgo(c, windowEnd)) {
