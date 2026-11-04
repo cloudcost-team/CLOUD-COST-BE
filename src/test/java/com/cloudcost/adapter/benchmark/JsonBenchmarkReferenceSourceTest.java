@@ -30,18 +30,21 @@ class JsonBenchmarkReferenceSourceTest {
     }
 
     @Test
-    void 기본_파일은_서버_1_2대_구간이_비어_있고_3_20대는_기획서_값이다() {
+    void 기본_파일은_Azure_원본에서_계산한_1_2대와_3_20대_분포를_담는다() {
         BenchmarkReference ref = JsonBenchmarkReferenceSource.read(new ClassPathResource("benchmark/reference.json"));
 
         assertThat(ref.oversized().source()).isEqualTo("Azure Public Dataset V2");
         assertThat(ref.oversized().bands()).extracting(SizeBand::key).containsExactly("1-2", "3-20");
         SizeBand small = ref.oversized().bandFor(2).orElseThrow();
         assertThat(small.label()).isEqualTo("서버 1~2대");
-        assertThat(small.hasData()).as("원본에서 아직 계산하지 않음").isFalse();
+        assertThat(small.sampleSize()).isEqualTo(1473);
+        assertThat(small.averagePercent()).isEqualByComparingTo("47");
+        assertThat(small.medianPercent()).isEqualByComparingTo("50");
+        assertThat(small.percentiles()).hasSize(19);
         SizeBand mid = ref.oversized().bandFor(3).orElseThrow();
-        assertThat(mid.sampleSize()).isEqualTo(2607);
+        assertThat(mid.sampleSize()).isEqualTo(2622);
         assertThat(mid.averagePercent()).isEqualByComparingTo("42");
-        assertThat(mid.percentiles()).isEmpty();
+        assertThat(mid.medianPercent()).isEqualByComparingTo("33");
         assertThat(ref.oversized().bandFor(21)).as("어느 구간에도 안 듦").isEmpty();
         assertThat(ref.waste().averagePercent()).isEqualByComparingTo("29");
         assertThat(ref.spend().minUsd()).isEqualByComparingTo("100");

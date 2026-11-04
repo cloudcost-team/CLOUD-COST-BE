@@ -77,18 +77,32 @@ class TeamBenchmarkTest {
     }
 
     @Test
-    void 백분위_표가_있으면_우리보다_효율적인_팀_비율을_직선으로_잇고_없으면_null이다() {
+    void 우리보다_효율적인_팀은_비율이_확실히_낮은_가장_큰_백분위이고_표가_없으면_null이다() {
         List<Percentile> table = List.of(
             new Percentile(new BigDecimal("25"), new BigDecimal("20")),
             new Percentile(new BigDecimal("50"), new BigDecimal("35")),
             new Percentile(new BigDecimal("75"), new BigDecimal("60")));
 
-        assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("35"), table)).isEqualByComparingTo("50.0");
-        assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("47.5"), table)).isEqualByComparingTo("62.5");
+        assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("35"), table)).as("35인 팀은 같다고 본다").isEqualByComparingTo("25.0");
+        assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("47.5"), table)).isEqualByComparingTo("50.0");
         assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("10"), table)).isEqualByComparingTo("0");
-        assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("80"), table)).isEqualByComparingTo("100");
+        assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("80"), table)).isEqualByComparingTo("75.0");
         assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("35"), List.of())).isNull();
         assertThat(TeamBenchmark.moreEfficientTeamsPercent(null, table)).isNull();
+    }
+
+    @Test
+    void 서버_1_2대처럼_같은_비율이_많아도_과다_사양_0퍼센트_팀보다_효율적인_팀은_없다() {
+        // 실제 Azure 1~2대 구간처럼 5~45%가 0%, 50~55%가 50%, 60% 이상이 100%
+        List<Percentile> table = new java.util.ArrayList<>();
+        for (int p = 5; p < 100; p += 5) {
+            String ratio = p <= 45 ? "0" : p <= 55 ? "50" : "100";
+            table.add(new Percentile(BigDecimal.valueOf(p), new BigDecimal(ratio)));
+        }
+
+        assertThat(TeamBenchmark.moreEfficientTeamsPercent(BigDecimal.ZERO, table)).isEqualByComparingTo("0");
+        assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("50"), table)).isEqualByComparingTo("45.0");
+        assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("100"), table)).isEqualByComparingTo("55.0");
     }
 
     @Test
