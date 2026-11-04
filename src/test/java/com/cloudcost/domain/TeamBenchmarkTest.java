@@ -42,10 +42,12 @@ class TeamBenchmarkTest {
         "i-c", stats("i-c", 336, "45"),
         "i-d", stats("i-d", 336, "10.0"),
         "i-e", stats("i-e", 20, "1"));
+    /** 낭비 탐지가 판단한 서버: i-e는 20시간이라 빠짐 */
+    private static final java.util.Set<String> JUDGED = java.util.Set.of("i-a", "i-b", "i-c", "i-d");
 
     @Test
     void 이십사시간_이상_켜진_서버만_판단하고_P95_10퍼센트_미만을_과다_사양으로_센다() {
-        List<ServerVerdict> verdicts = TeamBenchmark.verdicts(INSTANCES, STATS);
+        List<ServerVerdict> verdicts = TeamBenchmark.verdicts(INSTANCES, STATS, JUDGED);
 
         assertThat(verdicts).extracting(v -> v.instance().instanceId()).as("P95 낮은 순, i-e는 20시간이라 제외")
             .containsExactly("i-b", "i-a", "i-d", "i-c");
@@ -57,11 +59,14 @@ class TeamBenchmarkTest {
         assertThat(ratio.oversizedCount()).isEqualTo(2);
         assertThat(ratio.ratioPercent()).isEqualByComparingTo("50.0");
         assertThat(TeamBenchmark.ratio(List.of()).ratioPercent()).isNull();
+        assertThat(TeamBenchmark.verdicts(INSTANCES, STATS, java.util.Set.of("i-a", "i-c")))
+            .as("낭비 탐지가 판단하지 않은 서버(오래 꺼 둔 서버 등)는 빼서 두 화면의 판단 대상을 맞춘다")
+            .extracting(v -> v.instance().instanceId()).containsExactly("i-a", "i-c");
     }
 
     @Test
     void 추천을_적용하면_사양_변경은_적정이_되고_중지는_판단에서_빠진다() {
-        List<ServerVerdict> verdicts = TeamBenchmark.verdicts(INSTANCES, STATS);
+        List<ServerVerdict> verdicts = TeamBenchmark.verdicts(INSTANCES, STATS, JUDGED);
 
         Ratio after = TeamBenchmark.ratioAfter(verdicts,
             List.of(finding("i-a", WasteKind.OVERSIZED), finding("i-b", WasteKind.IDLE)));

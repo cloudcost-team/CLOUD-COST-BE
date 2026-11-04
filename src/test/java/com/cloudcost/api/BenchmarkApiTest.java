@@ -115,6 +115,21 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(body.at("/monthlySpend/status").asText()).isEqualTo("OK");
     }
 
+    @Test
+    void 오래_꺼_둔_서버는_낭비_탐지처럼_판단하지_않는다() throws Exception {
+        threeServers();
+        // 9/24~9/29만 켜졌다가 지금 중지 → 낭비 탐지가 판단하지 않는 서버
+        aws.instances.add(Fixtures.instance("i-old", "m5.large", "stopped", Instant.parse("2026-09-01T00:00:00Z")));
+        aws.addCpuHours("i-old", WINDOW_START, 5 * 24, 3, 5);
+
+        JsonNode body = benchmark("");
+        JsonNode waste = body(getJson("/api/v1/aws/accounts/" + accountId + "/waste").andExpect(status().isOk()));
+
+        assertThat(body.at("/oversizedRatio/ours/judgedCount").asInt())
+                .isEqualTo(waste.at("/judgedCount").asInt()).isEqualTo(3);
+        assertThat(body.at("/oversizedRatio/servers").findValuesAsText("instanceId")).doesNotContain("i-old");
+    }
+
     private static final String DEMO = """
         {"from":"%s","to":"2026-10-07","servers":[
           {"name":"api","instanceType":"m5.large","os":"LINUX","count":2,"schedule":"ALWAYS","usagePattern":"OVERSIZED"},

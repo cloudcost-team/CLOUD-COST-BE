@@ -39,5 +39,14 @@ class JsonBenchmarkReferenceSourceTest {
         assertThatThrownBy(() -> JsonBenchmarkReferenceSource.read(
             new ByteArrayResource("{\"oversized\":{}}".getBytes(StandardCharsets.UTF_8))))
             .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> JsonBenchmarkReferenceSource.read(new ByteArrayResource(
+            json.replace("\"minUsd\":50,", "").getBytes(StandardCharsets.UTF_8))))
+            .as("spend 범위가 빠지면 조회 때 500이 아니라 시작할 때 실패").isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> JsonBenchmarkReferenceSource.read(new ByteArrayResource(
+            json.replace("\"minUsd\":50", "\"minUsd\":900").getBytes(StandardCharsets.UTF_8))))
+            .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> JsonBenchmarkReferenceSource.read(new ByteArrayResource(
+            json.replace(",\"ratioPercent\":30", "").getBytes(StandardCharsets.UTF_8))))
+            .isInstanceOf(IllegalStateException.class);
     }
 }

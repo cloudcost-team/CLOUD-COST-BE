@@ -34,6 +34,14 @@ class JsonBenchmarkReferenceSource implements BenchmarkReferenceSource {
             if (ref.oversized() == null || ref.waste() == null || ref.spend() == null) {
                 throw new IllegalStateException("벤치마킹 기준 파일에 oversized·waste·spend가 모두 있어야 합니다: " + resource);
             }
+            BenchmarkReference.Spend spend = ref.spend();
+            if (spend.minUsd() == null || spend.maxUsd() == null || spend.minUsd().compareTo(spend.maxUsd()) > 0) {
+                throw new IllegalStateException("spend에 minUsd·maxUsd가 있어야 하고 minUsd ≤ maxUsd여야 합니다: " + resource);
+            }
+            if (ref.oversized().percentiles().stream()
+                .anyMatch(p -> p == null || p.percentile() == null || p.ratioPercent() == null)) {
+                throw new IllegalStateException("percentiles 항목마다 percentile·ratioPercent가 있어야 합니다: " + resource);
+            }
             return ref;
         } catch (IOException e) {
             throw new UncheckedIOException("벤치마킹 기준 파일을 읽지 못했습니다: " + resource, e);

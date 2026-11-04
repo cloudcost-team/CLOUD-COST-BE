@@ -12,7 +12,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * EC2 사용률로 낭비를 찾는다 (최근 14일, 이슈 #10).
@@ -69,7 +71,18 @@ public final class WasteDetector {
     public record Skipped(String instanceId, String name, String reason) {
     }
 
-    public record Result(List<WasteFinding> findings, List<Skipped> skipped, int judgedCount) {
+    /**
+     * @param judgedIds 판단한 서버 (최근 14일 24시간 이상 켜졌고, 오래 꺼 둔 서버가 아님). 벤치마킹도 같은 대상을 쓴다
+     */
+    public record Result(List<WasteFinding> findings, List<Skipped> skipped, Set<String> judgedIds) {
+
+        public Result {
+            judgedIds = Set.copyOf(judgedIds);
+        }
+
+        public int judgedCount() {
+            return judgedIds.size();
+        }
 
         public BigDecimal totalMonthlySavingsUsd() {
             return findings.stream().map(WasteFinding::monthlySavingsUsd).reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -90,7 +103,7 @@ public final class WasteDetector {
     public static Result detect(List<Candidate> candidates, Instant windowEnd) {
         List<WasteFinding> findings = new ArrayList<>();
         List<Skipped> skipped = new ArrayList<>();
-        int judged = 0;
+        Set<String> judged = new LinkedHashSet<>();
         for (Candidate c : candidates) {
             Ec2Instance info = c.instance();
             if (c.stats() == null || c.stats().cpuHours() == 0) {
@@ -106,7 +119,7 @@ public final class WasteDetector {
                     "지금 중지돼 있고 최근 " + STOPPED_FOR.toHours() / 24 + "일 동안 켜진 적이 없어 비용이 나지 않는 서버로 보고 판단하지 않았어요."));
                 continue;
             }
-            judged++;
+            judged.add(info.instanceId());
             BigDecimal monthlyHours = monthlyHours(c.usedMinutes());
             if (isIdle(c.stats())) {
                 if (c.hourlyUsd() == null) {

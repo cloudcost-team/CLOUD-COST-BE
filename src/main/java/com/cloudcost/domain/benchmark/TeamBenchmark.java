@@ -58,15 +58,18 @@ public final class TeamBenchmark {
     }
 
     /**
-     * 판단 대상(24시간 이상 켜진 서버)과 서버별 판정. P95가 낮은 순.
+     * 판단 대상과 서버별 판정. P95가 낮은 순.
      *
-     * @param stats instanceId → 최근 14일 사용률
+     * @param stats     instanceId → 최근 14일 사용률
+     * @param judgedIds 낭비 탐지({@link WasteDetector})가 판단한 서버. 두 화면의 "판단한 서버"가 같도록 같은 대상을 쓴다
+     *                  (24시간 이상 켜졌고, 지금 중지돼 최근 3일 동안 안 켜진 서버는 뺀다)
      */
-    public static List<ServerVerdict> verdicts(List<Ec2Instance> instances, Map<String, UtilizationStats> stats) {
+    public static List<ServerVerdict> verdicts(
+        List<Ec2Instance> instances, Map<String, UtilizationStats> stats, Set<String> judgedIds) {
         List<ServerVerdict> result = new ArrayList<>();
         for (Ec2Instance i : instances) {
             UtilizationStats s = stats.get(i.instanceId());
-            if (s == null || s.cpuHours() < WasteDetector.MIN_CPU_HOURS || s.cpuP95() == null) {
+            if (!judgedIds.contains(i.instanceId()) || s == null || s.cpuP95() == null) {
                 continue;
             }
             result.add(new ServerVerdict(i, s.cpuP95(), s.cpuHours(),

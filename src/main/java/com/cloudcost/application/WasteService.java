@@ -138,7 +138,7 @@ public class WasteService {
         LocalDate availableAt = availableFrom == null ? null : availableFrom.plusDays(UtilizationStats.WINDOW.toDays());
         if (availableAt != null && availableAt.isAfter(today)) {
             return new WasteView(accountId, Status.INSUFFICIENT_HISTORY, availableAt, start, end,
-                new Result(List.of(), List.of(), 0), List.copyOf(infos), Map.of(), freshness, notes, asOf);
+                new Result(List.of(), List.of(), java.util.Set.of()), List.copyOf(infos), Map.of(), freshness, notes, asOf);
         }
 
         Map<String, UtilizationStats> stats = UtilizationStats.byInstance(windowSamples);
