@@ -104,9 +104,16 @@ public class DemoUsageService {
         return withSpikes(daily(setup));
     }
 
-    /** 지정한 기간의 일별 + 급증일 (대시보드용) */
+    /**
+     * 지정한 기간의 일별 + 급증일 (대시보드용). 실제 연결처럼 기간 앞 30일도 읽어 기간 첫날부터 평소 비용을 잰다
+     * (설정한 기간이 길면 대시보드 기간 앞에도 기록이 있다).
+     */
     public DailyView dailyWithSpikes(DemoSetup setup, DateRange range) {
-        return withSpikes(daily(setup, range));
+        UsageCostView<LocalDate> view = daily(setup, range);
+        UsageCostView<LocalDate> withBaseline =
+            daily(setup, new DateRange(range.from().minusDays(SpikeDetector.BASELINE_DAYS), range.to()));
+        return new DailyView(view, SpikeDetector.detect(
+            withBaseline.report(), withBaseline.availableFrom(), range.from(), range.to()));
     }
 
     private static DailyView withSpikes(UsageCostView<LocalDate> view) {

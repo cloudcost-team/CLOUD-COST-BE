@@ -15,6 +15,8 @@ public record MonthlyBudget(BigDecimal amount, Currency currency) {
     public static final String INVALID = "VALIDATION_ERROR";
     /** 1조 (원·달러 공통). 오타로 들어온 비현실적인 값을 막는다 */
     public static final BigDecimal MAX = new BigDecimal("1000000000000");
+    /** 받아 주는 소수 자릿수 상한 (반올림 전) */
+    public static final int MAX_SCALE = 18;
 
     public MonthlyBudget {
         if (currency == null) {
@@ -25,6 +27,10 @@ public record MonthlyBudget(BigDecimal amount, Currency currency) {
         }
         if (amount.compareTo(MAX) > 0) {
             throw new DomainValidationException(INVALID, "월 예산이 너무 커요. 1조 이하로 입력해 주세요.");
+        }
+        // 1E-1000000000처럼 짧지만 소수 자릿수가 엄청난 값은 아래 반올림에서 10^n을 만들어 CPU·메모리를 크게 쓴다.
+        if (amount.scale() > MAX_SCALE) {
+            throw new DomainValidationException(INVALID, "월 예산의 소수점 아래 자릿수가 너무 많아요. 원은 정수, 달러는 센트까지 입력해 주세요.");
         }
         // 원화는 원 단위, 달러는 센트 단위까지만 쓴다.
         amount = amount.setScale(currency == Currency.KRW ? 0 : 2, RoundingMode.HALF_UP);
