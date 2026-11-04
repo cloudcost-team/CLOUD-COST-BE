@@ -305,3 +305,39 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 ### `POST /demo/simulations?currency=KRW|USD` — 체험 모드
 §3 설정에 `recommendationIds`·`trafficGrowthPercent`·`budget`(모두 선택)을 더한다. 추천 id는 같은 설정의 `POST /demo/waste` 응답에서 나온 값이다.
 기간의 마지막 날을 오늘로 보고 같은 계산을 한다.
+
+## 4-2. 팀 벤치마킹 (이슈 #33, ADR-013)
+### `GET /aws/accounts/{accountId}/benchmark?recommendationIds=&currency=KRW|USD` — S09 · S09-2~4
+비슷한 규모 팀의 공개 자료와 견준다. 비교 기준은 교체 가능한 파일(`CCI_BENCHMARK_REFERENCE`, 기본 `classpath:benchmark/reference.json`)이다.
+```json
+{ "dataSource": "aws", "currency": "KRW", "status": "OK", "availableAt": null, "window": { "from": "…", "to": "…" },
+  "appliedRecommendationIds": [],
+  "oversizedRatio": {
+    "status": "OK", "ours": { "judgedCount": 4, "oversizedCount": 2, "ratio": 50.0 }, "moreEfficientTeamsPercent": null,
+    "reference": { "source": "Azure Public Dataset V2", "description": "VM 3~20대를 쓰는 구독 2,607곳 …", "sampleSize": 2607,
+                   "averageRatio": 42, "medianRatio": 35, "percentileAvailable": false },
+    "servers": [ { "instanceId": "i-0abc", "name": "api-server", "instanceType": "m5.large", "cpuP95": 6.20, "cpuHours": 336,
+                   "oversized": true, "verdict": "과다 사양 (P95 10% 미만)" } ],
+    "afterSimulation": null },
+  "wasteRatio": { "status": "UNAVAILABLE", "reason": "전체 낭비 비율을 구하려면 … 계산하지 않아요.",
+                  "referenceSource": "Flexera 2026 State of the Cloud", "referenceDescription": "…", "referenceAverage": 29 },
+  "monthlySpend": { "status": "OK", "monthlyCost": 312000, "position": "WITHIN",
+                    "range": { "source": "SpendArk Cloud Cost Benchmark 2026", "description": "1~10명 팀의 월 클라우드 지출 범위",
+                               "min": 133309, "max": 666545, "minUsd": 100, "maxUsd": 500 },
+                    "afterSimulation": null },
+  "freshness": { … }, "notes": [ … ], "asOf": "…" }
+```
+- **① 과다 사양 비율**(`oversizedRatio`) = CPU P95 < 10%인 서버 수 ÷ 판단한 서버 수 (최근 14일 중 **24시간 이상** 켜진, 지금 남아 있는 서버).
+  §4 낭비 탐지와 같은 14일 구간·지표를 쓴다. `servers`는 P95 낮은 순 (S09-3).
+  - `status`: `OK` · `NOT_COMPARABLE`(판단한 서버 3대 미만 — 비율·목록은 주지만 비교하지 않음) · `INSUFFICIENT_HISTORY`(기록 14일 미만, `ours`·`servers` 비움).
+  - `moreEfficientTeamsPercent`: 우리보다 비율이 낮은 팀의 비율(%). 비교 기준 파일에 백분위 표(`percentiles`)가 있을 때만 계산하고(표 사이는 직선 보간), 없으면 `null` + `notes` 안내. **기본 파일에는 표가 없다.**
+- **② 전체 낭비 비율**(`wasteRatio`): 미연결 볼륨·스냅샷·고정 IP·로드밸런서를 지금 권한으로 볼 수 없어 항상 `UNAVAILABLE` + 사유. Flexera 평균은 참고값이다.
+- **③ 월 지출**(`monthlySpend`): 월말 예상(§2-1, USD)을 비교 범위($100~$500)와 견줘 `BELOW`(미만)·`WITHIN`·`ABOVE`(초과). 범위는 요청 통화로도 준다.
+  월말 예상이 없으면 `status: "NO_FORECAST"`, 금액·위치 `null`. 기록이 14일 미만이어도 월말 예상이 있으면 비교한다.
+- **`recommendationIds`**(쉼표 구분 또는 여러 번)를 주면 `afterSimulation`을 채운다: 과다 사양 추천을 적용한 서버는 적정, 유휴 추천(중지)을 적용한 서버는 판단 대상에서 빠진다고 보고,
+  월 지출은 §4-1 시뮬레이터와 같은 계산(증가율 0)의 적용 후 금액으로 위치를 다시 잡는다. 모르는 id는 400 `UNKNOWN_RECOMMENDATION`.
+- 최상위 `status`: `OK` 또는 `INSUFFICIENT_HISTORY`(+ `availableAt`).
+- 오류: §2와 같다.
+
+### `POST /demo/benchmark?currency=KRW|USD` — 체험 모드
+§3 설정에 `recommendationIds`(선택)를 더한다. 기간의 마지막 14일을 서버별 `usagePattern`으로 판단한다 (`OVERSIZED`·`IDLE`은 과다 사양, `NORMAL`은 적정).

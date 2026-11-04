@@ -52,6 +52,8 @@ public class WasteService {
      * @param availableAt  INSUFFICIENT_HISTORY일 때 판단을 시작하는 날 (그 밖은 null)
      * @param windowStart  판단 구간 시작 (포함)
      * @param windowEnd    판단 구간 끝 (제외)
+     * @param instances    판단에 넣은 인스턴스 (남아 있는 것)
+     * @param stats        instanceId → 최근 14일 사용률 (벤치마킹도 같은 값을 쓴다). INSUFFICIENT_HISTORY면 비어 있다
      */
     public record WasteView(
         UUID accountId,
@@ -60,6 +62,8 @@ public class WasteService {
         Instant windowStart,
         Instant windowEnd,
         Result result,
+        List<Ec2Instance> instances,
+        Map<String, UtilizationStats> stats,
         Freshness freshness,
         List<String> notes,
         Instant asOf) {
@@ -134,7 +138,7 @@ public class WasteService {
         LocalDate availableAt = availableFrom == null ? null : availableFrom.plusDays(UtilizationStats.WINDOW.toDays());
         if (availableAt != null && availableAt.isAfter(today)) {
             return new WasteView(accountId, Status.INSUFFICIENT_HISTORY, availableAt, start, end,
-                new Result(List.of(), List.of(), 0), freshness, notes, asOf);
+                new Result(List.of(), List.of(), 0), List.copyOf(infos), Map.of(), freshness, notes, asOf);
         }
 
         Map<String, UtilizationStats> stats = UtilizationStats.byInstance(windowSamples);
@@ -153,7 +157,8 @@ public class WasteService {
             .toList();
         Result result = WasteDetector.detect(candidates, end);
         Status status = result.findings().isEmpty() ? Status.NONE_FOUND : Status.OK;
-        return new WasteView(accountId, status, null, start, end, result, freshness, notes, asOf);
+        return new WasteView(
+            accountId, status, null, start, end, result, List.copyOf(infos), stats, freshness, notes, asOf);
     }
 
     private static BigDecimal hourly(InstancePrice price) {

@@ -1,0 +1,22 @@
+{
+  "_comment": "팀 벤치마킹 비교 기준 (ADR-013). 외부 자료의 숫자라 코드 대신 이 파일로 둔다. 바꾸면 docs/API.md §4-2와 ADR-013도 확인한다. 다른 파일을 쓰려면 CCI_BENCHMARK_REFERENCE(예: file:/opt/cci/reference.json)를 지정한다.",
+  "oversized": {
+    "source": "Azure Public Dataset V2",
+    "description": "VM 3~20대를 쓰는 구독 2,607곳의 과다 사양(CPU P95 10% 미만) VM 비율",
+    "sampleSize": 2607,
+    "averagePercent": 42,
+    "medianPercent": 35,
+    "percentiles": []
+  },
+  "waste": {
+    "source": "Flexera 2026 State of the Cloud",
+    "description": "응답 기업이 추정한 클라우드 지출 중 낭비 비율 평균",
+    "averagePercent": 29
+  },
+  "spend": {
+    "source": "SpendArk Cloud Cost Benchmark 2026",
+    "description": "1~10명 팀의 월 클라우드 지출 범위",
+    "minUsd": 100,
+    "maxUsd": 500
+  }
+}
