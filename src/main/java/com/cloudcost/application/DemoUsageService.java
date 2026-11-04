@@ -126,6 +126,11 @@ public class DemoUsageService {
         return query(setup, UsageAggregator::monthlyMinutes);
     }
 
+    /** 지정한 기간을 월별로 나눈 합계 (서버는 여전히 setup.from 0시에 처음 켠 것으로 본다) */
+    public UsageCostView<YearMonth> monthly(DemoSetup setup, DateRange range) {
+        return query(setup, range, UsageAggregator::monthlyMinutes);
+    }
+
     /**
      * 설정한 서버 구성으로 지정한 기간의 일별 비용을 계산한다. 서버는 여전히 setup.from 0시에 처음 켠 것으로 보므로
      * 그 앞의 날은 0이다 (대시보드의 전월 비교용).
@@ -160,12 +165,22 @@ public class DemoUsageService {
      * 기간이 14일보다 짧으면 INSUFFICIENT_HISTORY (availableAt = from + 14일).
      */
     public WasteService.WasteView waste(DemoSetup setup) {
+        return wasteUntil(setup, setup.range().endExclusive(settings.zone()));
+    }
+
+    /**
+     * until 직전 14일로 판단한다 (체험 월간 리포트). 설정한 기간 끝·지금 정시보다 늦으면 그 시각으로 줄인다.
+     */
+    public WasteService.WasteView wasteUntil(DemoSetup setup, Instant until) {
         Instant now = clock.instant();
         ZoneId zone = settings.zone();
         DemoFleet fleet = fleet(setup, now);
         Instant periodEnd = setup.range().endExclusive(zone);
         Instant currentHour = now.truncatedTo(java.time.temporal.ChronoUnit.HOURS);
         Instant end = periodEnd.isBefore(currentHour) ? periodEnd : currentHour;
+        if (until.isBefore(end)) {
+            end = until;
+        }
         Instant start = end.minus(UtilizationStats.WINDOW);
         List<Ec2Instance> infos = fleet.instances();
         return WasteService.analyze(ACCOUNT_ID, infos, fleet.hourlySamples(start, end), start, end, setup.from(),

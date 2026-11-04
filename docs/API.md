@@ -386,3 +386,49 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 이미 읽었어도 204. 남의 알림이거나 없으면 404 `NOTIFICATION_NOT_FOUND`.
 
 연결을 삭제하면 그 연결의 알림도 함께 지운다.
+
+## 6. 월간 리포트 (이슈 #37, ADR-015)
+저장하지 않고 조회할 때 §2 월별·일별 비용, §2 급증일, §4 낭비 탐지 규칙으로 계산한다.
+
+| `status` | 뜻 (S10-4) |
+|---|---|
+| `EMPTY` | 그 달에 사용 기록이 없음 (기록 시작 전 달 포함) |
+| `FIRST_MONTH` | 기록이 시작된 첫 달. 전월과 비교하지 않고, 기록 시작일부터의 값이다 |
+| `PREVIEW` | 진행 중인 이번 달 (오늘까지의 값, 달이 끝나면 확정) |
+| `FINAL` | 끝난 달 |
+판정 순서는 EMPTY → FIRST_MONTH → PREVIEW → FINAL.
+
+### `GET /aws/accounts/{accountId}/reports?currency=KRW|USD` — S10-2
+```json
+{ "dataSource": "aws", "currency": "KRW", "availableFrom": "2026-07-10",
+  "months": [ { "month": "2026-10", "status": "PREVIEW", "statusLabel": "진행 중", "usageHours": 360.00, "estimatedCost": 41600,
+                "previousMonthCost": 165400, "change": -123800, "changeRate": -74.8 },
+              { "month": "2026-09", "status": "FINAL", "statusLabel": "확정", … } ],
+  "freshness": { … }, "notes": [ … ], "asOf": "…" }
+```
+기록 시작 달 ~ 이번 달(최대 14개월), 최신 달 먼저. `previousMonthCost`·`change`·`changeRate`는 전월이 기록 시작 달보다 앞이면 `null`, `changeRate`는 전월이 0이어도 `null`.
+아직 수집 전이면 `availableFrom: null`, `months: []`.
+
+### `GET /aws/accounts/{accountId}/reports/{yyyy-MM}?currency=KRW|USD` — S10
+```json
+{ "month": "2026-09", "status": "FINAL", "statusLabel": "확정", "from": "2026-09-01", "to": "2026-09-30",
+  "summary": { …목록 한 줄과 같다… },
+  "spikes": { "count": 1, "days": [ { "date": "2026-09-12", "ratio": 2.2, "causeInstanceId": "i-…", "causeName": "batch",
+                                       "message": "9/12 비용 급증 · 평소의 2.2배 · batch 사용 시간이 늘었어요" } ] },
+  "savings": { "status": "OK", "window": { "from": "2026-09-16T15:00:00Z", "to": "2026-09-30T15:00:00Z" }, "count": 1,
+               "monthlySavings": 64200, "items": [ { "recommendationId": "i-…:OVERSIZED", "instanceId": "i-…", "name": "api",
+                 "kind": "OVERSIZED", "kindLabel": "과다 사양", "action": "m5.large → t3.medium 으로 변경 검토", "monthlySavings": 64200 } ] },
+  "topServers": [ { "instanceId": "i-…", "name": "api", "instanceType": "m5.large", "others": false, "usageHours": 711.00,
+                    "estimatedCost": 111800, "share": 69.4 },
+                  { "instanceId": null, "name": "기타", "instanceType": null, "others": true, … } ],
+  "freshness": { … }, "notes": [ … ] }
+```
+- `from`~`to`: 그 달 1일(첫 달이면 기록 시작일) ~ 말일(이번 달이면 오늘).
+- `spikes`: 그 달의 급증일 (§2 `costs/daily`의 `spike`와 같은 규칙, 앞 30일을 함께 읽어 판정).
+- `savings`: **그 달 마지막 14일**(다음 달 1일 0시 KST 직전 14일, 이번 달이면 지금까지)에 §4 규칙을 적용한 결과. 지금 남아 있는 서버만 판단한다.
+  네트워크 지표는 최근 14일만 모으므로 지난 달에는 유휴 판단이 빠질 수 있다 (`notes` 안내). `status`는 §4와 같다. `EMPTY` 달이면 `null`.
+- `topServers`: 그 달 비용 상위 3대 + 나머지 합(`others: true`, 4대 이상일 때만). 단가를 모르는 서버는 뺀다. 비중은 단가를 아는 서버 합계 기준.
+- 오류: 아직 오지 않은 달 400 `INVALID_PERIOD`, 형식이 틀린 달 400 `VALIDATION_ERROR`, 그 밖은 §2와 같다.
+
+### `POST /demo/reports` · `POST /demo/reports/{yyyy-MM}` — 체험 모드
+요청은 §3 설정. 기간의 마지막 날(`to`)을 오늘로 보고, 기간 안의 달을 같은 계산으로 보여 준다 (`from`이 든 달이 `FIRST_MONTH`).
