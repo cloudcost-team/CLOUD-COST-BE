@@ -228,7 +228,7 @@ Google 로그인 없이 간이 로그인 → 서버 구성·기간 설정 → �
 - `usagePattern`은 선택이고 없으면 `NORMAL`이다. 비용 응답에는 드러나지 않고, 낭비 탐지(`POST /demo/waste`, §4)·벤치마킹 체험에 쓰인다.
   값은 인스턴스 ID·시각으로 정한 결정적 값이라 같은 설정이면 항상 같다.
 - 단가는 서울 리전 온디맨드 단가를 고정값으로 쓴다 (Price List를 부르지 않음). 금액 계산은 실제 경로와 같은 domain 로직이다.
-- `POST /demo/costs/daily`도 `days[].spike`를 준다. 체험 모드의 평소는 `from`부터 잰다 (`from` 앞은 기록이 없다).
+- `POST /demo/costs/daily`도 `days[].spike`를 준다. 체험 모드도 실제 연결처럼 처음 켜진 날부터 평소를 잰다 (`from`이 주말인 평일 일정이면 첫 평일부터. `from` 앞은 기록이 없다).
   예: `from` 9/1, `MONTHLY_SPIKE`·`hoursPerDay` 4인 서버가 있으면 9/12가 급증일이 된다 (평소를 잰 날 11일).
 - 잘못된 설정은 400 `DEMO_INVALID_SETUP` (이유는 `message`): 모르는 타입, 대수 1~10 밖, 합계 50대 초과, `to`가 오늘 이후 등. 기간 455일 초과는 `INVALID_PERIOD`.
 
