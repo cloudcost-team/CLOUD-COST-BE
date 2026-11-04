@@ -119,4 +119,16 @@ class SpikeApiTest extends IntegrationTestBase {
         assertThat(latest.at("/date").asText()).isEqualTo("2026-09-12");
         assertThat(latest.at("/message").asText()).isEqualTo("9/12 비용 급증 · 평소의 2.2배 · batch 사용 시간이 늘었어요");
     }
+
+    @Test
+    void 체험_대시보드도_기간_앞_30일로_평소를_잰다() throws Exception {
+        // 8/1부터 기록이 있으므로 대시보드 기간(9/1~) 앞의 8월도 평소에 들어간다 → 9/12의 평소를 잰 날은 30일
+        String setup = DEMO_SETUP.replace("2026-09-01", "2026-08-01");
+        JsonNode latest = body(mvc.perform(post("/api/v1/demo/dashboard?currency=USD")
+                .contentType(MediaType.APPLICATION_JSON).content(setup)).andExpect(status().isOk())).at("/latestSpike");
+
+        assertThat(latest.at("/date").asText()).isEqualTo("2026-09-12");
+        assertThat(latest.at("/baselineDays").asInt()).isEqualTo(30);
+        assertThat(latest.at("/ratio").decimalValue()).isEqualByComparingTo("2.2");
+    }
 }

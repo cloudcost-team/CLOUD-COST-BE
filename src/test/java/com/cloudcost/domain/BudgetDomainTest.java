@@ -79,6 +79,15 @@ class BudgetDomainTest {
     }
 
     @Test
+    void 소수_자릿수가_엄청난_값은_반올림하기_전에_거절한다() {
+        assertThatThrownBy(() -> new MonthlyBudget(new BigDecimal("1E-1000000000"), Currency.USD))
+            .isInstanceOf(DomainValidationException.class)
+            .hasMessageContaining("소수점 아래 자릿수");
+        assertThat(new MonthlyBudget(new BigDecimal("400.123456789012345678"), Currency.USD).amount())
+            .as("18자리까지는 받아서 반올림").isEqualByComparingTo("400.12");
+    }
+
+    @Test
     void 원화_예산은_환율로_달러로_바꿔_비교하고_환율이_없으면_비교하지_않는다() {
         MonthlyBudget krw = new MonthlyBudget(new BigDecimal("390000"), Currency.KRW);
         ExchangeRate rate = new ExchangeRate(new BigDecimal("1300"), LocalDate.of(2026, 11, 4), "test", Instant.EPOCH);
