@@ -190,4 +190,24 @@ class SpikeDetectorTest {
         assertThat(s.baselineUsd()).isEqualByComparingTo("8");
         assertThat(s.ratio()).isEqualByComparingTo("1.8");
     }
+
+    @Test
+    void 원인_서버의_평소_사용_시간도_평소_비용을_잰_날로_잰다() {
+        // 처음 10일은 단가 모르는 i-x만, 다음 10일은 web 8시간·batch 2시간, 마지막 날 web 12시간·batch 8시간.
+        // 비용 증가는 batch +$6 > web +$4. 단가 모르는 날(두 서버 모두 0시간)을 넣으면 평소가 web 4·batch 1로 내려가 web이 원인이 된다
+        Map<LocalDate, Map<String, Long>> daily = new LinkedHashMap<>();
+        for (int i = 0; i < 10; i++) {
+            daily.put(START.plusDays(i), new TreeMap<>(Map.of("i-x", 24L * 60)));
+        }
+        for (int i = 10; i < 20; i++) {
+            daily.put(START.plusDays(i), new TreeMap<>(Map.of("i-web", 8L * 60, "i-batch", 2L * 60)));
+        }
+        daily.put(START.plusDays(20), new TreeMap<>(Map.of("i-web", 12L * 60, "i-batch", 8L * 60)));
+
+        Spike s = SpikeDetector.detect(CostEstimator.report(daily, PRICES), START, START.plusDays(20), START.plusDays(20))
+            .get(START.plusDays(20));
+
+        assertThat(s.causeInstanceId()).isEqualTo("i-batch");
+        assertThat(s.causeBaselineMinutes()).isEqualTo(2 * 60);
+    }
 }
