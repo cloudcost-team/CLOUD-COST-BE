@@ -149,4 +149,40 @@ class SpikeApiTest extends IntegrationTestBase {
         }
         assertThat(body(getJson("/api/v1/aws/accounts/" + accountId + "/dashboard")).at("/latestSpike").isNull()).isTrue();
     }
+
+    @Test
+    void 처음_사용한_날이_평소_구간_밖이어도_그_뒤_꺼_둔_날은_평소에_넣는다() throws Exception {
+        // 8/20에 처음 켜 9/6까지 쓰고, 9/7~9/16 꺼 뒀다가 9/17부터 다시 썼다 (하루 2시간·4시간 번갈아). 10/7은 4시간.
+        // 10/7의 평소 구간(9/7~10/6) = 꺼 둔 0원 10일 + 2시간 10일 + 4시간 10일 → 중앙값 2시간 → 2.0배 급증.
+        // 조회 범위 안에서만 처음 사용한 날을 찾으면 짧은 조회는 9/17을 처음으로 보고 0원을 빼 중앙값 3시간 → 급증이 아니게 된다.
+        String accountId = activeAccount();
+        aws.instances.add(Fixtures.instance("i-app", "t3.medium", "running", Instant.parse("2026-08-19T15:00:00Z")));
+        Instant aug20 = Instant.parse("2026-08-19T15:00:00Z");
+        for (int day = 0; day < 49; day++) {
+            boolean off = day >= 18 && day < 28; // 9/7~9/16
+            if (!off) {
+                aws.addHours("i-app", aug20.plusSeconds(86400L * day), day == 48 ? 4 : (day % 2 == 0 ? 2 : 4), 60);
+            }
+        }
+        priceCatalog.hourlyByType.put("t3.medium", new BigDecimal("0.0416"));
+
+        JsonNode longQuery = spikesByDate(accountId, "?from=2026-09-01&to=2026-10-08");
+        JsonNode shortQuery = spikesByDate(accountId, "?from=2026-10-07&to=2026-10-08");
+
+        assertThat(longQuery.at("/2026-10-07/ratio").decimalValue()).isEqualByComparingTo("2.0");
+        assertThat(longQuery.at("/2026-10-07/baselineDays").asInt()).as("꺼 둔 날도 평소에 들어간다").isEqualTo(30);
+        assertThat(shortQuery.get("2026-10-07")).as("짧은 조회도 같은 판정").isEqualTo(longQuery.get("2026-10-07"));
+        assertThat(shortQuery.get("2026-10-08")).isEqualTo(longQuery.get("2026-10-08"));
+    }
+
+    /** 일별 응답의 spike를 날짜별로 모은다 */
+    private JsonNode spikesByDate(String accountId, String query) throws Exception {
+        JsonNode days = body(getJson("/api/v1/aws/accounts/" + accountId + "/costs/daily?currency=USD&" + query.substring(1))
+                .andExpect(status().isOk())).at("/days");
+        com.fasterxml.jackson.databind.node.ObjectNode byDate = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+        for (JsonNode day : days) {
+            byDate.set(day.at("/date").asText(), day.at("/spike"));
+        }
+        return byDate;
+    }
 }
