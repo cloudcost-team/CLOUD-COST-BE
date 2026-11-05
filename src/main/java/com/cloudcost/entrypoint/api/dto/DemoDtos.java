@@ -7,8 +7,12 @@ import com.cloudcost.domain.demo.DemoCatalog.Os;
 import com.cloudcost.domain.demo.DemoSchedule;
 import com.cloudcost.domain.demo.DemoSetup;
 import com.cloudcost.domain.demo.DemoUsagePattern;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import io.swagger.v3.oas.annotations.media.Schema;
+import com.cloudcost.domain.simulation.CostSimulation;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -62,13 +66,28 @@ public final class DemoDtos {
             @Schema(example = "2026-10-01") @NotNull LocalDate from,
             @Schema(example = "2026-10-31") @NotNull LocalDate to,
             @NotEmpty @Size(max = DemoSetup.MAX_SERVERS) List<@Valid @NotNull ServerRequest> servers,
-            @Schema(description = "월 예산 (선택). POST /demo/dashboard에서만 쓴다") @Valid
-                    DashboardDtos.BudgetRequest budget) {
+            @Schema(description = "월 예산 (선택). POST /demo/dashboard · /demo/simulations에서 쓴다") @Valid
+                    DashboardDtos.BudgetRequest budget,
+            @Schema(description = "적용할 추천 id (선택). POST /demo/simulations에서 쓴다",
+                    example = "[\"i-0d3e0000000000001:OVERSIZED\"]")
+                    @Size(max = SimulationDtos.MAX_IDS) List<String> recommendationIds,
+            @Schema(description = "트래픽 증가율 % 0~100 (선택, 기본 0). POST /demo/simulations에서 쓴다", example = "20")
+                    @Min(value = 0, message = "0~100 사이로 입력해 주세요")
+                    @Max(value = CostSimulation.MAX_GROWTH_PERCENT, message = "0~100 사이로 입력해 주세요")
+                    @JsonDeserialize(using = StrictIntegerDeserializer.class)
+                    Integer trafficGrowthPercent) {
 
         public MonthlyBudget budgetOrNull() {
             return budget == null ? null : budget.toDomain();
         }
 
+        public List<String> ids() {
+            return recommendationIds == null ? List.of() : recommendationIds;
+        }
+
+        public int growth() {
+            return trafficGrowthPercent == null ? 0 : trafficGrowthPercent;
+        }
 
         public DemoSetup toDomain() {
             return new DemoSetup(servers.stream().map(ServerRequest::toDomain).toList(), from, to);

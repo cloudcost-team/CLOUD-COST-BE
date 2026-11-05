@@ -2,6 +2,7 @@ package com.cloudcost.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -42,6 +43,11 @@ class OwnerIsolationTest extends IntegrationTestBase {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"roleArn\":\"" + Fixtures.CUSTOMER_ROLE_ARN + "\"}")))
                 .andExpect(status().isNotFound());
+
+        mvc.perform(as(userB, post("/api/v1/aws/accounts/" + accountOfA + "/simulations")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("ACCOUNT_NOT_FOUND"));
 
         mvc.perform(as(userB, get("/api/v1/aws/accounts")))
                 .andExpect(status().isOk())
