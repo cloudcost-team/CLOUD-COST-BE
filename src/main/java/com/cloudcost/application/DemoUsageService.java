@@ -8,13 +8,17 @@ import com.cloudcost.domain.cost.CostEstimator;
 import com.cloudcost.domain.cost.CostEstimator.CostReport;
 import com.cloudcost.domain.cost.CostNotes;
 import com.cloudcost.domain.cost.InstancePrice;
+import com.cloudcost.domain.demo.DemoCatalog;
+import com.cloudcost.domain.demo.DemoCatalog.Os;
 import com.cloudcost.domain.demo.DemoFleet;
 import com.cloudcost.domain.demo.DemoSetup;
 import com.cloudcost.domain.ec2.Ec2Instance;
+import com.cloudcost.domain.ec2.InstanceSpecs;
 import com.cloudcost.domain.ec2.TrackedInstance;
 import com.cloudcost.domain.usage.CurrentRun;
 import com.cloudcost.domain.usage.DateRange;
 import com.cloudcost.domain.usage.UsageAggregator;
+import com.cloudcost.domain.usage.UtilizationStats;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
@@ -111,6 +115,33 @@ public class DemoUsageService {
         CostReport<K> report = CostEstimator.report(grouping.apply(daily), prices);
         return new UsageCostView<>(
             ACCOUNT_ID, range, report, tracked(fleet, now), prices, setup.from(), FRESHNESS, notes());
+    }
+
+    /**
+     * 체험 모드 낭비 탐지: 설정한 기간의 마지막 14일(아직 지나지 않은 시간 제외)을 서버별 사용 모양으로 판단한다.
+     * 기간이 14일보다 짧으면 INSUFFICIENT_HISTORY (availableAt = from + 14일).
+     */
+    public WasteService.WasteView waste(DemoSetup setup) {
+        Instant now = clock.instant();
+        ZoneId zone = settings.zone();
+        DemoFleet fleet = fleet(setup, now);
+        Instant periodEnd = setup.range().endExclusive(zone);
+        Instant currentHour = now.truncatedTo(java.time.temporal.ChronoUnit.HOURS);
+        Instant end = periodEnd.isBefore(currentHour) ? periodEnd : currentHour;
+        Instant start = end.minus(UtilizationStats.WINDOW);
+        List<Ec2Instance> infos = fleet.instances();
+        return WasteService.analyze(ACCOUNT_ID, infos, fleet.hourlySamples(start, end), start, end, setup.from(),
+            i -> demoHourly(i.instanceType(), i.platformDetails()),
+            i -> InstanceSpecs.downsizeTarget(i.instanceType())
+                .map(t -> demoHourly(t.instanceType(), i.platformDetails()))
+                .orElse(null),
+            FRESHNESS, now, settings);
+    }
+
+    /** 체험 모드 고정 단가. 카탈로그에 없는 타입이면 null */
+    private static java.math.BigDecimal demoHourly(String instanceType, String platformDetails) {
+        Os os = Os.WINDOWS.platformDetails().equals(platformDetails) ? Os.WINDOWS : Os.LINUX;
+        return DemoCatalog.find(instanceType).map(t -> t.hourlyUsd(os)).orElse(null);
     }
 
     private DemoFleet fleet(DemoSetup setup, Instant now) {

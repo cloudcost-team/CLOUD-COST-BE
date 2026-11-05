@@ -158,4 +158,38 @@ class DemoApiTest extends IntegrationTestBase {
         JsonNode awsInstance = body(getJson(real + "/instances?currency=USD")).at("/instances/0");
         assertThat(fields(demo("/instances?currency=USD").at("/instances/0"))).isEqualTo(fields(awsInstance));
     }
+
+    /** 9/20~10/7 (18일): 마지막 14일로 낭비를 판단한다 */
+    private static final String WASTE_SETUP = """
+        {"from":"%s","to":"2026-10-07","servers":[
+          {"name":"api","instanceType":"m5.large","os":"LINUX","count":1,"schedule":"ALWAYS","usagePattern":"OVERSIZED"},
+          {"name":"batch","instanceType":"c5.large","os":"LINUX","count":1,"schedule":"ALWAYS","usagePattern":"IDLE"},
+          {"name":"web","instanceType":"t3.medium","os":"LINUX","count":1,"schedule":"ALWAYS"}]}
+        """;
+
+    @Test
+    void 체험_모드도_사용_모양대로_낭비를_찾는다() throws Exception {
+        JsonNode body = body(postDemo("/waste?currency=USD", WASTE_SETUP.formatted("2026-09-20"))
+                .andExpect(status().isOk()));
+
+        assertThat(body.at("/dataSource").asText()).isEqualTo("demo");
+        assertThat(body.at("/status").asText()).isEqualTo("OK");
+        assertThat(body.at("/window/to").asText()).as("기간 마지막 날 다음 0시(KST)까지").isEqualTo("2026-10-07T15:00:00Z");
+        assertThat(body.at("/judgedCount").asInt()).isEqualTo(3);
+        assertThat(body.at("/items").findValuesAsText("recommendationId"))
+                .as("유휴 batch(월 $70.08) → 과다 사양 api(월 $48.18), 정상 web은 없음")
+                .containsExactly("i-0d3e0000000000002:IDLE", "i-0d3e0000000000001:OVERSIZED");
+        assertThat(body.at("/items/1/action").asText()).isEqualTo("m5.large → t3.medium 으로 변경 검토");
+        assertThat(body.at("/totalMonthlySavings").decimalValue()).isEqualByComparingTo("118.26");
+        assertThat(body.at("/notes/0").asText()).contains("체험용 계정");
+    }
+
+    @Test
+    void 체험_기간이_14일보다_짧으면_기록_부족이다() throws Exception {
+        JsonNode body = body(postDemo("/waste", WASTE_SETUP.formatted("2026-10-01")).andExpect(status().isOk()));
+
+        assertThat(body.at("/status").asText()).isEqualTo("INSUFFICIENT_HISTORY");
+        assertThat(body.at("/availableAt").asText()).isEqualTo("2026-10-15");
+        assertThat(body.at("/items").size()).isZero();
+    }
 }

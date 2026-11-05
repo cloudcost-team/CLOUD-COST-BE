@@ -52,6 +52,7 @@ public abstract class IntegrationTestBase {
     @Autowired protected FakeStackCallbackResponder cfnResponses;
     @Autowired protected FakeExchangeRateSource exchangeRates;
     @Autowired protected RecordingPauser pauser;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     protected String owner;
 
@@ -104,6 +105,8 @@ public abstract class IntegrationTestBase {
     void resetFakes() {
         aws.reset();
         priceCatalog.reset();
+        // 단가 캐시는 owner가 없는 공용 테이블이라 테스트마다 비운다 (다른 테스트의 "단가 없음" 캐시가 남지 않게).
+        jdbc.update("DELETE FROM ec2_price_cache");
         cfnResponses.responses.clear();
         exchangeRates.reset();
         pauser.pauses.clear();
