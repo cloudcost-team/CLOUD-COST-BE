@@ -161,6 +161,17 @@ class WasteDetectorTest {
     }
 
     @Test
+    void 메모리_절반_이상인_t3가_없으면_메모리_때문이라고_알린다() {
+        // r5.4xlarge는 128GiB라 절반(64GiB) 이상인 t3가 없다 (t3.2xlarge 32GiB)
+        Result result = WasteDetector.detect(List.of(candidate("i-mem", "r5.4xlarge",
+                stats("i-mem", 336, "3", "4", "5", LOTS_OF_NETWORK), "1.216")));
+
+        assertThat(result.findings()).isEmpty();
+        assertThat(result.skipped().getFirst().reason())
+                .isEqualTo("CPU를 적게 쓰지만 t3 중 메모리가 지금(128GiB)의 절반 이상인 타입이 없어 추천하지 않았어요.");
+    }
+
+    @Test
     void 추천은_절감액_큰_순이고_정렬과_종류_필터를_고를_수_있다() {
         Result result = WasteDetector.detect(List.of(
                 candidate("i-small", "t3.medium", stats("i-small", 336, "3", "4", "8", LOTS_OF_NETWORK), "0.052"),
