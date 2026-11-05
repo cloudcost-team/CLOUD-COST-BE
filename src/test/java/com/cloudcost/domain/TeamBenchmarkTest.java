@@ -1,0 +1,118 @@
+package com.cloudcost.domain;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.cloudcost.domain.benchmark.BenchmarkReference;
+import com.cloudcost.domain.benchmark.BenchmarkReference.Percentile;
+import com.cloudcost.domain.benchmark.TeamBenchmark;
+import com.cloudcost.domain.benchmark.TeamBenchmark.Position;
+import com.cloudcost.domain.benchmark.TeamBenchmark.Ratio;
+import com.cloudcost.domain.benchmark.TeamBenchmark.ServerVerdict;
+import com.cloudcost.domain.ec2.Ec2Instance;
+import com.cloudcost.domain.usage.UtilizationStats;
+import com.cloudcost.domain.waste.WasteFinding;
+import com.cloudcost.domain.waste.WasteKind;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+
+class TeamBenchmarkTest {
+
+    private static Ec2Instance instance(String id) {
+        return new Ec2Instance(id, "name-" + id, "m5.large", "ap-northeast-2", "ap-northeast-2a", "running",
+            Instant.parse("2026-09-01T00:00:00Z"), "Linux/UNIX", "default", false, false);
+    }
+
+    private static UtilizationStats stats(String id, int hours, String p95) {
+        return new UtilizationStats(id, hours, new BigDecimal(p95), new BigDecimal(p95), new BigDecimal(p95), 0, null);
+    }
+
+    private static WasteFinding finding(String id, WasteKind kind) {
+        return new WasteFinding(instance(id), kind, null, BigDecimal.valueOf(730), null, BigDecimal.ONE, BigDecimal.TEN,
+            null, null, null, BigDecimal.ONE);
+    }
+
+    private static final List<Ec2Instance> INSTANCES =
+        List.of(instance("i-a"), instance("i-b"), instance("i-c"), instance("i-d"), instance("i-e"));
+    private static final Map<String, UtilizationStats> STATS = Map.of(
+        "i-a", stats("i-a", 336, "6.5"),
+        "i-b", stats("i-b", 336, "0.8"),
+        "i-c", stats("i-c", 336, "45"),
+        "i-d", stats("i-d", 336, "10.0"),
+        "i-e", stats("i-e", 20, "1"));
+    /** 낭비 탐지가 판단한 서버: i-e는 20시간이라 빠짐 */
+    private static final java.util.Set<String> JUDGED = java.util.Set.of("i-a", "i-b", "i-c", "i-d");
+
+    @Test
+    void 이십사시간_이상_켜진_서버만_판단하고_P95_10퍼센트_미만을_과다_사양으로_센다() {
+        List<ServerVerdict> verdicts = TeamBenchmark.verdicts(INSTANCES, STATS, JUDGED);
+
+        assertThat(verdicts).extracting(v -> v.instance().instanceId()).as("P95 낮은 순, i-e는 20시간이라 제외")
+            .containsExactly("i-b", "i-a", "i-d", "i-c");
+        assertThat(verdicts).extracting(ServerVerdict::oversized).containsExactly(true, true, false, false);
+        assertThat(verdicts.get(2).verdictLabel()).as("정확히 10%는 적정").isEqualTo("적정");
+
+        Ratio ratio = TeamBenchmark.ratio(verdicts);
+        assertThat(ratio.judgedCount()).isEqualTo(4);
+        assertThat(ratio.oversizedCount()).isEqualTo(2);
+        assertThat(ratio.ratioPercent()).isEqualByComparingTo("50.0");
+        assertThat(TeamBenchmark.ratio(List.of()).ratioPercent()).isNull();
+        assertThat(TeamBenchmark.verdicts(INSTANCES, STATS, java.util.Set.of("i-a", "i-c")))
+            .as("낭비 탐지가 판단하지 않은 서버(오래 꺼 둔 서버 등)는 빼서 두 화면의 판단 대상을 맞춘다")
+            .extracting(v -> v.instance().instanceId()).containsExactly("i-a", "i-c");
+    }
+
+    @Test
+    void 추천을_적용하면_사양_변경은_적정이_되고_중지는_판단에서_빠진다() {
+        List<ServerVerdict> verdicts = TeamBenchmark.verdicts(INSTANCES, STATS, JUDGED);
+
+        Ratio after = TeamBenchmark.ratioAfter(verdicts,
+            List.of(finding("i-a", WasteKind.OVERSIZED), finding("i-b", WasteKind.IDLE)));
+
+        assertThat(after.judgedCount()).isEqualTo(3);
+        assertThat(after.oversizedCount()).isZero();
+        assertThat(after.ratioPercent()).isEqualByComparingTo("0.0");
+    }
+
+    @Test
+    void 우리보다_효율적인_팀은_비율이_확실히_낮은_가장_큰_백분위이고_표가_없으면_null이다() {
+        List<Percentile> table = List.of(
+            new Percentile(new BigDecimal("25"), new BigDecimal("20")),
+            new Percentile(new BigDecimal("50"), new BigDecimal("35")),
+            new Percentile(new BigDecimal("75"), new BigDecimal("60")));
+
+        assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("35"), table)).as("35인 팀은 같다고 본다").isEqualByComparingTo("25.0");
+        assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("47.5"), table)).isEqualByComparingTo("50.0");
+        assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("10"), table)).isEqualByComparingTo("0");
+        assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("80"), table)).isEqualByComparingTo("75.0");
+        assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("35"), List.of())).isNull();
+        assertThat(TeamBenchmark.moreEfficientTeamsPercent(null, table)).isNull();
+    }
+
+    @Test
+    void 서버_1_2대처럼_같은_비율이_많아도_과다_사양_0퍼센트_팀보다_효율적인_팀은_없다() {
+        // 실제 Azure 1~2대 구간처럼 5~45%가 0%, 50~55%가 50%, 60% 이상이 100%
+        List<Percentile> table = new java.util.ArrayList<>();
+        for (int p = 5; p < 100; p += 5) {
+            String ratio = p <= 45 ? "0" : p <= 55 ? "50" : "100";
+            table.add(new Percentile(BigDecimal.valueOf(p), new BigDecimal(ratio)));
+        }
+
+        assertThat(TeamBenchmark.moreEfficientTeamsPercent(BigDecimal.ZERO, table)).isEqualByComparingTo("0");
+        assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("50"), table)).isEqualByComparingTo("45.0");
+        assertThat(TeamBenchmark.moreEfficientTeamsPercent(new BigDecimal("100"), table)).isEqualByComparingTo("55.0");
+    }
+
+    @Test
+    void 월_지출은_범위_아래_안_위로_나눈다() {
+        BenchmarkReference.Spend range =
+            new BenchmarkReference.Spend("s", "d", BigDecimal.valueOf(100), BigDecimal.valueOf(500));
+
+        assertThat(TeamBenchmark.position(new BigDecimal("99.99"), range)).isEqualTo(Position.BELOW);
+        assertThat(TeamBenchmark.position(new BigDecimal("100"), range)).isEqualTo(Position.WITHIN);
+        assertThat(TeamBenchmark.position(new BigDecimal("500"), range)).isEqualTo(Position.WITHIN);
+        assertThat(TeamBenchmark.position(new BigDecimal("500.01"), range)).isEqualTo(Position.ABOVE);
+    }
+}

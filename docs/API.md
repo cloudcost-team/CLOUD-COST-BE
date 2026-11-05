@@ -307,3 +307,50 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 ### `POST /demo/simulations?currency=KRW|USD` — 체험 모드
 §3 설정에 `recommendationIds`·`trafficGrowthPercent`·`budget`(모두 선택)을 더한다. 추천 id는 같은 설정의 `POST /demo/waste` 응답에서 나온 값이다.
 기간의 마지막 날을 오늘로 보고 같은 계산을 한다.
+
+## 4-2. 팀 벤치마킹 (이슈 #33, ADR-013)
+### `GET /aws/accounts/{accountId}/benchmark?recommendationIds=&sizeBand=&currency=KRW|USD` — S09 · S09-2~4
+비슷한 규모 팀의 공개 자료와 견준다. 비교 기준은 교체 가능한 파일(`CCI_BENCHMARK_REFERENCE`, 기본 `classpath:benchmark/reference.json`)이다.
+```json
+{ "dataSource": "aws", "currency": "KRW", "status": "OK", "availableAt": null, "window": { "from": "…", "to": "…" },
+  "appliedRecommendationIds": [],
+  "oversizedRatio": {
+    "status": "OK", "ours": { "judgedCount": 4, "oversizedCount": 2, "ratio": 50.0 }, "moreEfficientTeamsPercent": 55.0,
+    "matchedSizeBand": "3-20",
+    "reference": { "source": "Azure Public Dataset V2", "description": "마이크로소프트 내부 서비스 VM 30일 기록 중 같은 VM 대수 구간 구독들의 … 참고용",
+                   "sizeBand": "3-20", "sizeBandLabel": "서버 3~20대", "dataAvailable": true, "sampleSize": 2622,
+                   "averageRatio": 42, "medianRatio": 33, "percentileAvailable": true },
+    "sizeBands": [ { "key": "1-2", "label": "서버 1~2대", "minServers": 1, "maxServers": 2, "dataAvailable": false, "matchesOurs": false },
+                   { "key": "3-20", "label": "서버 3~20대", "minServers": 3, "maxServers": 20, "dataAvailable": true, "matchesOurs": true } ],
+    "servers": [ { "instanceId": "i-0abc", "name": "api-server", "instanceType": "m5.large", "cpuP95": 6.20, "cpuHours": 336,
+                   "oversized": true, "verdict": "과다 사양 (P95 10% 미만)" } ],
+    "afterSimulation": null },
+  "wasteRatio": { "status": "UNAVAILABLE", "reason": "전체 낭비 비율을 구하려면 … 계산하지 않아요.",
+                  "referenceSource": "Flexera 2026 State of the Cloud", "referenceDescription": "…", "referenceAverage": 29 },
+  "monthlySpend": { "status": "OK", "monthlyCost": 312000, "position": "WITHIN",
+                    "range": { "source": "SpendArk Cloud Cost Benchmark 2026", "description": "1~10명 팀의 월 클라우드 지출 범위",
+                               "min": 133309, "max": 666545, "minUsd": 100, "maxUsd": 500 },
+                    "afterSimulation": null },
+  "freshness": { … }, "notes": [ … ], "asOf": "…" }
+```
+- **① 과다 사양 비율**(`oversizedRatio`) = CPU P95 < 10%인 서버 수 ÷ 판단한 서버 수 (최근 14일 중 **24시간 이상** 켜진, 지금 남아 있는 서버).
+  §4 낭비 탐지와 같은 14일 구간·지표를 쓴다. `servers`는 P95 낮은 순 (S09-3).
+  - **서버 대수 구간**: 비교 자료는 서버(VM) 대수 구간별 분포다 (기본 `1-2`·`3-20`). 판단한 서버 수로 우리 구간(`matchedSizeBand`)을 정해 그 구간과 견준다.
+    `sizeBand`(예: `1-2`)를 주면 그 구간과 견준다 (S09 규모 선택, "그 규모 팀과 비교하면"). 고를 수 있는 값은 `sizeBands`, 모르는 값은 400 `VALIDATION_ERROR`.
+  - `status`: `OK` · `NOT_COMPARABLE`(판단한 서버가 없거나, 맞는 구간이 없거나, 고른 구간의 비교 자료가 아직 없음(`reference.dataAvailable: false`) — 비율·목록은 주지만 비교하지 않음) ·
+    `INSUFFICIENT_HISTORY`(기록 14일 미만, `ours`·`servers` 비움).
+  - 기본 파일은 Azure 원본(VM 2,695,548대·구독 6,687곳)을 `scripts/benchmark/AzureOversized.java`로 계산한 값이다:
+    `1-2` 구독 1,473곳 평균 47%·중앙값 50%, `3-20` 구독 2,622곳 평균 42%·중앙값 33% (ADR-013).
+  - `moreEfficientTeamsPercent`: 우리보다 비율이 **확실히 낮은** 팀의 비율(%). 백분위 표에서 비율이 우리보다 낮은 가장 큰 백분위다
+    (5% 단위 하한값. 같은 비율인 팀은 넣지 않는다 — 1~2대 팀은 비율이 0·50·100%뿐이라 같은 값이 많다). 표가 없으면 `null` + `notes` 안내.
+- **② 전체 낭비 비율**(`wasteRatio`): 미연결 볼륨·스냅샷·고정 IP·로드밸런서를 지금 권한으로 볼 수 없어 항상 `UNAVAILABLE` + 사유. Flexera 평균은 참고값이다.
+- **③ 월 지출**(`monthlySpend`): 월말 예상(§2-1, USD)을 비교 범위($100~$500)와 견줘 `BELOW`(미만)·`WITHIN`·`ABOVE`(초과). 범위는 요청 통화로도 준다.
+  월말 예상이 없으면 `status: "NO_FORECAST"`, 금액·위치 `null`. 기록이 14일 미만이어도 월말 예상이 있으면 비교한다.
+  월말 예상의 안내(단가를 모르는 서버를 뺐다는 등 §2-1 `notes`)도 이 응답 `notes`에 함께 준다 (같은 문구는 한 번만).
+- **`recommendationIds`**(쉼표 구분 또는 여러 번)를 주면 `afterSimulation`을 채운다: 과다 사양 추천을 적용한 서버는 적정, 유휴 추천(중지)을 적용한 서버는 판단 대상에서 빠진다고 보고,
+  월 지출은 §4-1 시뮬레이터와 같은 계산(증가율 0)의 적용 후 금액으로 위치를 다시 잡는다. 모르는 id는 400 `UNKNOWN_RECOMMENDATION`.
+- 최상위 `status`: `OK` 또는 `INSUFFICIENT_HISTORY`(+ `availableAt`).
+- 오류: §2와 같다.
+
+### `POST /demo/benchmark?currency=KRW|USD` — 체험 모드
+§3 설정에 `recommendationIds`(선택)를 더한다. `?sizeBand=`도 실제와 같다. 기간의 마지막 14일을 서버별 `usagePattern`으로 판단한다 (`OVERSIZED`·`IDLE`은 과다 사양, `NORMAL`은 적정).

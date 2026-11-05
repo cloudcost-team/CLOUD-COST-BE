@@ -1,0 +1,190 @@
+{
+  "_comment": "팀 벤치마킹 비교 기준 (ADR-013). 외부 자료의 숫자라 코드 대신 이 파일로 둔다. 바꾸면 docs/API.md §4-2와 ADR-013도 확인한다. 다른 파일을 쓰려면 CCI_BENCHMARK_REFERENCE(예: file:/opt/cci/reference.json)를 지정한다. oversized는 Azure Public Dataset V2 원본(vmtable, VM 2,695,548대·구독 6,687곳)을 `java scripts/benchmark/AzureOversized.java vmtable.csv.gz`로 계산한 결과다 (2026-11-05). 구간을 바꾸려면 --bands로 다시 계산해 통째로 바꾼다.",
+  "oversized": {
+    "source": "Azure Public Dataset V2",
+    "description": "마이크로소프트 내부 서비스 VM 30일 기록 중 같은 VM 대수 구간 구독들의 과다 사양(5분 최대 CPU의 P95 10% 미만) VM 비율. 측정 방식이 달라 참고용",
+    "bands": [
+      {
+        "minServers": 1,
+        "maxServers": 2,
+        "sampleSize": 1473,
+        "averagePercent": 47,
+        "medianPercent": 50,
+        "percentiles": [
+          {
+            "percentile": 5,
+            "ratioPercent": 0.0
+          },
+          {
+            "percentile": 10,
+            "ratioPercent": 0.0
+          },
+          {
+            "percentile": 15,
+            "ratioPercent": 0.0
+          },
+          {
+            "percentile": 20,
+            "ratioPercent": 0.0
+          },
+          {
+            "percentile": 25,
+            "ratioPercent": 0.0
+          },
+          {
+            "percentile": 30,
+            "ratioPercent": 0.0
+          },
+          {
+            "percentile": 35,
+            "ratioPercent": 0.0
+          },
+          {
+            "percentile": 40,
+            "ratioPercent": 0.0
+          },
+          {
+            "percentile": 45,
+            "ratioPercent": 0.0
+          },
+          {
+            "percentile": 50,
+            "ratioPercent": 50.0
+          },
+          {
+            "percentile": 55,
+            "ratioPercent": 50.0
+          },
+          {
+            "percentile": 60,
+            "ratioPercent": 100.0
+          },
+          {
+            "percentile": 65,
+            "ratioPercent": 100.0
+          },
+          {
+            "percentile": 70,
+            "ratioPercent": 100.0
+          },
+          {
+            "percentile": 75,
+            "ratioPercent": 100.0
+          },
+          {
+            "percentile": 80,
+            "ratioPercent": 100.0
+          },
+          {
+            "percentile": 85,
+            "ratioPercent": 100.0
+          },
+          {
+            "percentile": 90,
+            "ratioPercent": 100.0
+          },
+          {
+            "percentile": 95,
+            "ratioPercent": 100.0
+          }
+        ]
+      },
+      {
+        "minServers": 3,
+        "maxServers": 20,
+        "sampleSize": 2622,
+        "averagePercent": 42,
+        "medianPercent": 33,
+        "percentiles": [
+          {
+            "percentile": 5,
+            "ratioPercent": 0.0
+          },
+          {
+            "percentile": 10,
+            "ratioPercent": 0.0
+          },
+          {
+            "percentile": 15,
+            "ratioPercent": 0.0
+          },
+          {
+            "percentile": 20,
+            "ratioPercent": 0.0
+          },
+          {
+            "percentile": 25,
+            "ratioPercent": 0.0
+          },
+          {
+            "percentile": 30,
+            "ratioPercent": 12.5
+          },
+          {
+            "percentile": 35,
+            "ratioPercent": 20.0
+          },
+          {
+            "percentile": 40,
+            "ratioPercent": 25.0
+          },
+          {
+            "percentile": 45,
+            "ratioPercent": 31.3
+          },
+          {
+            "percentile": 50,
+            "ratioPercent": 33.3
+          },
+          {
+            "percentile": 55,
+            "ratioPercent": 42.9
+          },
+          {
+            "percentile": 60,
+            "ratioPercent": 50.0
+          },
+          {
+            "percentile": 65,
+            "ratioPercent": 57.9
+          },
+          {
+            "percentile": 70,
+            "ratioPercent": 66.7
+          },
+          {
+            "percentile": 75,
+            "ratioPercent": 72.7
+          },
+          {
+            "percentile": 80,
+            "ratioPercent": 80.0
+          },
+          {
+            "percentile": 85,
+            "ratioPercent": 100.0
+          },
+          {
+            "percentile": 90,
+            "ratioPercent": 100.0
+          },
+          {
+            "percentile": 95,
+            "ratioPercent": 100.0
+          }
+        ]
+      }
+    ]
+  },
+  "waste": {
+    "source": "Flexera 2026 State of the Cloud",
+    "description": "응답 기업이 추정한 클라우드 지출 중 낭비 비율 평균",
+    "averagePercent": 29
+  },
+  "spend": {
+    "source": "SpendArk Cloud Cost Benchmark 2026",
+    "description": "1~10명 팀의 월 클라우드 지출 범위",
+    "minUsd": 100,
+    "maxUsd": 500
+  }
+}

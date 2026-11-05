@@ -2,6 +2,7 @@ package com.cloudcost.entrypoint.config;
 
 import com.cloudcost.application.AuthService;
 import com.cloudcost.application.AwsAccountService;
+import com.cloudcost.application.BenchmarkService;
 import com.cloudcost.application.CurrencyService;
 import com.cloudcost.application.Ec2DataRefresher;
 import com.cloudcost.application.DashboardService;
@@ -15,6 +16,7 @@ import com.cloudcost.application.UsageSettings;
 import com.cloudcost.application.WasteService;
 import com.cloudcost.application.port.AccessTokens;
 import com.cloudcost.application.port.AwsAccountRepository;
+import com.cloudcost.application.port.BenchmarkReferenceSource;
 import com.cloudcost.application.port.BudgetRepository;
 import com.cloudcost.application.port.CustomerAwsGateway;
 import com.cloudcost.application.port.Ec2InstanceRepository;
@@ -184,6 +186,16 @@ class ApplicationWiring {
     SimulationService simulationService(
             WasteService waste, DashboardService dashboards, DemoUsageService demo, Clock clock) {
         return new SimulationService(waste, dashboards, demo, clock);
+    }
+
+    @Bean
+    BenchmarkService benchmarkService(
+            WasteService waste,
+            DashboardService dashboards,
+            DemoUsageService demo,
+            BenchmarkReferenceSource references,
+            Clock clock) {
+        return new BenchmarkService(waste, dashboards, demo, references, clock);
     }
 
     @Bean

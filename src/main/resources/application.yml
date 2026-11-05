@@ -67,6 +67,9 @@ cci:
   demo:
     username: ${CCI_DEMO_USERNAME:cloudcost}
     password: ${CCI_DEMO_PASSWORD:1234}
+  # 팀 벤치마킹 비교 기준 파일 (docs/decisions/013). 바꾸려면 file:/경로/reference.json
+  benchmark:
+    reference: ${CCI_BENCHMARK_REFERENCE:classpath:benchmark/reference.json}
   usage:
     instance-ttl: ${CCI_INSTANCE_TTL:10m}
     usage-ttl: ${CCI_USAGE_TTL:1h}

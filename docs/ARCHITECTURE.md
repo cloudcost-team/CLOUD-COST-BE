@@ -15,6 +15,7 @@ application
    ├─ DashboardService       대시보드 요약(월말 예상·전월 같은 기간 대비·최근 급증)·연결별 월 예산
    ├─ WasteService           낭비 리소스 (최근 14일 사용률 + 단가 → WasteDetector, ADR-010)
    ├─ SimulationService      비용 시뮬레이터 (낭비 추천 + 월말 예상·예산 → CostSimulation, ADR-012)
+   ├─ BenchmarkService       팀 벤치마킹 (최근 14일 사용률·월말 예상 vs 비교 기준 파일 → TeamBenchmark, ADR-013)
    ├─ PriceService           온디맨드 단가 (DB 캐시 7일)
    └─ CurrencyService        원화 환산 환율 (Frankfurter, DB 캐시 6시간, ADR-005)
    ▼ ports
@@ -22,6 +23,7 @@ adapter/awscustomer  ── STS AssumeRole → EC2 DescribeInstances, CloudWatch
 adapter/awsinternal  ── Price List GetProducts (us-east-1), SQS 신호 수신, CloudFormation 응답 PUT  [우리 계정]
 entrypoint/worker    ── StackCallbackPoller: SQS long polling (CCI_CALLBACK_QUEUE_URL 있을 때만)
 adapter/persistence  ── JPA + Flyway (PostgreSQL / 테스트는 H2)
+adapter/benchmark    ── 벤치마킹 비교 기준 JSON (classpath:benchmark/reference.json, 교체 가능)
 ```
 
 ## 연결 (ADR-003)
@@ -77,6 +79,7 @@ DISCONNECTED: 수집하지 않음. 새 스택으로 실제 검증에 성공할 �
 |---|---|
 | `MonthEndForecast` · `MonthlyBudget` | 월말 예상(어제까지 + 최근 7일 평균 × 남은 날), 예산 대비 %, 예산 통화 환산 |
 | `SpikeDetector` | 급증일(그날 비용 ≥ 직전 30일 중앙값 × 1.5)과 원인 서버(평소보다 사용 시간이 가장 많이 늘어난 서버) (ADR-011) |
+| `TeamBenchmark` · `BenchmarkReference` | 과다 사양 비율(P95 10% 미만 ÷ 판단한 서버)·적용 후 비율·백분위 위치, 월 지출 범위 위치 (ADR-013) |
 | `CostSimulation` | 추천 적용·트래픽 증가 반영 전후 월 비용, 월·연 절감, 예산 안인지 (ADR-012) |
 | `WasteDetector` · `InstanceSpecs` | 유휴·과다 사양 판단, 한 단계 줄인 t3 타입, 월 절감액 (ADR-010) |
 | `UtilizationStats` | 최근 14일 CPU 평균(가중)·P95(시간 평균의 95번째 백분위)·최대, 네트워크 합계 (낭비 탐지·벤치마킹 근거) |
@@ -113,6 +116,7 @@ DISCONNECTED: 수집하지 않음. 새 스택으로 실제 검증에 성공할 �
 | `AWS_PROFILE` | | 백엔드 자격증명 프로필 (로컬) |
 | `CCI_INSTANCE_TTL` / `CCI_USAGE_TTL` / `CCI_USAGE_BACKFILL` | 10m / 1h / 90d | |
 | `CCI_MAX_CW_REQUESTS` | 500 | 수집 1회 CloudWatch 호출 상한 |
+| `CCI_BENCHMARK_REFERENCE` | `classpath:benchmark/reference.json` | 팀 벤치마킹 비교 기준 파일 (`file:/경로`로 교체, ADR-013) |
 | `cci.fx.url` / `cci.fx.refresh-interval` | Frankfurter USD→KRW / 6h | 환율 API·재조회 간격 |
 | `MANAGEMENT_PORT` | 8081 | Actuator(`/actuator/health`, `/actuator/prometheus`) 전용 포트. 외부(Caddy)로 열지 않는다 |
 | `COMPOSE_PROFILES` | (없음) | 서버에서 `monitoring`이면 Alloy 에이전트 실행 |

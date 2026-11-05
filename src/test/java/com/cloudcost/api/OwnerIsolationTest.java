@@ -33,7 +33,8 @@ class OwnerIsolationTest extends IntegrationTestBase {
                 "/api/v1/aws/accounts/" + accountOfA + "/costs/daily",
                 "/api/v1/aws/accounts/" + accountOfA + "/costs/monthly",
                 "/api/v1/aws/accounts/" + accountOfA + "/waste",
-                "/api/v1/aws/accounts/" + accountOfA + "/dashboard");
+                "/api/v1/aws/accounts/" + accountOfA + "/dashboard",
+                "/api/v1/aws/accounts/" + accountOfA + "/benchmark");
         for (String path : paths) {
             mvc.perform(as(userB, get(path)))
                     .andExpect(status().isNotFound())

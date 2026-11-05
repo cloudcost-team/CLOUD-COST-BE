@@ -17,7 +17,9 @@ import com.cloudcost.entrypoint.api.dto.UsageDtos.MonthlyCostResponse;
 import com.cloudcost.entrypoint.api.dto.WasteDtos.WasteResponse;
 import com.cloudcost.entrypoint.api.dto.DashboardDtos.DashboardResponse;
 import com.cloudcost.application.DashboardService;
+import com.cloudcost.application.BenchmarkService;
 import com.cloudcost.application.SimulationService;
+import com.cloudcost.entrypoint.api.dto.BenchmarkDtos.BenchmarkResponse;
 import com.cloudcost.entrypoint.api.dto.SimulationDtos.SimulationResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -40,6 +42,7 @@ class DemoController {
     private final DemoUsageService demo;
     private final DashboardService dashboards;
     private final SimulationService simulations;
+    private final BenchmarkService benchmarks;
     private final CurrencyService currencies;
     private final String timezone;
 
@@ -47,11 +50,13 @@ class DemoController {
             DemoUsageService demo,
             DashboardService dashboards,
             SimulationService simulations,
+            BenchmarkService benchmarks,
             CurrencyService currencies,
             UsageSettings settings) {
         this.demo = demo;
         this.dashboards = dashboards;
         this.simulations = simulations;
+        this.benchmarks = benchmarks;
         this.currencies = currencies;
         this.timezone = settings.zone().getId();
     }
@@ -129,6 +134,18 @@ class DemoController {
             @Valid @RequestBody SetupRequest setup, @RequestParam(defaultValue = "KRW") Currency currency) {
         return SimulationResponse.of(
                 simulations.demoSimulate(setup.toDomain(), setup.budgetOrNull(), setup.ids(), setup.growth()),
+                currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
+    }
+
+    @PostMapping("/benchmark")
+    @Operation(summary = "설정한 구성의 팀 벤치마킹 (실제: GET /aws/accounts/{id}/benchmark)",
+            description = "기간의 마지막 14일을 서버별 usagePattern으로 판단한다. recommendationIds(선택)를 주면 적용 후 위치도 준다.")
+    BenchmarkResponse benchmark(
+            @Valid @RequestBody SetupRequest setup,
+            @Parameter(description = "비교할 서버 대수 구간 (예: 1-2). 없으면 설정한 서버 대수에 맞는 구간", example = "1-2")
+                    @RequestParam(required = false) String sizeBand,
+            @RequestParam(defaultValue = "KRW") Currency currency) {
+        return BenchmarkResponse.of(benchmarks.demoBenchmark(setup.toDomain(), setup.ids(), sizeBand),
                 currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
     }
 }
