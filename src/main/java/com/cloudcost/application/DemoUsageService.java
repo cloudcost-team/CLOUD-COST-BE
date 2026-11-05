@@ -1,11 +1,13 @@
 package com.cloudcost.application;
 
+import com.cloudcost.application.Ec2UsageQueryService.DailyView;
 import com.cloudcost.application.Ec2UsageQueryService.InstanceRow;
 import com.cloudcost.application.Ec2UsageQueryService.InstancesView;
 import com.cloudcost.application.Ec2UsageQueryService.UsageCostView;
 import com.cloudcost.application.error.AuthenticationFailedException;
 import com.cloudcost.domain.cost.CostEstimator;
 import com.cloudcost.domain.cost.CostEstimator.CostReport;
+import com.cloudcost.domain.cost.CostEstimator.PeriodCost;
 import com.cloudcost.domain.cost.CostNotes;
 import com.cloudcost.domain.cost.InstancePrice;
 import com.cloudcost.domain.demo.DemoCatalog;
@@ -15,6 +17,7 @@ import com.cloudcost.domain.demo.DemoSetup;
 import com.cloudcost.domain.ec2.Ec2Instance;
 import com.cloudcost.domain.ec2.InstanceSpecs;
 import com.cloudcost.domain.ec2.TrackedInstance;
+import com.cloudcost.domain.spike.SpikeDetector;
 import com.cloudcost.domain.usage.CurrentRun;
 import com.cloudcost.domain.usage.DateRange;
 import com.cloudcost.domain.usage.UsageAggregator;
@@ -95,6 +98,34 @@ public class DemoUsageService {
 
     public UsageCostView<LocalDate> daily(DemoSetup setup) {
         return query(setup, Function.identity());
+    }
+
+    /** 일별 + 급증일. 실제 연결처럼 처음 사용한 날부터 평소 비용을 잰다 (주말에 시작한 평일 일정 등) */
+    public DailyView dailyWithSpikes(DemoSetup setup) {
+        UsageCostView<LocalDate> view = daily(setup);
+        return new DailyView(view, SpikeDetector.detect(view.report(),
+            SpikeDetector.baselineFrom(view.availableFrom(), firstUsedDay(view)), view.range().from(), view.range().to()));
+    }
+
+    /**
+     * 지정한 기간의 일별 + 급증일 (대시보드용). 실제 연결처럼 기간 앞 30일도 읽어 기간 첫날부터 평소 비용을 잰다
+     * (설정한 기간이 길면 대시보드 기간 앞에도 기록이 있다).
+     */
+    public DailyView dailyWithSpikes(DemoSetup setup, DateRange range) {
+        UsageCostView<LocalDate> view = daily(setup, range);
+        UsageCostView<LocalDate> withBaseline =
+            daily(setup, new DateRange(range.from().minusDays(SpikeDetector.BASELINE_DAYS), range.to()));
+        return new DailyView(view, SpikeDetector.detect(withBaseline.report(),
+            SpikeDetector.baselineFrom(withBaseline.availableFrom(), firstUsedDay(daily(setup))), range.from(), range.to()));
+    }
+
+    /** 설정한 기간 전체에서 처음 켜져 있던 날 (조회 기간과 상관없이 같다). 없으면 null */
+    static LocalDate firstUsedDay(UsageCostView<LocalDate> whole) {
+        return whole.report().periods().stream()
+            .filter(p -> p.usedMinutes() > 0)
+            .map(PeriodCost::period)
+            .findFirst()
+            .orElse(null);
     }
 
     /** 설정한 기간을 월별로 나눈 합계 */

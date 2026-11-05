@@ -23,7 +23,7 @@ public record DemoSetup(List<Server> servers, LocalDate from, LocalDate to) {
     /**
      * 서버 한 줄 = 같은 설정의 인스턴스 count대.
      *
-     * @param hoursPerDay DAILY_HOURS일 때 하루 사용 시간 (1~24). 다른 패턴에서는 쓰지 않는다
+     * @param hoursPerDay DAILY_HOURS·MONTHLY_SPIKE일 때 하루 사용 시간 (1~24). 다른 패턴에서는 쓰지 않는다
      * @param usage       켜져 있는 동안의 CPU·네트워크 사용 모양. 없으면 NORMAL
      */
     public record Server(
@@ -52,7 +52,7 @@ public record DemoSetup(List<Server> servers, LocalDate from, LocalDate to) {
             if (count < 1 || count > MAX_COUNT) {
                 throw invalid("대수는 1~" + MAX_COUNT + "대로 입력해 주세요.");
             }
-            if (schedule == DemoSchedule.DAILY_HOURS && (hoursPerDay < 1 || hoursPerDay > 24)) {
+            if (schedule.usesHoursPerDay() && (hoursPerDay < 1 || hoursPerDay > 24)) {
                 throw invalid("하루 사용 시간은 1~24시간으로 입력해 주세요.");
             }
         }

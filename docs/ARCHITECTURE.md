@@ -10,9 +10,9 @@ entrypoint/api (Spring MVC)
 application
    ├─ AwsAccountService      연결 생성(External ID, 빠른 생성 링크) · Role 검증(실제 AssumeRole)
    ├─ StackCallbackService   고객 스택 신호 처리 → 검증(재시도) → CloudFormation 응답 / 삭제 시 DISCONNECTED
-   ├─ Ec2UsageQueryService   인스턴스 · 기간 합계 · 일별 · 월별
+   ├─ Ec2UsageQueryService   인스턴스 · 기간 합계 · 일별(+급증일, ADR-011) · 월별
    │     └─ Ec2DataRefresher  캐시 확인 → 필요할 때만 AWS 호출 → DB 저장 (계정 단위 잠금)
-   ├─ DashboardService       대시보드 요약(월말 예상·전월 같은 기간 대비)·연결별 월 예산
+   ├─ DashboardService       대시보드 요약(월말 예상·전월 같은 기간 대비·최근 급증)·연결별 월 예산
    ├─ WasteService           낭비 리소스 (최근 14일 사용률 + 단가 → WasteDetector, ADR-010)
    ├─ PriceService           온디맨드 단가 (DB 캐시 7일)
    └─ CurrencyService        원화 환산 환율 (Frankfurter, DB 캐시 6시간, ADR-005)
@@ -75,6 +75,7 @@ DISCONNECTED: 수집하지 않음. 새 스택으로 실제 검증에 성공할 �
 | 클래스 | 하는 일 |
 |---|---|
 | `MonthEndForecast` · `MonthlyBudget` | 월말 예상(어제까지 + 최근 7일 평균 × 남은 날), 예산 대비 %, 예산 통화 환산 |
+| `SpikeDetector` | 급증일(그날 비용 ≥ 직전 30일 중앙값 × 1.5)과 원인 서버(평소보다 사용 시간이 가장 많이 늘어난 서버) (ADR-011) |
 | `WasteDetector` · `InstanceSpecs` | 유휴·과다 사양 판단, 한 단계 줄인 t3 타입, 월 절감액 (ADR-010) |
 | `UtilizationStats` | 최근 14일 CPU 평균(가중)·P95(시간 평균의 95번째 백분위)·최대, 네트워크 합계 (낭비 탐지·벤치마킹 근거) |
 | `UsageCalculator` | 시간별 SampleCount → 사용 분. CPUUtilization은 켜져 있는 동안 1분마다 샘플을 남기므로 SampleCount = 사용 분 (최대 60) |

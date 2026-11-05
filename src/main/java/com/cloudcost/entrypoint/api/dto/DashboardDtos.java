@@ -3,6 +3,7 @@ package com.cloudcost.entrypoint.api.dto;
 import com.cloudcost.application.CurrencyService.Resolved;
 import com.cloudcost.application.DashboardService.BudgetStatus;
 import com.cloudcost.application.DashboardService.DashboardView;
+import com.cloudcost.application.DashboardService.LatestSpike;
 import com.cloudcost.application.DashboardService.PeriodTotal;
 import com.cloudcost.application.DashboardService.PreviousComparison;
 import com.cloudcost.domain.budget.MonthEndForecast;
@@ -11,6 +12,7 @@ import com.cloudcost.domain.cost.CostNotes;
 import com.cloudcost.domain.cost.DisplayCurrency;
 import com.cloudcost.domain.cost.DisplayCurrency.Currency;
 import com.cloudcost.domain.demo.DemoFleet;
+import com.cloudcost.domain.spike.SpikeDetector.Spike;
 import com.cloudcost.entrypoint.api.dto.UsageDtos.ExchangeRateDto;
 import com.cloudcost.entrypoint.api.dto.UsageDtos.FreshnessDto;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -116,6 +118,27 @@ public final class DashboardDtos {
         }
     }
 
+    @Schema(description = "최근 30일(오늘 포함) 중 가장 최근 급증일 (S06 배너). 없으면 null")
+    public record LatestSpikeDto(
+            @Schema(example = "2026-10-12") LocalDate date,
+            @Schema(description = "그날 추정 비용", example = "9840") BigDecimal cost,
+            @Schema(description = "그날 비용 ÷ 평소", example = "2.4") BigDecimal ratio,
+            @Schema(description = "평소 하루 비용 (직전 30일 중앙값)", example = "4100") BigDecimal baseline,
+            @Schema(description = "평소를 잰 날 수 (7~30)") int baselineDays,
+            String causeInstanceId,
+            @Schema(example = "web-server-1") String causeName,
+            @Schema(example = "10/12 비용 급증 · 평소의 2.4배 · web-server-1 사용 시간이 늘었어요") String message) {
+
+        static LatestSpikeDto of(LatestSpike latest, DisplayCurrency d) {
+            if (latest == null) {
+                return null;
+            }
+            Spike s = latest.spike();
+            return new LatestSpikeDto(s.date(), d.cost(s.costUsd()), s.ratio(), d.cost(s.baselineUsd()),
+                    s.baselineDays(), s.causeInstanceId(), latest.causeName(), s.message(latest.causeName()));
+        }
+    }
+
     public record DashboardResponse(
             String dataSource,
             String costBasis,
@@ -131,6 +154,7 @@ public final class DashboardDtos {
             ForecastDto forecast,
             BudgetDto budget,
             PreviousMonthDto previousMonthSamePeriod,
+            LatestSpikeDto latestSpike,
             FreshnessDto freshness,
             List<String> notes,
             Instant asOf) {
@@ -154,7 +178,7 @@ public final class DashboardDtos {
                     new MonthToDateDto(mtd.from(), mtd.to(), UsageDtos.hours(mtd.usedMinutes()), d.cost(mtd.costUsd())),
                     new InstanceCountsDto(v.runningCount(), v.stoppedCount()),
                     ForecastDto.of(v.forecast(), d), BudgetDto.of(v.budget(), d), PreviousMonthDto.of(v.previous(), d),
-                    FreshnessDto.of(v.freshness()), List.copyOf(notes), v.asOf());
+                    LatestSpikeDto.of(v.latestSpike(), d), FreshnessDto.of(v.freshness()), List.copyOf(notes), v.asOf());
         }
     }
 }

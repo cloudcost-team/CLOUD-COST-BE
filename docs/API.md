@@ -133,7 +133,17 @@
                    "usageHours": 10.17, "estimatedHourlyCost": 0.0416, "estimatedCost": 0.42, "note": null } ] }
 ```
 ### `GET /aws/accounts/{accountId}/costs/daily?from=&to=` (기본: 최근 30일)
-`days: [ { "date": "2026-10-07", "usageHours": 10.00, "estimatedCost": 0.42, "instances": [ … ] } ]` — 사용이 없는 날도 포함.
+`days: [ { "date": "2026-10-07", "usageHours": 10.00, "estimatedCost": 0.42, "instances": [ … ], "spike": null } ]` — 사용이 없는 날도 포함.
+- **급증일**(`spike`, 이슈 #29, ADR-011 · S06 빨간 막대 · S06-6 그날 상세). 급증이 아니거나 판정하지 않은 날은 `null`.
+```json
+"spike": { "ratio": 2.4, "baseline": 4100, "baselineDays": 30, "causeInstanceId": "i-0abc", "causeName": "web-server-1",
+           "causeUsageHours": 24.00, "causeBaselineHours": 8.00,
+           "message": "10/12 비용 급증 · 평소의 2.4배 · web-server-1 사용 시간이 늘었어요" }
+```
+  - 평소(`baseline`) = 그날 **직전 30일** 중 기록 있는 날(기록 시작일 `availableFrom` 이후, 처음 사용한 날부터)의 하루 추정 비용 **중앙값**. 쓴 기록은 있는데 단가를 하나도 모르는 날은 0원이 아니라 평소·판정 대상에서 뺀다. 조회 기간 앞 30일도 함께 읽어 첫날부터 판정한다.
+  - 급증 = 그날 비용 ≥ 평소 × 1.5. 평소를 잰 날이 7일 미만이거나 평소가 0이면 판정하지 않는다. `ratio`는 소수 첫째 자리.
+  - 원인 서버 = 단가를 아는 서버(비용에 들어간 서버) 중에서 그날 사용 시간이 자기 평소(평소 비용을 잰 날들의 하루 사용 시간 중앙값. 단가를 하나도 모르는 날은 단가를 아는 서버가 모두 0시간이라 넣지 않는다)보다 가장 많이 늘어난 인스턴스. 늘어난 서버가 없으면 `cause*`가 `null`이고 문구에 서버를 쓰지 않는다.
+  - 진행 중인 오늘도 판정한다 (이미 기준을 넘었으면 급증). 단가를 모르는 서버는 비용에 들어가지 않는다.
 ### `GET /aws/accounts/{accountId}/costs/monthly?from=YYYY-MM&to=YYYY-MM` (기본: 최근 3개월)
 `months: [ { "month": "2026-10", "usageHours": …, "estimatedCost": …, "estimatedCostChange": -1200, "instances": [ … ] } ]` — 일별 합산.
 - `estimatedCostChange`: 직전 달 대비 추정 비용 증감 (요청 통화 기준, 반올림한 금액끼리의 차). 첫 달이면 `null`.
@@ -154,12 +164,15 @@
   "today": "2026-11-04", "month": "2026-11", "availableFrom": "2026-08-06",
   "monthToDate": { "from": "2026-11-01", "to": "2026-11-04", "usageHours": 1240.00, "estimatedCost": 128400 },
   "instanceCounts": { "running": 4, "stopped": 2 },
-  "forecast": { "monthEndCost": 312000, "costThroughYesterday": 96300, "dailyAverage": 7700,
+  "forecast": { "monthEndCost": 304200, "costThroughYesterday": 96300, "dailyAverage": 7700,
                 "basisFrom": "2026-10-28", "basisTo": "2026-11-03", "basisDays": 7, "remainingDays": 27 },
-  "budget": { "amount": 400000, "enteredAmount": 400000, "enteredCurrency": "KRW", "usageRate": 78.0, "thresholdReached": null },
+  "budget": { "amount": 400000, "enteredAmount": 400000, "enteredCurrency": "KRW", "usageRate": 76.1, "thresholdReached": null },
   "previousMonthSamePeriod": { "currentFrom": "2026-11-01", "currentTo": "2026-11-03", "currentCost": 96300,
                                "previousFrom": "2026-10-01", "previousTo": "2026-10-03", "previousCost": 86000,
                                "change": 10300, "changeRate": 12.0 },
+  "latestSpike": { "date": "2026-10-12", "cost": 9840, "ratio": 2.4, "baseline": 4100, "baselineDays": 30,
+                   "causeInstanceId": "i-0abc", "causeName": "web-server-1",
+                   "message": "10/12 비용 급증 · 평소의 2.4배 · web-server-1 사용 시간이 늘었어요" },
   "freshness": { … }, "notes": [ "월말 예상 = …" ], "asOf": "…" }
 ```
 - **이번 달 추정 비용**(`monthToDate`): 1일 ~ 오늘(진행 중인 오늘 포함). 사용 시간 카드의 대수는 `instanceCounts`(지금 남아 있는 인스턴스의 실행 중·중지됨).
@@ -171,6 +184,7 @@
   `change`는 반올림한 금액끼리의 차, `changeRate`는 전월이 0이면 `null`. 매달 1일이거나 전월 1일이 기록 시작일보다 앞이면 `null` + `notes` 안내.
 - 단가를 모르는 서버는 §2처럼 합계에서 빼고 `notes`로 알린다. **단가를 아는 서버가 하나도 없으면** 0원으로 보이지 않도록
   `monthToDate.estimatedCost`·`forecast`·`previousMonthSamePeriod`·`budget.usageRate`가 `null`이다 (사용 시간은 그대로).
+- **최근 급증**(`latestSpike`, S06 배너): 최근 30일(오늘 포함) 중 가장 최근 급증일. 규칙은 §2 `costs/daily`의 `spike`와 같다. 없으면 `null`.
 - 환율은 원화 예산이 있을 때만 조회한다 (응답 통화 환산은 §2와 같다).
 - 오류: §2와 같다.
 
@@ -179,7 +193,7 @@
 요청 { "amount": 400000, "currency": "KRW" }   응답 { "accountId": "…", "amount": 400000, "currency": "KRW" }
 ```
 - 입력한 통화 그대로 저장한다 (원화는 원 단위, 달러는 센트 단위로 반올림). 연결마다 하나이고 다시 보내면 바꾼다. 연결 상태와 관계없이 정할 수 있다.
-- 400 `VALIDATION_ERROR`: 0 이하, 1조 초과, 숫자가 아님, `amount`·`currency` 없음 (`details`에 필드별 문구). 남의 연결은 404.
+- 400 `VALIDATION_ERROR`: 0 이하, 1조 초과, 소수점 아래 18자리 초과(예: `1E-1000000000`), 숫자가 아님, `amount`·`currency` 없음 (`details`에 필드별 문구). 남의 연결은 404.
 ### `DELETE /aws/accounts/{accountId}/budget` → 204
 예산을 지운다 ("설정 안 함"). 연결을 삭제하면 예산도 함께 지운다.
 
@@ -197,7 +211,8 @@ Google 로그인 없이 간이 로그인 → 서버 구성·기간 설정 → �
 
 ### `GET /demo/catalog`
 고를 수 있는 `instanceTypes`(타입별 Linux·Windows 시간당 USD), `os`(`LINUX`|`WINDOWS`),
-`schedules`(`ALWAYS` 24시간 · `WEEKDAY_OFFICE` 평일 09~19시 · `DAILY_HOURS` 매일 09시부터 N시간),
+`schedules`(`ALWAYS` 24시간 · `WEEKDAY_OFFICE` 평일 09~19시 · `DAILY_HOURS` 매일 09시부터 N시간 ·
+`MONTHLY_SPIKE` 매일 09시부터 N시간이지만 매달 12일은 24시간 — 급증 체험용, `hoursPerDay` 필요),
 `usagePatterns`(켜져 있는 동안의 CPU·네트워크 모양: `NORMAL` 업무 시간 CPU 40~70% · `OVERSIZED` CPU 3~8% · `IDLE` CPU 1% 미만·네트워크 거의 없음),
 한도(`maxServers` 20, `maxCountPerServer` 10, `maxInstances` 50).
 
@@ -213,6 +228,8 @@ Google 로그인 없이 간이 로그인 → 서버 구성·기간 설정 → �
 - `usagePattern`은 선택이고 없으면 `NORMAL`이다. 비용 응답에는 드러나지 않고, 낭비 탐지(`POST /demo/waste`, §4)·벤치마킹 체험에 쓰인다.
   값은 인스턴스 ID·시각으로 정한 결정적 값이라 같은 설정이면 항상 같다.
 - 단가는 서울 리전 온디맨드 단가를 고정값으로 쓴다 (Price List를 부르지 않음). 금액 계산은 실제 경로와 같은 domain 로직이다.
+- `POST /demo/costs/daily`도 `days[].spike`를 준다. 체험 모드도 실제 연결처럼 처음 켜진 날부터 평소를 잰다 (`from`이 주말인 평일 일정이면 첫 평일부터. `from` 앞은 기록이 없다).
+  예: `from` 9/1, `MONTHLY_SPIKE`·`hoursPerDay` 4인 서버가 있으면 9/12가 급증일이 된다 (평소를 잰 날 11일).
 - 잘못된 설정은 400 `DEMO_INVALID_SETUP` (이유는 `message`): 모르는 타입, 대수 1~10 밖, 합계 50대 초과, `to`가 오늘 이후 등. 기간 455일 초과는 `INVALID_PERIOD`.
 
 ### `POST /demo/dashboard` (`?currency=KRW|USD`) — 체험 모드 대시보드 요약
@@ -231,7 +248,7 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 { "dataSource": "aws", "costBasis": "estimated_on_demand", "currency": "KRW", "exchangeRate": { … },
   "status": "OK", "availableAt": null,
   "window": { "from": "2026-10-21T02:00:00Z", "to": "2026-11-04T02:00:00Z" },
-  "totalMonthlySavings": 132000, "forecastMonthEndCost": 312000, "savingsRateOfForecast": 42.3, "findingCount": 3, "counts": { "oversized": 2, "idle": 1 }, "judgedCount": 5,
+  "totalMonthlySavings": 132000, "forecastMonthEndCost": 304200, "savingsRateOfForecast": 43.4, "findingCount": 3, "counts": { "oversized": 2, "idle": 1 }, "judgedCount": 5,
   "items": [ {
       "recommendationId": "i-0abc:OVERSIZED", "instanceId": "i-0abc", "name": "api-server", "instanceType": "m5.large",
       "state": "running", "kind": "OVERSIZED", "kindLabel": "과다 사양",
@@ -242,14 +259,15 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
         "current":     { "instanceType": "m5.large",  "vcpu": 2, "memoryGib": 8, "hourlyCost": 162.1, "monthlyCostAt730h": 118300 },
         "recommended": { "instanceType": "t3.medium", "vcpu": 2, "memoryGib": 4, "hourlyCost": 72.1,  "monthlyCostAt730h": 52600 } },
       "cautions": [ "메모리 사용률은 CloudWatch 기본 지표에 없어 판단에 넣지 않았어요. …", … ],
-      "consoleSteps": [ "EC2 → 인스턴스에서 api-server을(를) 중지해요 …", … ] } ],
+      "consoleSteps": [ "EC2 → 인스턴스에서 api-server을(를) 중지해요 …", … ] },
+    … (나머지 2건 생략) ],
   "skipped": [ { "instanceId": "i-0gpu", "name": "gpu-test", "reason": "CPU를 적게 쓰지만 GPU 타입이라 …" } ],
   "freshness": { … }, "notes": [ "…미연결 볼륨 · 미사용 고정 IP · 스냅샷 · 로드밸런서는 지금 연결 권한으로는 찾을 수 없어요." ], "asOf": "…" }
 ```
 - `status`: `OK`(추천 있음) · `NONE_FOUND`(판단했지만 줄일 서버 없음, S07-3 A) · `INSUFFICIENT_HISTORY`(기록 시작일부터 14일 미만, S07-3 B. `availableAt`부터 판단).
   연결 오류(S07-3 D)는 §2처럼 저장된 기록으로 판단하고 `freshness.warnings`에 원인이 붙는다.
 - 규칙 (최근 14일 동안 **24시간 이상** 켜져 있던 서버만 판단, `judgedCount`):
-  - **유휴** `IDLE`: CPU 평균 < 1% 그리고 네트워크 입출력 하루 평균 < 5MB → 중지 검토. 절감액 = 월 추정 비용 전부. 네트워크를 아직 모르면 유휴로 보지 않는다.
+  - **유휴** `IDLE`: CPU 평균 < 1% 그리고 네트워크 입출력 하루 평균 < 5MB → 중지 검토. 절감액 = 월 추정 비용 전부. 네트워크를 아직 모르면(켜져 있던 시간 중 하나라도 입력·출력 값이 비어 있으면) 유휴로 보지 않는다.
     사양을 모르는 타입·GPU 타입·단가를 모르는 타입은 추천하지 않고 `skipped`에 이유를 적는다 (ADR-010).
   - **과다 사양** `OVERSIZED`: CPU P95 < 10% → t3 패밀리에서 메모리 절반 이하·vCPU 이하 중 가장 큰 타입으로 변경 검토
     (예: m5.large → t3.medium, m5.xlarge → t3.large, r5.4xlarge → t3.2xlarge).

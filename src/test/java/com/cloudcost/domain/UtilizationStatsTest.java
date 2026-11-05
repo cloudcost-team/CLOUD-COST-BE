@@ -46,14 +46,18 @@ class UtilizationStatsTest {
     }
 
     @Test
-    void 네트워크는_입출력을_더하고_값이_없는_시간은_세지_않는다() {
-        UtilizationStats stats = UtilizationStats.byInstance(List.of(
+    void 네트워크는_입출력을_더하고_켜져_있던_시간_중_하나라도_비면_모르는_것으로_본다() {
+        UtilizationStats complete = UtilizationStats.byInstance(List.of(
                 hour("i-a", 0, 60, 1, 2, 100L, 200L),
-                hour("i-a", 1, 60, 1, 2, 50L, null),
-                hour("i-a", 2, 60, 1, 2, null, null))).get("i-a");
+                hour("i-a", 1, 60, 1, 2, 50L, 0L))).get("i-a");
+        assertThat(complete.networkBytes()).isEqualTo(350L);
+        assertThat(complete.networkHours()).isEqualTo(2);
 
-        assertThat(stats.networkBytes()).isEqualTo(350L);
-        assertThat(stats.networkHours()).isEqualTo(2);
+        UtilizationStats partial = UtilizationStats.byInstance(List.of(
+                hour("i-b", 0, 60, 1, 2, 100L, 200L),
+                hour("i-b", 1, 60, 1, 2, 50L, null),
+                hour("i-b", 2, 60, 1, 2, null, null))).get("i-b");
+        assertThat(partial.networkBytes()).as("일부만 더하면 실제보다 적게 잡혀 유휴로 보일 수 있다").isNull();
     }
 
     @Test
