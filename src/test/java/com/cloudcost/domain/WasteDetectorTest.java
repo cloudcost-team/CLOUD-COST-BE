@@ -125,6 +125,21 @@ class WasteDetectorTest {
     }
 
     @Test
+    void 유휴여도_GPU_타입과_카탈로그에_없는_타입은_추천하지_않는다() {
+        Result result = WasteDetector.detect(List.of(
+                candidate("i-gpu", "g4dn.xlarge", stats("i-gpu", 336, "0.4", "0.8", "1.5", 1_000_000L), ALWAYS_ON,
+                        "0.647", null),
+                candidate("i-new", "m8g.large", stats("i-new", 336, "0.4", "0.8", "1.5", 1_000_000L), ALWAYS_ON,
+                        "0.100", null)));
+
+        assertThat(result.findings()).isEmpty();
+        assertThat(result.totalMonthlySavingsUsd()).isEqualByComparingTo("0");
+        assertThat(result.skipped()).extracting(WasteDetector.Skipped::instanceId).containsExactly("i-gpu", "i-new");
+        assertThat(result.skipped().get(0).reason()).contains("GPU");
+        assertThat(result.skipped().get(1).reason()).contains("m8g.large의 사양을 몰라");
+    }
+
+    @Test
     void 더_작은_타입이_더_싸지_않으면_추천하지_않는다() {
         Result result = WasteDetector.detect(List.of(candidate("i-a", "t3a.medium",
                 stats("i-a", 336, "3", "4", "5", 10_000_000_000L), ALWAYS_ON, "0.047", "0.047")));
