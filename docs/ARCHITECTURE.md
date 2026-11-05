@@ -15,6 +15,7 @@ application
    ├─ DashboardService       대시보드 요약(월말 예상·전월 같은 기간 대비·최근 급증)·연결별 월 예산
    ├─ WasteService           낭비 리소스 (최근 14일 사용률 + 단가 → WasteDetector, ADR-010)
    ├─ SimulationService      비용 시뮬레이터 (낭비 추천 + 월말 예상·예산 → CostSimulation, ADR-012)
+   ├─ NotificationService    서비스 안 알림 (조회할 때 예산·급증·주간 요약 조건 평가 → AlertRules, 발생 키로 한 번만, ADR-014)
    ├─ BenchmarkService       팀 벤치마킹 (최근 14일 사용률·월말 예상 vs 비교 기준 파일 → TeamBenchmark, ADR-013)
    ├─ PriceService           온디맨드 단가 (DB 캐시 7일)
    └─ CurrencyService        원화 환산 환율 (Frankfurter, DB 캐시 6시간, ADR-005)
@@ -79,6 +80,7 @@ DISCONNECTED: 수집하지 않음. 새 스택으로 실제 검증에 성공할 �
 |---|---|
 | `MonthEndForecast` · `MonthlyBudget` | 월말 예상(어제까지 + 최근 7일 평균 × 남은 날), 예산 대비 %, 예산 통화 환산 |
 | `SpikeDetector` | 급증일(그날 비용 ≥ 직전 30일 중앙값 × 1.5)과 원인 서버(평소보다 사용 시간이 가장 많이 늘어난 서버) (ADR-011) |
+| `AlertRules` · `AlertSettings` | 알림 조건 → 만들 알림(종류·발생 키·문구), 켜 둔 예산 기준 고르기, 지난주 월요일 (ADR-014) |
 | `TeamBenchmark` · `BenchmarkReference` | 과다 사양 비율(P95 10% 미만 ÷ 판단한 서버)·적용 후 비율·백분위 위치, 월 지출 범위 위치 (ADR-013) |
 | `CostSimulation` | 추천 적용·트래픽 증가 반영 전후 월 비용, 월·연 절감, 예산 안인지 (ADR-012) |
 | `WasteDetector` · `InstanceSpecs` | 유휴·과다 사양 판단, 한 단계 줄인 t3 타입, 월 절감액 (ADR-010) |

@@ -8,6 +8,7 @@ import com.cloudcost.application.Ec2DataRefresher;
 import com.cloudcost.application.DashboardService;
 import com.cloudcost.application.DemoUsageService;
 import com.cloudcost.application.Ec2UsageQueryService;
+import com.cloudcost.application.NotificationService;
 import com.cloudcost.application.Pauser;
 import com.cloudcost.application.PriceService;
 import com.cloudcost.application.SimulationService;
@@ -17,7 +18,9 @@ import com.cloudcost.application.WasteService;
 import com.cloudcost.application.port.AccessTokens;
 import com.cloudcost.application.port.AwsAccountRepository;
 import com.cloudcost.application.port.BenchmarkReferenceSource;
+import com.cloudcost.application.port.AlertSettingsRepository;
 import com.cloudcost.application.port.BudgetRepository;
+import com.cloudcost.application.port.NotificationRepository;
 import com.cloudcost.application.port.CustomerAwsGateway;
 import com.cloudcost.application.port.Ec2InstanceRepository;
 import com.cloudcost.application.port.Ec2UsageRepository;
@@ -85,12 +88,13 @@ class ApplicationWiring {
             Ec2UsageRepository usage,
             SyncJobRepository syncJobs,
             BudgetRepository budgets,
+            NotificationRepository notifications,
             CustomerAwsGateway gateway,
             UnitOfWork unitOfWork,
             Clock clock,
             CloudCostProperties properties) {
         return new AwsAccountService(
-                accounts, users, instances, usage, syncJobs, budgets, gateway, unitOfWork, clock,
+                accounts, users, instances, usage, syncJobs, budgets, notifications, gateway, unitOfWork, clock,
                 properties.connectionSettings());
     }
 
@@ -196,6 +200,22 @@ class ApplicationWiring {
             BenchmarkReferenceSource references,
             Clock clock) {
         return new BenchmarkService(waste, dashboards, demo, references, clock);
+    }
+
+    @Bean
+    NotificationService notificationService(
+            AwsAccountService accounts,
+            DashboardService dashboards,
+            Ec2UsageQueryService queries,
+            BudgetRepository budgets,
+            AlertSettingsRepository settings,
+            NotificationRepository notifications,
+            UnitOfWork unitOfWork,
+            CurrencyService currencies,
+            Clock clock,
+            UsageSettings usage) {
+        return new NotificationService(
+                accounts, dashboards, queries, budgets, settings, notifications, unitOfWork, currencies, clock, usage);
     }
 
     @Bean

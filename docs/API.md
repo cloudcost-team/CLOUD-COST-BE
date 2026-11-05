@@ -354,3 +354,48 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 
 ### `POST /demo/benchmark?currency=KRW|USD` — 체험 모드
 §3 설정에 `recommendationIds`(선택)를 더한다. `?sizeBand=`도 실제와 같다. 기간의 마지막 14일을 서버별 `usagePattern`으로 판단한다 (`OVERSIZED`·`IDLE`은 과다 사양, `NORMAL`은 적정).
+
+## 5. 서비스 안 알림 (이슈 #35, ADR-014)
+알림은 **서비스 안 알림창(헤더 벨·알림 목록)으로만** 보여 준다. 이메일·Slack·Discord·푸시는 보내지 않는다.
+예약 수집이 없으므로 **알림 목록·안 읽은 수를 조회할 때** 연결마다 조건을 확인해 새로 생긴 일만 알림으로 저장한다.
+수집할 수 없는 연결(대기·끊김)과 AWS 오류가 난 연결은 그 조회에서 건너뛴다 (목록 조회는 실패하지 않는다).
+
+| 종류 `type` | 조건 (설정에서 켠 것만) | 한 번만 (`event_key`) | 문구 예 |
+|---|---|---|---|
+| `BUDGET` | §2-1 `thresholdReached`(월말 예상 기준) 이하에서 켜 둔 가장 높은 기준 | 연결 · 월 · 기준 | 운영 서버의 이번 달 예상 비용이 예산의 80%를 넘었어요 |
+| `SPIKE` | §2-1 `latestSpike` (최근 30일 중 가장 최근 급증) | 연결 · 급증일 | 10/12 비용 급증 · 평소의 2.4배 (web-server-1) |
+| `WEEKLY_SUMMARY` | 지난주(월~일, KST)가 모두 기록 시작일 이후이고 두 주 중 한 주라도 비용이 있음 | 연결 · 주 | 지난주 추정 비용 ₩28,400 · 전주보다 4% 줄었어요 |
+
+- 120%를 넘었는데 120% 알림을 꺼 두었으면 100%로 알린다. 80%에서 바로 120%로 오르면 120% 하나만 만든다.
+- 주간 요약 금액은 만들 때의 원화 환율로 적는다(환율이 없으면 달러). 전주 기록이 온전하지 않으면 비교 문구를 뺀다.
+- 연결 이름은 사용자가 붙인 이름, 없으면 `이름 없는 연결` (기능명세서 F02 규칙).
+
+### `GET /settings/alerts` — S14
+```json
+{ "budget80": true, "budget100": true, "budget120": true, "spike": true, "weeklySummary": true, "channel": "IN_APP",
+  "budgets": [ { "accountId": "…", "name": "운영 서버", "status": "ACTIVE", "budget": { "amount": 400000, "currency": "KRW" } },
+               { "accountId": "…", "name": "이름 없는 연결", "status": "ACTIVE", "budget": null } ],
+  "notes": [ "알림은 서비스 안 알림창(헤더 벨·알림 목록)으로만 보여 드려요. …" ] }
+```
+정하지 않았으면 조건은 모두 `true`. `budgets`는 내 연결(1시간 넘게 대기 중인 연결 제외)과 월 예산(§2-1 `PUT /budget`과 같은 값).
+### `PUT /settings/alerts` → 200 (응답은 GET과 같다)
+```json
+{ "budget80": true, "budget100": true, "budget120": false, "spike": true, "weeklySummary": true,
+  "budgets": [ { "accountId": "…", "amount": 400000, "currency": "KRW" }, { "accountId": "…", "amount": null } ] }
+```
+- 조건 5개는 모두 보낸다 (없으면 400 `VALIDATION_ERROR`). `budgets`는 선택이고, 보낸 연결만 바꾼다 (`amount: null`이면 예산 지움). 예산 규칙은 §2-1과 같다.
+- 남의 연결이 하나라도 섞이면 **아무것도 바꾸지 않고** 404 `ACCOUNT_NOT_FOUND`.
+### `GET /notifications?cursor=&limit=20` — S14-6
+```json
+{ "items": [ { "id": "…", "type": "BUDGET", "typeLabel": "예산", "accountId": "…", "accountName": "운영 서버",
+               "message": "운영 서버의 이번 달 예상 비용이 예산의 80%를 넘었어요", "createdAt": "…", "read": false, "readAt": null } ],
+  "nextCursor": "MTc2…", "unreadCount": 3, "notes": [ … ] }
+```
+최신순. `limit` 1~50(기본 20). 더 있으면 `nextCursor`를 그대로 `cursor`로 보낸다 (없으면 `null`). 잘못된 커서·limit은 400 `VALIDATION_ERROR`.
+### `GET /notifications/unread-count` — S14-2 헤더 벨
+`{ "unreadCount": 3 }`. 이 조회도 조건을 확인한다.
+### `POST /notifications/read-all` → 200 `{ "unreadCount": 0 }`
+### `POST /notifications/{notificationId}/read` → 204
+이미 읽었어도 204. 남의 알림이거나 없으면 404 `NOTIFICATION_NOT_FOUND`.
+
+연결을 삭제하면 그 연결의 알림도 함께 지운다.
