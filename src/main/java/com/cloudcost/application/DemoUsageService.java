@@ -192,9 +192,16 @@ public class DemoUsageService {
         List<Ec2Instance> infos = fleet.instances();
         return WasteService.analyze(ACCOUNT_ID, infos, fleet.hourlySamples(start, end), start, end, setup.from(),
             i -> demoHourly(i.instanceType(), i.platformDetails()),
-            i -> InstanceSpecs.downsizeTarget(i.instanceType())
-                .map(t -> demoHourly(t.instanceType(), i.platformDetails()))
-                .orElse(null),
+            i -> {
+                Map<String, java.math.BigDecimal> prices = new java.util.HashMap<>();
+                InstanceSpecs.downsizeCandidates(i.instanceType()).forEach(t -> {
+                    java.math.BigDecimal price = demoHourly(t.instanceType(), i.platformDetails());
+                    if (price != null) {
+                        prices.put(t.instanceType(), price);
+                    }
+                });
+                return prices;
+            },
             FRESHNESS, now, settings);
     }
 

@@ -4,6 +4,8 @@ import com.cloudcost.application.CurrencyService;
 import com.cloudcost.application.DashboardService;
 import com.cloudcost.application.WasteService;
 import com.cloudcost.domain.cost.DisplayCurrency.Currency;
+import com.cloudcost.domain.waste.WasteKind;
+import com.cloudcost.domain.waste.WasteSort;
 import com.cloudcost.entrypoint.api.auth.CurrentOwner;
 import com.cloudcost.entrypoint.api.dto.UsageDtos;
 import com.cloudcost.entrypoint.api.dto.WasteDtos.WasteResponse;
@@ -36,15 +38,19 @@ class WasteController {
     @GetMapping("/waste")
     @Operation(
         summary = "낭비 리소스 추천 목록 (S07 · S07-2)",
-        description = "과다 사양(CPU P95 10% 미만 → t3로 변경 검토)과 유휴(CPU 평균 1% 미만 + 네트워크 하루 5MB 미만 → 중지 검토). "
+        description = "과다 사양(CPU 평균 10% 미만 + P95 40% 미만 → 기본 성능 안에 드는 가장 싼 t3로 변경 검토)과 "
+            + "유휴(CPU 최대 5% 미만 + 네트워크 하루 5MB 미만 → 중지 검토). "
             + "항목마다 탐지 근거·사양 비교·주의사항·콘솔 변경 방법이 들어 있다. 기록이 14일 미만이면 status=INSUFFICIENT_HISTORY.")
     WasteResponse waste(
             @CurrentOwner String owner,
             @PathVariable UUID accountId,
             @Parameter(description = "금액 통화: KRW(기본, 원화 환산) 또는 USD")
-                    @RequestParam(defaultValue = "KRW") Currency currency) {
+                    @RequestParam(defaultValue = "KRW") Currency currency,
+            @Parameter(description = "정렬: SAVINGS(기본) · COST · UTILIZATION · NAME")
+                    @RequestParam(defaultValue = "SAVINGS") WasteSort sort,
+            @Parameter(description = "종류 필터: OVERSIZED · IDLE (없으면 모두)") @RequestParam(required = false) WasteKind type) {
         WasteService.WasteView view = waste.waste(owner, accountId);
         return WasteResponse.of(view, dashboards.dashboard(owner, accountId).forecast(), currencies.resolve(currency),
-            UsageDtos.DATA_SOURCE_AWS);
+            UsageDtos.DATA_SOURCE_AWS, sort, type);
     }
 }

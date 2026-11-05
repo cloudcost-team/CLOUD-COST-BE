@@ -31,7 +31,7 @@ class TeamBenchmarkTest {
 
     private static WasteFinding finding(String id, WasteKind kind) {
         return new WasteFinding(instance(id), kind, null, BigDecimal.valueOf(730), null, BigDecimal.ONE, BigDecimal.TEN,
-            null, null, null, BigDecimal.ONE);
+            null, null, null, BigDecimal.ONE, null);
     }
 
     private static final List<Ec2Instance> INSTANCES =

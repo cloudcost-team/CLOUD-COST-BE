@@ -19,7 +19,7 @@ class CostSimulationTest {
         Ec2Instance i = new Ec2Instance(id, id, "m5.large", "ap-northeast-2", "ap-northeast-2a", "running",
             Instant.parse("2026-09-01T00:00:00Z"), "Linux/UNIX", "default", false, false);
         return new WasteFinding(i, kind, null, BigDecimal.valueOf(730), null, BigDecimal.ONE, BigDecimal.TEN,
-            null, null, null, new BigDecimal(savings));
+            null, null, null, new BigDecimal(savings), null);
     }
 
     private static final List<WasteFinding> FINDINGS =

@@ -3,6 +3,7 @@ package com.cloudcost.domain.ec2;
 import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -11,6 +12,7 @@ import java.util.Optional;
  *
  * <p>고객 계정 권한을 늘리지 않으려고 AWS에서 조회하지 않고, 자주 쓰는 범용·컴퓨팅·메모리 최적화 패밀리만 넣었다.
  * 사양은 타입이 정해지면 바뀌지 않는다. 목록에 없는 타입은 낭비 탐지에서 사양 변경을 추천하지 않는다.
+ * 버스터블(t3·t3a) 기본 성능도 함께 둔다 (기능명세서 F05 추천 타입 기준).
  */
 public final class InstanceSpecs {
 
@@ -74,20 +76,46 @@ public final class InstanceSpecs {
     }
 
     /**
-     * 한 단계 줄인 타입: t3 패밀리에서 메모리가 지금의 절반 이하이고 vCPU가 지금 이하인 타입 중 가장 큰 것.
-     * 예: m5.large(2 vCPU·8GiB) → t3.medium(2·4GiB), m5.xlarge(4·16) → t3.large(2·8), t3.medium → t3.small,
-     * r5.4xlarge(16·128) → t3.2xlarge(8·32, t3 최대). 카탈로그에 없거나 GPU 타입이거나 맞는 타입이 없으면 비어 있다.
-     * 더 싼지는 단가로 따로 확인한다.
+     * 버스터블 타입의 vCPU당 기본 성능 (%). 이 사용률 안에서는 CPU 크레딧을 쓰지 않고 계속 돌 수 있다 (AWS 공개 값).
+     * 버스터블이 아니면 empty.
      */
-    public static Optional<Spec> downsizeTarget(String instanceType) {
+    public static Optional<BigDecimal> baselinePercent(String instanceType) {
+        return Optional.ofNullable(instanceType).map(BASELINE::get);
+    }
+
+    private static final Map<String, BigDecimal> BASELINE = new LinkedHashMap<>();
+
+    static {
+        for (String family : new String[] {"t3", "t3a"}) {
+            baseline(family, "nano", "5");
+            baseline(family, "micro", "10");
+            baseline(family, "small", "20");
+            baseline(family, "medium", "20");
+            baseline(family, "large", "30");
+            baseline(family, "xlarge", "40");
+            baseline(family, "2xlarge", "40");
+        }
+    }
+
+    private static void baseline(String family, String size, String percent) {
+        BASELINE.put(family + "." + size, new BigDecimal(percent));
+    }
+
+    /**
+     * 사양 변경 후보: t3 패밀리에서 지금과 다른 타입 중 메모리가 지금의 절반 이상인 것 (메모리를 절반 아래로 줄이지 않는다).
+     * 카탈로그에 없거나 GPU 타입이면 비어 있다. 어느 후보가 맞는지(예상 P95 ≤ 기본 성능, 더 싼지)는 낭비 탐지가 정한다.
+     */
+    public static List<Spec> downsizeCandidates(String instanceType) {
         Optional<Spec> current = find(instanceType).filter(s -> !s.gpu());
         if (current.isEmpty()) {
-            return Optional.empty();
+            return List.of();
         }
         BigDecimal half = current.get().memoryGib().divide(BigDecimal.valueOf(2));
         return SPECS.values().stream()
             .filter(s -> s.instanceType().startsWith(TARGET_FAMILY + "."))
-            .filter(s -> s.memoryGib().compareTo(half) <= 0 && s.vcpu() <= current.get().vcpu())
-            .max(Comparator.comparing(Spec::memoryGib).thenComparing(Spec::vcpu, Comparator.reverseOrder()));
+            .filter(s -> !s.instanceType().equals(instanceType))
+            .filter(s -> s.memoryGib().compareTo(half) >= 0)
+            .sorted(Comparator.comparing(Spec::memoryGib).thenComparing(Spec::vcpu))
+            .toList();
     }
 }
