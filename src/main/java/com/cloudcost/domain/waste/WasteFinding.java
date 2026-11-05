@@ -11,7 +11,7 @@ import java.util.List;
  * 낭비 추천 1건. 금액은 USD (응답에서 환산). 문구는 화면(S07·S07-2)에 그대로 보여 줄 한국어다.
  *
  * @param monthlyHours        최근 14일 사용 시간을 월로 환산한 시간 (최대 730)
- * @param currentSpec         지금 타입의 사양. 카탈로그에 없으면 null (유휴만 해당)
+ * @param currentSpec         지금 타입의 사양. 카탈로그에 없는 타입은 추천하지 않으므로 항상 있다
  * @param monthlyCostUsd      지금 타입의 월 추정 비용 = 단가 × monthlyHours
  * @param targetSpec          추천 타입 (유휴면 null)
  * @param monthlySavingsUsd   매달 절감 예상
