@@ -144,12 +144,17 @@ public class Ec2UsageQueryService {
         DateRange range = DateRange.resolve(from, to, today.minusDays(29), today);
         Loaded loaded = load(ownerId, accountId, range, range.from().minusDays(SpikeDetector.BASELINE_DAYS));
         CostReport<LocalDate> withBaseline = CostEstimator.report(loaded.daily(), loaded.priced().byInstanceId());
-        LocalDate firstUsed = usage.findFirstUsedHour(ownerId, accountId)
-            .map(h -> LocalDate.ofInstant(h, settings.zone()))
-            .orElse(null);
+        LocalDate firstUsed = firstUsedDay(ownerId, accountId);
         Map<LocalDate, Spike> spikes = SpikeDetector.detect(withBaseline,
             SpikeDetector.baselineFrom(loaded.availableFrom(), firstUsed), range.from(), range.to());
         return new DailyView(view(loaded, Function.identity()), spikes);
+    }
+
+    /** 이 연결에서 처음 사용 기록이 있는 날 (기록 전체 기준). 기록이 없으면 null */
+    public LocalDate firstUsedDay(String ownerId, UUID accountId) {
+        return usage.findFirstUsedHour(ownerId, accountId)
+            .map(h -> LocalDate.ofInstant(h, settings.zone()))
+            .orElse(null);
     }
 
     /**

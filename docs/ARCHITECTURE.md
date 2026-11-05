@@ -79,7 +79,7 @@ DISCONNECTED: 수집하지 않음. 새 스택으로 실제 검증에 성공할 �
 ## 계산 (domain, 순수 Java)
 | 클래스 | 하는 일 |
 |---|---|
-| `MonthEndForecast` · `MonthlyBudget` | 월말 예상(어제까지 + 최근 7일 평균 × 남은 날), 예산 대비 %, 예산 통화 환산 |
+| `MonthEndForecast` · `MonthlyBudget` · `BudgetSlider` | 월말 예상(어제까지 + 최근 7일 평균 × 남은 날), 예산 대비 %, 예산 통화 환산, 예산 슬라이더 범위(F08-1) |
 | `SpikeDetector` | 급증일(그날 비용 ≥ 직전 30일 중앙값 × 1.5)과 원인 서버(평소보다 사용 시간이 가장 많이 늘어난 서버) (ADR-011) |
 | `AlertRules` · `AlertSettings` | 알림 조건 → 만들 알림(종류·발생 키·문구), 켜 둔 예산 기준 고르기, 지난주 월요일 (ADR-014) |
 | `MonthlyReport` | 리포트 상태(EMPTY·FIRST_MONTH·PREVIEW·FINAL), 전월 대비, 서버별 비중 상위 3 + 기타 (ADR-015) |
