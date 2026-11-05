@@ -18,6 +18,12 @@ import com.cloudcost.entrypoint.api.dto.WasteDtos.WasteResponse;
 import com.cloudcost.entrypoint.api.dto.DashboardDtos.DashboardResponse;
 import com.cloudcost.application.DashboardService;
 import com.cloudcost.application.BenchmarkService;
+import com.cloudcost.application.ReportService;
+import com.cloudcost.entrypoint.api.dto.ReportDtos.ReportDetailResponse;
+import com.cloudcost.entrypoint.api.dto.ReportDtos.ReportListResponse;
+import java.time.YearMonth;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.web.bind.annotation.PathVariable;
 import com.cloudcost.application.SimulationService;
 import com.cloudcost.entrypoint.api.dto.BenchmarkDtos.BenchmarkResponse;
 import com.cloudcost.entrypoint.api.dto.SimulationDtos.SimulationResponse;
@@ -43,6 +49,7 @@ class DemoController {
     private final DashboardService dashboards;
     private final SimulationService simulations;
     private final BenchmarkService benchmarks;
+    private final ReportService reports;
     private final CurrencyService currencies;
     private final String timezone;
 
@@ -51,12 +58,14 @@ class DemoController {
             DashboardService dashboards,
             SimulationService simulations,
             BenchmarkService benchmarks,
+            ReportService reports,
             CurrencyService currencies,
             UsageSettings settings) {
         this.demo = demo;
         this.dashboards = dashboards;
         this.simulations = simulations;
         this.benchmarks = benchmarks;
+        this.reports = reports;
         this.currencies = currencies;
         this.timezone = settings.zone().getId();
     }
@@ -147,5 +156,24 @@ class DemoController {
             @RequestParam(defaultValue = "KRW") Currency currency) {
         return BenchmarkResponse.of(benchmarks.demoBenchmark(setup.toDomain(), setup.ids(), sizeBand),
                 currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO);
+    }
+
+    @PostMapping("/reports")
+    @Operation(summary = "설정한 구성의 월간 리포트 목록 (실제: GET /aws/accounts/{id}/reports)",
+            description = "기간 안의 달을 최신 달 먼저 보여 준다. 기간의 마지막 날을 오늘로 본다.")
+    ReportListResponse reports(
+            @Valid @RequestBody SetupRequest setup, @RequestParam(defaultValue = "KRW") Currency currency) {
+        return ReportListResponse.of(reports.demoList(setup.toDomain()), currencies.resolve(currency),
+                UsageDtos.DATA_SOURCE_DEMO);
+    }
+
+    @PostMapping("/reports/{month}")
+    @Operation(summary = "설정한 구성의 월간 리포트 상세 (실제: GET /aws/accounts/{id}/reports/{yyyy-MM})")
+    ReportDetailResponse report(
+            @PathVariable @DateTimeFormat(pattern = "yyyy-MM") YearMonth month,
+            @Valid @RequestBody SetupRequest setup,
+            @RequestParam(defaultValue = "KRW") Currency currency) {
+        return ReportDetailResponse.of(reports.demoDetail(setup.toDomain(), month), currencies.resolve(currency),
+                UsageDtos.DATA_SOURCE_DEMO);
     }
 }

@@ -11,6 +11,7 @@ import com.cloudcost.application.Ec2UsageQueryService;
 import com.cloudcost.application.NotificationService;
 import com.cloudcost.application.Pauser;
 import com.cloudcost.application.PriceService;
+import com.cloudcost.application.ReportService;
 import com.cloudcost.application.SimulationService;
 import com.cloudcost.application.StackCallbackService;
 import com.cloudcost.application.UsageSettings;
@@ -216,6 +217,16 @@ class ApplicationWiring {
             UsageSettings usage) {
         return new NotificationService(
                 accounts, dashboards, queries, budgets, settings, notifications, unitOfWork, currencies, clock, usage);
+    }
+
+    @Bean
+    ReportService reportService(
+            Ec2UsageQueryService queries,
+            WasteService waste,
+            DemoUsageService demo,
+            Clock clock,
+            UsageSettings settings) {
+        return new ReportService(queries, waste, demo, clock, settings);
     }
 
     @Bean

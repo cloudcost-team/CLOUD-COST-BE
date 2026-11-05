@@ -95,10 +95,22 @@ public class WasteService {
     }
 
     public WasteView waste(String ownerId, UUID accountId) {
+        return wasteUntil(ownerId, accountId, clock.instant().truncatedTo(ChronoUnit.HOURS));
+    }
+
+    /**
+     * end 직전 14일로 판단한다 (월간 리포트의 "그 달 마지막 14일"). 대상 서버는 지금 남아 있는 서버다.
+     *
+     * @param end 판단 구간 끝 (제외). 지금 정시보다 늦으면 지금 정시로 줄인다
+     */
+    public WasteView wasteUntil(String ownerId, UUID accountId, Instant end) {
         accountService.getActive(ownerId, accountId);
         Freshness freshness = refresher.refreshIfStale(ownerId, accountId);
         Instant now = clock.instant();
-        Instant end = now.truncatedTo(ChronoUnit.HOURS);
+        Instant currentHour = now.truncatedTo(ChronoUnit.HOURS);
+        if (end.isAfter(currentHour)) {
+            end = currentHour;
+        }
         Instant start = end.minus(UtilizationStats.WINDOW);
 
         List<TrackedInstance> tracked = instances.findAllByOwnerIdAndAccountId(ownerId, accountId).stream()
