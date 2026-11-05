@@ -241,7 +241,11 @@ public final class WasteDetector {
             return "CPU를 적게 쓰지만 GPU 타입이라 CPU 사용률만으로 사양 변경을 추천하지 않았어요.";
         }
         if (InstanceSpecs.downsizeCandidates(type).isEmpty()) {
-            return "CPU를 적게 쓰지만 " + type + "의 사양을 몰라 바꿀 타입을 정하지 못해 추천하지 않았어요.";
+            // 사양을 모르는 타입은 판단 전에 빠지므로, 여기는 메모리를 절반 아래로 줄이지 않는 t3 후보가 없는 경우다 (예: r5.4xlarge)
+            BigDecimal memory = InstanceSpecs.find(type).map(Spec::memoryGib).orElse(null);
+            return "CPU를 적게 쓰지만 " + InstanceSpecs.TARGET_FAMILY + " 중 메모리가 지금"
+                + (memory == null ? "" : "(" + memory.stripTrailingZeros().toPlainString() + "GiB)")
+                + "의 절반 이상인 타입이 없어 추천하지 않았어요.";
         }
         if (c.hourlyUsd() == null || c.candidateHourlyUsd().isEmpty()) {
             return "CPU를 적게 쓰지만 온디맨드 단가를 몰라 절감액을 계산하지 못했어요.";

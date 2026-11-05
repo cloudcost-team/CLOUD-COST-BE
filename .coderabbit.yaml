@@ -47,7 +47,7 @@ reviews:
         - 사용자에게 AWS Access Key / Secret Key를 받는 화면·API·DB 컬럼을 만들지 않는다.
         - AssumeRole 임시 자격증명을 DB·캐시·파일·SQS·로그·API 응답·예외 메시지에 넣지 않는다.
         - 실제 AWS 계정 ID·ARN을 코드·문서·테스트에 쓰지 않는다. 예시는 123456789012(고객), 111122223333(우리)만 허용.
-        - 비밀값(DB 비밀번호, Webhook, Cognito/Google OAuth 설정, 백엔드 Role ARN)은 하드코딩하지 않고 환경변수/Parameter Store를 쓴다.
+        - 비밀값(DB 비밀번호, Cognito/Google OAuth 설정, 백엔드 Role ARN)은 하드코딩하지 않고 환경변수/Parameter Store를 쓴다.
 
     - path: "src/main/java/com/cloudcost/domain/**"
       instructions: |
