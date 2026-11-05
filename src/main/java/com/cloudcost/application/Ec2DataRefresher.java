@@ -20,7 +20,9 @@ import com.cloudcost.domain.usage.HourlySample;
 import com.cloudcost.domain.usage.UtilizationStats;
 import com.cloudcost.domain.usage.RefreshPolicy;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -321,7 +323,10 @@ public class Ec2DataRefresher {
         CustomerAwsSession session, AwsAccount account, TrackedInstance instance, Instant cpuReadFrom, SyncJob job,
         int[] calls, int budget, Instant now) {
         Instant until = instance.metricsCollectedUntil();
-        for (TimeWindow window : CollectionWindows.plan(until, now, UtilizationStats.WINDOW, settings.overlap())) {
+        // 처음 수집은 판정 창 시작(현재 정시 − 14일)부터 읽는다. 14일만 소급하면 정시로 올림되어 첫 시간이 빠지고,
+        // 그 시간 네트워크가 비어 합계를 모르게 된다 (WasteService 판정 창과 같은 기준).
+        Duration backfill = Duration.between(now.truncatedTo(ChronoUnit.HOURS).minus(UtilizationStats.WINDOW), now);
+        for (TimeWindow window : CollectionWindows.plan(until, now, backfill, settings.overlap())) {
             String id = instance.instanceId();
             boolean cpuAlreadyRead = cpuReadFrom != null && !cpuReadFrom.isAfter(window.start());
             if (until == null && !cpuAlreadyRead) {
