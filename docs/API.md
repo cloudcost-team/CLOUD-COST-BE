@@ -109,7 +109,7 @@
 - 반올림: KRW 금액 원 단위·시간당 단가 0.1원 / USD 금액 센트·단가 소수 넷째 자리. 사용 시간(`usageHours`)은 통화와 무관.
 - 환율을 못 받으면 마지막 환율 + `notes` 안내, 한 번도 없으면 USD로 응답.
 
-모든 응답에 `dataSource: "aws"`, `costBasis: "estimated_on_demand"`, `currency: "USD"`, `freshness`, `notes`가 있다.
+모든 응답에 `dataSource: "aws"`, `costBasis: "estimated_on_demand"`, `currency`(요청한 통화, 기본 `KRW`), `freshness`, `notes`가 있다.
 ```json
 "freshness": { "instancesRefreshedAt": "…", "instancesFromCache": true,
                "usageRefreshedAt": "2026-10-08T03:00:00Z", "usageFromCache": true,
