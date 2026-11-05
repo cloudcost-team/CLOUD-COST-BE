@@ -92,6 +92,22 @@ class MetricsCollectionTest extends IntegrationTestBase {
     }
 
     @Test
+    void 정시가_아닐_때_처음_수집해도_판정_창의_첫_시간_네트워크를_읽는다() throws Exception {
+        // 실제 계정에서 재현 (2026-11-06): 16:47에 처음 수집하면 네트워크를 14일 전 17:00부터 읽었는데,
+        // 판정 창은 14일 전 16:00부터라 첫 시간 네트워크가 비어 합계가 null(모름)이 됐다.
+        aws.addCpuHours("i-run", FOURTEEN_DAYS_AGO, 1, 6, 23);
+        aws.addNetworkHours("i-run", FOURTEEN_DAYS_AGO, 1, 1_000, 2_000);
+        clock.advance(Duration.ofMinutes(47));
+
+        summary();
+
+        assertThat(aws.networkRequests).as("판정 창 시작(현재 정시 − 14일)부터 읽는다")
+                .allMatch(r -> r.contains("i-run@" + FOURTEEN_DAYS_AGO + "~"));
+        UtilizationStats stats = UtilizationStats.byInstance(stored(FOURTEEN_DAYS_AGO)).get("i-run");
+        assertThat(stats.networkBytes()).as("첫 시간도 채워져 합계를 안다").isEqualTo(33_000L);
+    }
+
+    @Test
     void 다음_수집은_네트워크도_마지막_수집_이후_구간만_읽는다() throws Exception {
         summary();
         aws.networkRequests.clear();
@@ -115,7 +131,7 @@ class MetricsCollectionTest extends IntegrationTestBase {
 
         assertThat(aws.cloudWatchRequests).as("이어 읽기 1건 + 최근 14일 다시 읽기 1건")
                 .hasSize(2)
-                .anyMatch(r -> r.startsWith("i-run@2026-09-24T05:00:00Z"));
+                .anyMatch(r -> r.startsWith("i-run@2026-09-24T04:00:00Z"));
         assertThat(tracked().metricsCollectedUntil()).isNotNull();
 
         clock.advance(Duration.ofMinutes(61));
@@ -141,8 +157,8 @@ class MetricsCollectionTest extends IntegrationTestBase {
         clock.advance(Duration.ofMinutes(61));
         summary();
 
-        assertThat(aws.networkRequests).as("최근 14일을 처음부터 다시 (14일 전 시각을 정시로 올림)").hasSize(2)
-                .allMatch(r -> r.contains("i-run@2026-09-24T05:00:00Z"));
+        assertThat(aws.networkRequests).as("최근 14일을 처음부터 다시 (판정 창 시작 = 현재 정시 − 14일)").hasSize(2)
+                .allMatch(r -> r.contains("i-run@2026-09-24T04:00:00Z"));
         assertThat(stored(FOURTEEN_DAYS_AGO)).filteredOn(s -> s.hourStart().equals(Instant.parse("2026-10-07T00:00:00Z")))
                 .singleElement().satisfies(s -> assertThat(s.networkInBytes()).isEqualTo(1_000L));
     }
