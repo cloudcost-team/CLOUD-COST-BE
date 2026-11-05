@@ -1,6 +1,7 @@
 package com.cloudcost.entrypoint.api.dto;
 
 import com.cloudcost.application.DemoUsageService.DemoAccount;
+import com.cloudcost.domain.budget.MonthlyBudget;
 import com.cloudcost.domain.demo.DemoCatalog;
 import com.cloudcost.domain.demo.DemoCatalog.Os;
 import com.cloudcost.domain.demo.DemoSchedule;
@@ -60,7 +61,14 @@ public final class DemoDtos {
     public record SetupRequest(
             @Schema(example = "2026-10-01") @NotNull LocalDate from,
             @Schema(example = "2026-10-31") @NotNull LocalDate to,
-            @NotEmpty @Size(max = DemoSetup.MAX_SERVERS) List<@Valid @NotNull ServerRequest> servers) {
+            @NotEmpty @Size(max = DemoSetup.MAX_SERVERS) List<@Valid @NotNull ServerRequest> servers,
+            @Schema(description = "월 예산 (선택). POST /demo/dashboard에서만 쓴다") @Valid
+                    DashboardDtos.BudgetRequest budget) {
+
+        public MonthlyBudget budgetOrNull() {
+            return budget == null ? null : budget.toDomain();
+        }
+
 
         public DemoSetup toDomain() {
             return new DemoSetup(servers.stream().map(ServerRequest::toDomain).toList(), from, to);

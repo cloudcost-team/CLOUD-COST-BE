@@ -83,6 +83,16 @@ final class SpringDataRepositories {
         int deleteByOwnerIdAndAccountId(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);
     }
 
+    interface AccountBudgetJpa extends Repository<AccountBudgetEntity, UUID> {
+        AccountBudgetEntity save(AccountBudgetEntity entity);
+
+        Optional<AccountBudgetEntity> findByOwnerIdAndAccountId(String ownerId, UUID accountId);
+
+        @Modifying
+        @Query("delete from AccountBudgetEntity b where b.ownerId = :ownerId and b.accountId = :accountId")
+        int deleteByOwnerIdAndAccountId(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);
+    }
+
     /** 공개 환율 캐시 (owner 없음) */
     interface ExchangeRateJpa extends Repository<ExchangeRateEntity, UUID> {
         ExchangeRateEntity save(ExchangeRateEntity entity);

@@ -192,4 +192,23 @@ class DemoApiTest extends IntegrationTestBase {
         assertThat(body.at("/availableAt").asText()).isEqualTo("2026-10-15");
         assertThat(body.at("/items").size()).isZero();
     }
+
+    @Test
+    void 체험_대시보드는_기간_마지막_날을_오늘로_보고_예산_대비를_계산한다() throws Exception {
+        String setup = """
+            {"from":"2026-09-01","to":"2026-10-07","budget":{"amount":40,"currency":"USD"},"servers":[
+              {"name":"web","instanceType":"t3.medium","os":"LINUX","count":1,"schedule":"ALWAYS"}]}
+            """;
+
+        JsonNode body = body(postDemo("/dashboard?currency=USD", setup).andExpect(status().isOk()));
+
+        assertThat(body.at("/dataSource").asText()).isEqualTo("demo");
+        assertThat(body.at("/today").asText()).isEqualTo("2026-10-07");
+        assertThat(body.at("/instanceCounts/running").asInt()).isEqualTo(1);
+        assertThat(body.at("/monthToDate/estimatedCost").decimalValue()).as("7일 × 24시간 × $0.052").isEqualByComparingTo("8.74");
+        assertThat(body.at("/forecast/monthEndCost").decimalValue()).as("$0.052 × 24 × 31일").isEqualByComparingTo("38.69");
+        assertThat(body.at("/budget/usageRate").decimalValue()).isEqualByComparingTo("96.7");
+        assertThat(body.at("/budget/thresholdReached").asInt()).isEqualTo(80);
+        assertThat(body.at("/previousMonthSamePeriod/changeRate").decimalValue()).isEqualByComparingTo("0.0");
+    }
 }

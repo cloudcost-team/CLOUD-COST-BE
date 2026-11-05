@@ -2,6 +2,7 @@ package com.cloudcost.entrypoint.api.dto;
 
 import com.cloudcost.application.CurrencyService.Resolved;
 import com.cloudcost.application.WasteService.WasteView;
+import com.cloudcost.domain.budget.MonthEndForecast;
 import com.cloudcost.domain.cost.CostNotes;
 import com.cloudcost.domain.cost.DisplayCurrency;
 import com.cloudcost.domain.demo.DemoFleet;
@@ -106,6 +107,10 @@ public final class WasteDtos {
                     LocalDate availableAt,
             WindowDto window,
             @Schema(description = "모든 추천을 적용했을 때 매달 절감 예상", example = "132000") BigDecimal totalMonthlySavings,
+            @Schema(description = "월말 예상 비용 (대시보드와 같은 값). 끝난 날 기록이 없으면 null", example = "312000")
+                    BigDecimal forecastMonthEndCost,
+            @Schema(description = "절감 예상 ÷ 월말 예상 (%). 월말 예상이 없으면 null", example = "42.3")
+                    BigDecimal savingsRateOfForecast,
             int findingCount,
             CountsDto counts,
             @Schema(description = "판단한 서버 수 (최근 14일 동안 24시간 이상 켜져 있던 서버)") int judgedCount,
@@ -115,7 +120,11 @@ public final class WasteDtos {
             List<String> notes,
             Instant asOf) {
 
-        public static WasteResponse of(WasteView view, Resolved currency, String dataSource) {
+        /**
+         * @param forecast 대시보드의 월말 예상 (없으면 null)
+         */
+        public static WasteResponse of(
+                WasteView view, MonthEndForecast forecast, Resolved currency, String dataSource) {
             DisplayCurrency d = currency.display();
             WasteDetector.Result r = view.result();
             List<String> notes = new ArrayList<>();
@@ -134,11 +143,20 @@ public final class WasteDtos {
             return new WasteResponse(
                     dataSource, CostNotes.COST_BASIS, d.currency().name(), ExchangeRateDto.of(d), view.accountId(),
                     view.status().name(), view.availableAt(), new WindowDto(view.windowStart(), view.windowEnd()),
-                    d.cost(r.totalMonthlySavingsUsd()), r.findings().size(),
+                    d.cost(r.totalMonthlySavingsUsd()), forecast == null ? null : d.cost(forecast.monthEndUsd()),
+                    savingsRate(r.totalMonthlySavingsUsd(), forecast), r.findings().size(),
                     new CountsDto(r.count(WasteKind.OVERSIZED), r.count(WasteKind.IDLE)), r.judgedCount(),
                     r.findings().stream().map(f -> ItemDto.of(f, d)).toList(),
                     r.skipped().stream().map(s -> new SkippedDto(s.instanceId(), s.name(), s.reason())).toList(),
                     FreshnessDto.of(view.freshness()), List.copyOf(notes), view.asOf());
+        }
+
+        private static BigDecimal savingsRate(BigDecimal savingsUsd, MonthEndForecast forecast) {
+            if (forecast == null || forecast.monthEndUsd().signum() <= 0) {
+                return null;
+            }
+            return savingsUsd.multiply(BigDecimal.valueOf(100))
+                    .divide(forecast.monthEndUsd(), 1, java.math.RoundingMode.HALF_UP);
         }
     }
 }

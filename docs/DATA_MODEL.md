@@ -102,5 +102,16 @@ UNIQUE `(auth_provider, provider_subject)`. 비밀번호 컬럼은 없다. `user
   (지표 수집 전에 저장한 인스턴스는 CPU도 한 번 다시 읽는다). 성공한 구간 끝까지만 옮긴다.
 - 네트워크 값은 이미 있는 시간 행에만 채운다 (꺼져 있던 시간은 행이 없다).
 
+## V7 (2026-11-05) — 연결별 월 예산 (이슈 #27)
+### account_budgets
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| account_id | UUID PK FK aws_accounts | 연결 하나에 예산 하나 |
+| owner_id | VARCHAR(64) | 조회·삭제는 항상 owner 조건 |
+| amount | NUMERIC(15,2) | 입력한 금액 (원화는 원 단위, 달러는 센트 단위) |
+| currency | VARCHAR(3) | KRW / USD. 입력한 통화 그대로 저장하고 비교할 때만 환율로 바꾼다 |
+| updated_at | TIMESTAMPTZ | |
+- 연결 삭제 순서: `ec2_usage_hourly` → `ec2_instances` → `sync_jobs` → **`account_budgets`** → `aws_accounts` (한 트랜잭션).
+
 ## 보존 (백로그)
 ec2_usage_hourly는 455일, sync_jobs는 90일 정도로 정리하는 작업이 필요하다.

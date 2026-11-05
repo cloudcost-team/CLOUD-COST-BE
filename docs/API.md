@@ -147,6 +147,42 @@
 기간 합계는 단가가 있는 인스턴스만 더하고, `notes`에 빠진 인스턴스 수와 시간을 적는다.
 조회 기간은 최대 455일이다.
 
+## 2-1. 대시보드 요약 · 월 예산 (이슈 #27)
+### `GET /aws/accounts/{accountId}/dashboard?currency=KRW|USD` — S06 상단 카드 4개
+```json
+{ "dataSource": "aws", "costBasis": "estimated_on_demand", "currency": "KRW", "exchangeRate": { … }, "timezone": "Asia/Seoul",
+  "today": "2026-11-04", "month": "2026-11", "availableFrom": "2026-08-06",
+  "monthToDate": { "from": "2026-11-01", "to": "2026-11-04", "usageHours": 1240.00, "estimatedCost": 128400 },
+  "instanceCounts": { "running": 4, "stopped": 2 },
+  "forecast": { "monthEndCost": 312000, "costThroughYesterday": 96300, "dailyAverage": 7700,
+                "basisFrom": "2026-10-28", "basisTo": "2026-11-03", "basisDays": 7, "remainingDays": 27 },
+  "budget": { "amount": 400000, "enteredAmount": 400000, "enteredCurrency": "KRW", "usageRate": 78.0, "thresholdReached": null },
+  "previousMonthSamePeriod": { "currentFrom": "2026-11-01", "currentTo": "2026-11-03", "currentCost": 96300,
+                               "previousFrom": "2026-10-01", "previousTo": "2026-10-03", "previousCost": 86000,
+                               "change": 10300, "changeRate": 12.0 },
+  "freshness": { … }, "notes": [ "월말 예상 = …" ], "asOf": "…" }
+```
+- **이번 달 추정 비용**(`monthToDate`): 1일 ~ 오늘(진행 중인 오늘 포함). 사용 시간 카드의 대수는 `instanceCounts`(지금 남아 있는 인스턴스의 실행 중·중지됨).
+- **월말 예상**(`forecast`) = 어제까지 이번 달 추정 비용 + 최근 7일(어제까지, 기록 시작일 이후) 하루 평균 × 오늘부터 말일까지 남은 날.
+  오늘은 아직 끝나지 않아 평균으로 센다. 끝난 날 기록이 없으면 `null` + `notes` 안내.
+- **예산**(`budget`): 정하지 않았으면 `null`. `amount`는 요청 통화 기준(입력 통화와 같으면 입력값 그대로), `usageRate` = 월말 예상 ÷ 예산(%),
+  `thresholdReached` = 넘은 가장 높은 알림 기준(80·100·120) 또는 `null`. 원화 예산인데 환율이 한 번도 없으면 `amount`·`usageRate`가 `null`.
+- **전월 대비**(`previousMonthSamePeriod`): 이번 달 1일 ~ 어제 vs 전월 1일 ~ 같은 날 (끝난 날끼리, 전월이 짧으면 말일까지).
+  `change`는 반올림한 금액끼리의 차, `changeRate`는 전월이 0이면 `null`. 매달 1일이거나 전월 1일이 기록 시작일보다 앞이면 `null` + `notes` 안내.
+- 단가를 모르는 서버는 §2처럼 합계에서 빼고 `notes`로 알린다. **단가를 아는 서버가 하나도 없으면** 0원으로 보이지 않도록
+  `monthToDate.estimatedCost`·`forecast`·`previousMonthSamePeriod`·`budget.usageRate`가 `null`이다 (사용 시간은 그대로).
+- 환율은 원화 예산이 있을 때만 조회한다 (응답 통화 환산은 §2와 같다).
+- 오류: §2와 같다.
+
+### `PUT /aws/accounts/{accountId}/budget` → 200
+```json
+요청 { "amount": 400000, "currency": "KRW" }   응답 { "accountId": "…", "amount": 400000, "currency": "KRW" }
+```
+- 입력한 통화 그대로 저장한다 (원화는 원 단위, 달러는 센트 단위로 반올림). 연결마다 하나이고 다시 보내면 바꾼다. 연결 상태와 관계없이 정할 수 있다.
+- 400 `VALIDATION_ERROR`: 0 이하, 1조 초과, 숫자가 아님, `amount`·`currency` 없음 (`details`에 필드별 문구). 남의 연결은 404.
+### `DELETE /aws/accounts/{accountId}/budget` → 204
+예산을 지운다 ("설정 안 함"). 연결을 삭제하면 예산도 함께 지운다.
+
 ## 3. 체험 모드 — 실제 계정 없이 (ADR-008)
 Google 로그인 없이 간이 로그인 → 서버 구성·기간 설정 → 실제 연결 계정과 같은 형식의 비용을 본다. AWS·DB를 부르지 않는다.
 체험용 계정은 연결 목록(`GET /aws/accounts`)에 들어가지 않고, 실제 연결 경로로는 조회할 수 없다.
@@ -179,6 +215,10 @@ Google 로그인 없이 간이 로그인 → 서버 구성·기간 설정 → �
 - 단가는 서울 리전 온디맨드 단가를 고정값으로 쓴다 (Price List를 부르지 않음). 금액 계산은 실제 경로와 같은 domain 로직이다.
 - 잘못된 설정은 400 `DEMO_INVALID_SETUP` (이유는 `message`): 모르는 타입, 대수 1~10 밖, 합계 50대 초과, `to`가 오늘 이후 등. 기간 455일 초과는 `INVALID_PERIOD`.
 
+### `POST /demo/dashboard` (`?currency=KRW|USD`) — 체험 모드 대시보드 요약
+요청은 위와 같은 설정에 선택 필드 `budget`(`{ "amount": 400000, "currency": "KRW" }`)을 더한다. 응답은 §2-1과 같다.
+기간의 마지막 날(`to`)을 오늘로 본다. 서버는 `from` 0시에 처음 켰다고 보므로 그 앞의 날은 0이고, `from`이 전월 1일보다 늦으면 전월 비교는 `null`이다.
+
 ### `POST /demo/waste` (`?currency=KRW|USD`) — 체험 모드 낭비 리소스
 요청은 위와 같은 설정. 기간의 **마지막 14일**(아직 지나지 않은 시간 제외)을 서버별 `usagePattern`으로 판단한다. 응답은 §4와 같다.
 기간이 14일보다 짧으면 `status: "INSUFFICIENT_HISTORY"`, `availableAt` = `from` + 14일.
@@ -191,7 +231,7 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 { "dataSource": "aws", "costBasis": "estimated_on_demand", "currency": "KRW", "exchangeRate": { … },
   "status": "OK", "availableAt": null,
   "window": { "from": "2026-10-21T02:00:00Z", "to": "2026-11-04T02:00:00Z" },
-  "totalMonthlySavings": 132000, "findingCount": 3, "counts": { "oversized": 2, "idle": 1 }, "judgedCount": 5,
+  "totalMonthlySavings": 132000, "forecastMonthEndCost": 312000, "savingsRateOfForecast": 42.3, "findingCount": 3, "counts": { "oversized": 2, "idle": 1 }, "judgedCount": 5,
   "items": [ {
       "recommendationId": "i-0abc:OVERSIZED", "instanceId": "i-0abc", "name": "api-server", "instanceType": "m5.large",
       "state": "running", "kind": "OVERSIZED", "kindLabel": "과다 사양",
@@ -210,6 +250,7 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
   연결 오류(S07-3 D)는 §2처럼 저장된 기록으로 판단하고 `freshness.warnings`에 원인이 붙는다.
 - 규칙 (최근 14일 동안 **24시간 이상** 켜져 있던 서버만 판단, `judgedCount`):
   - **유휴** `IDLE`: CPU 평균 < 1% 그리고 네트워크 입출력 하루 평균 < 5MB → 중지 검토. 절감액 = 월 추정 비용 전부. 네트워크를 아직 모르면 유휴로 보지 않는다.
+    사양을 모르는 타입·GPU 타입·단가를 모르는 타입은 추천하지 않고 `skipped`에 이유를 적는다 (ADR-010).
   - **과다 사양** `OVERSIZED`: CPU P95 < 10% → t3 패밀리에서 메모리 절반 이하·vCPU 이하 중 가장 큰 타입으로 변경 검토
     (예: m5.large → t3.medium, m5.xlarge → t3.large, r5.4xlarge → t3.2xlarge).
     절감액 = 월 비용 차이. 사양을 모르는 타입·GPU 타입·더 작은 타입이 없거나 더 싸지 않거나 단가를 모르면 추천하지 않고 `skipped`에 이유를 적는다.
@@ -218,6 +259,6 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 - 지금 꺼져 있어도 최근 14일 안에 켜져 있었으면 판단한다. 단, **지금 중지돼 있고 최근 3일 동안 한 번도 안 켜진 서버**는 이미 비용이 나지 않으므로
   판단하지 않고 `skipped`에 이유를 적는다 (밤·주말에 꺼지는 서버가 조회 시각에 따라 빠지지 않게 "지금 중지"만으로는 빼지 않는다).
   삭제된 인스턴스(`present=false`)는 빼고, 14일 동안 한 번도 안 켜진 서버는 목록에 넣지 않는다.
-- "이번 달 예상 비용 대비 %"(S07)는 월말 예상(대시보드 요약)이 생기면 추가한다.
+- `forecastMonthEndCost`·`savingsRateOfForecast`(S07 "이번 달 예상 비용 대비 %"): §2-1 월말 예상과 같은 값, 절감 예상 ÷ 월말 예상(%). 월말 예상이 없으면 `null`.
 - 오류: §2와 같다 (404 남의 연결, 409 대기·끊긴 연결, 429/502 AWS).
 
