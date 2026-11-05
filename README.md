@@ -9,7 +9,7 @@
 <br />
 
 ## Architecture
-<img width="3200" height="1840" alt="architecture-light" src="https://github.com/user-attachments/assets/24b8bea6-c68d-4b09-a6a6-a6aa99867970" />
+<img alt="CloudCost 아키텍처" src="assets/architecture.png" />
 
 
 
