@@ -122,6 +122,11 @@ public final class WasteDetector {
             judged.add(info.instanceId());
             BigDecimal monthlyHours = monthlyHours(c.usedMinutes());
             if (isIdle(c.stats())) {
+                String specSkip = idleSpecSkipReason(info.instanceType());
+                if (specSkip != null) {
+                    skipped.add(new Skipped(info.instanceId(), info.name(), specSkip));
+                    continue;
+                }
                 if (c.hourlyUsd() == null) {
                     skipped.add(new Skipped(info.instanceId(), info.name(), "유휴로 보이지만 온디맨드 단가를 몰라 절감액을 계산하지 못했어요."));
                     continue;
@@ -164,6 +169,18 @@ public final class WasteDetector {
         BigDecimal targetMonthly = c.targetHourlyUsd().multiply(monthlyHours);
         return Optional.of(new WasteFinding(c.instance(), WasteKind.OVERSIZED, c.stats(), monthlyHours, current.get(),
             c.hourlyUsd(), monthly, target.get(), c.targetHourlyUsd(), targetMonthly, monthly.subtract(targetMonthly)));
+    }
+
+    /** 유휴도 과다 사양과 같이 GPU 타입과 카탈로그에 없는 타입은 추천하지 않는다 (ADR-010). 추천해도 되면 null. */
+    private static String idleSpecSkipReason(String type) {
+        Optional<InstanceSpecs.Spec> spec = InstanceSpecs.find(type);
+        if (spec.isEmpty()) {
+            return "사용 흔적이 거의 없지만 " + type + "의 사양을 몰라 추천하지 않았어요.";
+        }
+        if (spec.get().gpu()) {
+            return "사용 흔적이 거의 없지만 GPU 타입이라 CPU 사용률만으로 중지를 추천하지 않았어요.";
+        }
+        return null;
     }
 
     private static String oversizedSkipReason(Candidate c) {
