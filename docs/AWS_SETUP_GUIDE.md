@@ -29,7 +29,9 @@
 1. S3 → 버킷 만들기: 이름 예 `cci-templates-<A>`, 리전 서울
 2. 이 버킷만 **퍼블릭 액세스 차단 → 버킷 정책 관련 2개 해제** (템플릿 파일 하나를 고객 CloudFormation이 읽어야 한다. 비밀값은 없다)
 3. Swagger `GET /api/v1/aws/cloudformation-template`로 내려받은 `cloudcost-insight-readonly-role.yaml`을
-   `customer-readonly-role.yaml` 이름으로 업로드
+   `customer-readonly-role.yaml` 이름으로 업로드.
+   업로드 화면 **속성 → 메타데이터 → 메타데이터 추가**: 유형 시스템 정의, 키 `Content-Type`, 값 `text/yaml; charset=utf-8`
+   (없으면 스택 생성 화면의 한국어 파라미터 설명이 `???`로 깨진다. 이미 올렸다면 객체 이름 클릭 → 속성 탭 → 메타데이터 → 편집)
 4. 버킷 정책 (이 파일 하나만 공개 읽기):
    ```json
    { "Version": "2012-10-17", "Statement": [ { "Effect": "Allow", "Principal": "*", "Action": "s3:GetObject",
