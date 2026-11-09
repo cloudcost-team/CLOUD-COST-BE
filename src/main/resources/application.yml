@@ -45,6 +45,9 @@ springdoc:
 
 cci:
   app-env: ${APP_ENV:local}
+  # 프론트 출처 (쉼표 구분). Origin 헤더에는 끝 슬래시가 없으므로 붙이지 않는다
+  cors:
+    allowed-origins: ${CCI_CORS_ALLOWED_ORIGINS:http://localhost:3000,https://www.cloud-cost.cloud}
   auth:
     mode: ${AUTH_MODE:dev}
     dev-default-owner: ${DEV_OWNER_ID:local-dev-user}
@@ -52,6 +55,9 @@ cci:
     google-client-id: ${GOOGLE_CLIENT_ID:}
     jwt-secret: ${JWT_SECRET:}
     token-ttl: 1h
+    # 리프레시 토큰: HttpOnly 쿠키(cci_refresh, Path=/api/v1/auth, SameSite=Lax). ADR-017
+    refresh-token-ttl: ${REFRESH_TOKEN_TTL:14d}
+    refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:true}
   aws:
     # 고객 Trust Policy의 Principal. 실제 값은 환경변수로만 넣는다 (예시: arn:aws:iam::111122223333:role/CloudCostInsightBackendRole)
     backend-role-arn: ${CCI_BACKEND_ROLE_ARN:}

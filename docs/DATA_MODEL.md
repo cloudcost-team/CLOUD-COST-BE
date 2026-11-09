@@ -138,5 +138,10 @@ UNIQUE `(owner_id, event_key)` — 같은 일은 한 번만 만든다. 인덱스
 | read_at | TIMESTAMPTZ NULL | 읽지 않았으면 NULL |
 - 연결 삭제 순서: `ec2_usage_hourly` → `ec2_instances` → `sync_jobs` → `account_budgets` → **`notifications`** → `aws_accounts` (한 트랜잭션).
 
+## V9 (2026-11-10) — 리프레시 토큰 (ADR-017)
+### refresh_tokens
+`id`(UUID), `owner_id`, `family_id`(한 번의 로그인에서 rotation으로 이어지는 묶음), `token_hash`(SHA-256 hex, UNIQUE), `created_at`, `expires_at`, `used_at`, `revoked_at`.
+토큰 원문은 저장하지 않는다. 조회는 해시로만 한다.
+
 ## 보존 (백로그)
 ec2_usage_hourly는 455일, sync_jobs는 90일, notifications는 읽은 지 90일 정도로 정리하는 작업이 필요하다.

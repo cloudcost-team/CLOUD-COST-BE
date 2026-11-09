@@ -136,6 +136,26 @@ final class SpringDataRepositories {
         int deleteByOwnerIdAndAccountId(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);
     }
 
+    /** 리프레시 토큰: 조회는 토큰 해시(추측 불가)로만 한다 */
+    interface RefreshTokenJpa extends Repository<RefreshTokenEntity, UUID> {
+        RefreshTokenEntity save(RefreshTokenEntity entity);
+
+        Optional<RefreshTokenEntity> findOneByTokenHash(String tokenHash);
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("update RefreshTokenEntity t set t.usedAt = :now "
+            + "where t.id = :id and t.usedAt is null and t.revokedAt is null")
+        int markUsed(@Param("id") UUID id, @Param("now") Instant now);
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("update RefreshTokenEntity t set t.revokedAt = :now where t.familyId = :familyId and t.revokedAt is null")
+        int revokeFamily(@Param("familyId") UUID familyId, @Param("now") Instant now);
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("delete from RefreshTokenEntity t where t.ownerId = :ownerId and t.expiresAt <= :now")
+        int deleteExpired(@Param("ownerId") String ownerId, @Param("now") Instant now);
+    }
+
     /** 공개 환율 캐시 (owner 없음) */
     interface ExchangeRateJpa extends Repository<ExchangeRateEntity, UUID> {
         ExchangeRateEntity save(ExchangeRateEntity entity);

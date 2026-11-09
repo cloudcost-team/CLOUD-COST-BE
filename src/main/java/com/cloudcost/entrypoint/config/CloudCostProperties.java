@@ -21,13 +21,17 @@ public record CloudCostProperties(
      * @param mode dev: Bearer 토큰이 없으면 X-Owner-Id 헤더로 사용자 구분 (APP_ENV=local 전용) / google: Bearer 토큰 필수
      * @param googleClientId Google OAuth 웹 클라이언트 ID (공개 값, GOOGLE_CLIENT_ID)
      * @param jwtSecret 액세스 토큰 서명 키 (32바이트 이상, JWT_SECRET). google 모드에서는 필수
+     * @param refreshTokenTtl 리프레시 토큰 유효기간. 쓸 때마다 새로 바뀌며 이 기간만큼 다시 늘어난다
+     * @param refreshCookieSecure 쿠키 Secure 속성. https가 아닌 로컬 테스트에서만 false (REFRESH_COOKIE_SECURE)
      */
     public record Auth(
             @DefaultValue("dev") String mode,
             @DefaultValue("local-dev-user") String devDefaultOwner,
             String googleClientId,
             String jwtSecret,
-            @DefaultValue("1h") Duration tokenTtl) {
+            @DefaultValue("1h") Duration tokenTtl,
+            @DefaultValue("14d") Duration refreshTokenTtl,
+            @DefaultValue("true") boolean refreshCookieSecure) {
 
         public boolean devMode() {
             return "dev".equalsIgnoreCase(mode);
