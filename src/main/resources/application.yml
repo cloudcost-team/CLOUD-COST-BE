@@ -45,6 +45,9 @@ springdoc:
 
 cci:
   app-env: ${APP_ENV:local}
+  # 프론트 출처 (쉼표 구분). Origin 헤더에는 끝 슬래시가 없으므로 붙이지 않는다
+  cors:
+    allowed-origins: ${CCI_CORS_ALLOWED_ORIGINS:http://localhost:3000,https://www.cloud-cost.cloud}
   auth:
     mode: ${AUTH_MODE:dev}
     dev-default-owner: ${DEV_OWNER_ID:local-dev-user}
