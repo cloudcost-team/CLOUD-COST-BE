@@ -33,6 +33,7 @@ import com.cloudcost.application.port.PriceCatalog;
 import com.cloudcost.application.port.StackCallbackResponder;
 import com.cloudcost.application.port.SyncJobRepository;
 import com.cloudcost.application.port.UnitOfWork;
+import com.cloudcost.application.port.RefreshTokenRepository;
 import com.cloudcost.application.port.UserRepository;
 import java.time.Clock;
 import java.time.Duration;
@@ -66,9 +67,12 @@ class ApplicationWiring {
             GoogleIdentityVerifier google,
             AccessTokens tokens,
             UserRepository users,
+            RefreshTokenRepository refreshTokens,
+            CloudCostProperties properties,
             UnitOfWork unitOfWork,
             Clock clock) {
-        return new AuthService(google, tokens, users, unitOfWork, clock);
+        return new AuthService(
+                google, tokens, users, refreshTokens, properties.auth().refreshTokenTtl(), unitOfWork, clock);
     }
 
     @Bean

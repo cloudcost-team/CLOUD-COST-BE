@@ -9,11 +9,14 @@
 |---|---|---|
 | `GET /auth/config` | 없음 | `{ authMode: dev\|google, googleClientId }` |
 | `POST /auth/google` | 없음 | 요청 `{ "idToken": "<Google credential>" }` → `{ accessToken, tokenType: "Bearer", expiresAt, newUser, user: { id, email, name, provider } }`. 처음이면 자동 가입 |
+| `POST /auth/refresh` | `cci_refresh` 쿠키 | → `{ accessToken, tokenType: "Bearer", expiresAt }` + 새 쿠키. 한 번 쓴 쿠키는 재사용 불가 (ADR-017) |
+| `POST /auth/logout` | `cci_refresh` 쿠키 | 204. 리프레시 토큰 무효화 + 쿠키 삭제 |
 | `GET /me` | 필요 | 내 정보 |
 
 - 이후 모든 API: `Authorization: Bearer <accessToken>` (1시간). AUTH_MODE=dev(로컬)에서는 토큰이 없을 때만 X-Owner-Id 허용.
+- 리프레시 토큰은 본문이 아니라 HttpOnly 쿠키 `cci_refresh`(Path=/api/v1/auth, SameSite=Lax, 14일)로만 온다. 브라우저는 login·refresh·logout을 `credentials: 'include'`로 호출한다.
 - 브라우저 테스트 페이지: `/login.html` → 토큰 복사 → Swagger Authorize의 `bearerAuth`.
-- 401 코드: `LOGIN_REQUIRED`(토큰 없음), `INVALID_TOKEN`(만료·위조), `INVALID_ID_TOKEN`(Google 검증 실패). 503 `GOOGLE_LOGIN_NOT_CONFIGURED`.
+- 401 코드: `LOGIN_REQUIRED`(토큰 없음), `INVALID_TOKEN`(만료·위조), `INVALID_ID_TOKEN`(Google 검증 실패), `INVALID_REFRESH_TOKEN`(쿠키 없음·만료·무효), `REFRESH_TOKEN_REUSED`(이미 쓴 쿠키 → 그 로그인 전체 무효화). 503 `GOOGLE_LOGIN_NOT_CONFIGURED`.
 
 ## 오류 형식
 ```json

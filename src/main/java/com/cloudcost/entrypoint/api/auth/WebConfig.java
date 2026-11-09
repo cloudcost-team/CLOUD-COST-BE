@@ -18,13 +18,14 @@ class WebConfig implements WebMvcConfigurer {
         this.allowedOrigins = allowedOrigins;
     }
 
-    /** 프론트 출처 허용. */
+    /** 프론트 출처 허용. 리프레시 토큰 쿠키(/api/v1/auth/refresh, logout)가 실리도록 자격증명을 허용한다. */
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
                 .allowedOrigins(allowedOrigins)
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
+                .allowCredentials(true)
                 .maxAge(3600);
     }
 
