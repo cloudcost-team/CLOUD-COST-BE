@@ -111,7 +111,7 @@ public class Ec2UsageQueryService {
             .map(t -> new InstanceRow(
                 t, priced.byInstanceId().get(t.instanceId()), CurrentRun.of(t.info(), now).orElse(null)))
             .toList();
-        return new InstancesView(accountId, rows, freshness.withWarnings(priced.warnings()), now);
+        return new InstancesView(accountId, rows, freshness.withWarnings(Freshness.WarningCode.PRICE_UNAVAILABLE, priced.warnings()), now);
     }
 
     /**
@@ -201,7 +201,7 @@ public class Ec2UsageQueryService {
         CostReport<K> report = CostEstimator.report(grouping.apply(inRange), l.priced().byInstanceId());
         return new UsageCostView<>(
             l.accountId(), l.range(), report, l.tracked(), l.priced().byInstanceId(), l.availableFrom(),
-            l.freshness().withWarnings(l.priced().warnings()), notes(report, l.range(), l.availableFrom()));
+            l.freshness().withWarnings(Freshness.WarningCode.PRICE_UNAVAILABLE, l.priced().warnings()), notes(report, l.range(), l.availableFrom()));
     }
 
     /**

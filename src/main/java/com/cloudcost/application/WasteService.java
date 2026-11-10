@@ -133,7 +133,7 @@ public class WasteService {
         return analyze(accountId, infos, samples, start, end, availableFrom,
             i -> hourly(byId.get(i.instanceId())),
             i -> candidatePrices(i, byId),
-            freshness.withWarnings(priced.warnings()), now, settings);
+            freshness.withWarnings(Freshness.WarningCode.PRICE_UNAVAILABLE, priced.warnings()), now, settings);
     }
 
     /**

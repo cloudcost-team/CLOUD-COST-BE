@@ -106,6 +106,40 @@ class TeamBenchmarkTest {
     }
 
     @Test
+    void 백분위_표로_분포를_어림하면_칸의_합은_100이다() {
+        // 서버 1~2대 표: 45%까지 0%, 50·55%는 50%, 60~95%는 100% (95% 위 5%는 마지막 값의 칸)
+        List<Percentile> table = new java.util.ArrayList<>();
+        for (int p = 5; p < 100; p += 5) {
+            table.add(new Percentile(BigDecimal.valueOf(p), BigDecimal.valueOf(p <= 45 ? 0 : p <= 55 ? 50 : 100)));
+        }
+
+        List<TeamBenchmark.DistributionBucket> buckets = TeamBenchmark.distribution(table);
+
+        assertThat(buckets).extracting(b -> b.teamsPercent().toPlainString())
+            .containsExactly("45.0", "0.0", "10.0", "0.0", "45.0");
+        assertThat(buckets.getLast().toPercent()).isEqualByComparingTo("100");
+        assertThat(TeamBenchmark.distribution(List.of())).isEmpty();
+    }
+
+    @Test
+    void 분포_칸은_하한_포함_상한_미포함이고_100퍼센트는_마지막_칸이다() {
+        assertThat(TeamBenchmark.bucketIndex(BigDecimal.ZERO)).isZero();
+        assertThat(TeamBenchmark.bucketIndex(new BigDecimal("19.9"))).isZero();
+        assertThat(TeamBenchmark.bucketIndex(BigDecimal.valueOf(20))).isEqualTo(1);
+        assertThat(TeamBenchmark.bucketIndex(new BigDecimal("66.7"))).isEqualTo(3);
+        assertThat(TeamBenchmark.bucketIndex(BigDecimal.valueOf(100))).isEqualTo(4);
+    }
+
+    @Test
+    void 범위_막대_위치는_하한_0_상한_100이고_밖이면_끝에_붙는다() {
+        BenchmarkReference.Spend spend = new BenchmarkReference.Spend("s", "d", BigDecimal.valueOf(100), BigDecimal.valueOf(500));
+
+        assertThat(TeamBenchmark.barPositionPercent(new BigDecimal("197.904"), spend)).isEqualByComparingTo("24.5");
+        assertThat(TeamBenchmark.barPositionPercent(BigDecimal.valueOf(50), spend)).isEqualByComparingTo("0");
+        assertThat(TeamBenchmark.barPositionPercent(BigDecimal.valueOf(900), spend)).isEqualByComparingTo("100");
+    }
+
+    @Test
     void 월_지출은_범위_아래_안_위로_나눈다() {
         BenchmarkReference.Spend range =
             new BenchmarkReference.Spend("s", "d", BigDecimal.valueOf(100), BigDecimal.valueOf(500));

@@ -45,13 +45,23 @@ public final class UsageDtos {
             @Schema(description = "마지막 CloudWatch 호출 시각") Instant usageRefreshedAt,
             @Schema(description = "true면 이번 응답의 사용량은 DB에 저장된 값") boolean usageFromCache,
             @Schema(description = "이 시각 전까지는 CloudWatch를 다시 부르지 않는다 (1시간 1회)") Instant nextUsageRefreshAt,
-            List<String> warnings) {
+            @Schema(description = "안내 문구 (warningDetails의 message와 같은 순서)") List<String> warnings,
+            @Schema(description = "안내마다 종류 코드. 화면은 문구 대신 이 코드로 상태를 나눈다") List<WarningDto> warningDetails) {
 
         static FreshnessDto of(Freshness f) {
             return new FreshnessDto(f.instancesRefreshedAt(), f.instancesFromCache(), f.usageRefreshedAt(),
-                    f.usageFromCache(), f.nextUsageRefreshAt(), f.warnings());
+                    f.usageFromCache(), f.nextUsageRefreshAt(), f.warnings(),
+                    f.warningDetails().stream().map(w -> new WarningDto(w.code().name(), w.message())).toList());
         }
     }
+
+    @Schema(name = "FreshnessWarning")
+    public record WarningDto(
+            @Schema(description = "PARTIAL_COLLECTION(호출 상한으로 일부만 수집) | AWS_THROTTLED(AWS 요청 제한) | "
+                    + "USAGE_COLLECTION_FAILED(사용량 일부 수집 실패) | COLLECTION_FAILED(수집 실패, 저장된 데이터 표시) | "
+                    + "CONNECTION_ERROR(연결 오류 상태) | PRICE_UNAVAILABLE(단가 조회 실패)", example = "PARTIAL_COLLECTION")
+                    String code,
+            String message) {}
 
     @Schema(description = "원화 환산에 쓴 환율 (USD로 조회하면 null)")
     public record ExchangeRateDto(

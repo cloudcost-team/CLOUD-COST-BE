@@ -104,6 +104,7 @@ class CollectionIntegrityTest extends IntegrationTestBase {
         assertThat(pauser.pauses).containsExactly(Duration.ofSeconds(1), Duration.ofSeconds(2));
         assertThat(first.at("/usageHours").decimalValue()).as("성공한 i-stop은 저장됨").isEqualByComparingTo("3.00");
         assertThat(first.at("/freshness/warnings").toString()).contains("사용량 수집 실패").contains("다음 수집 때 다시");
+        assertThat(first.at("/freshness/warningDetails/0/code").asText()).isEqualTo("USAGE_COLLECTION_FAILED");
 
         JsonNode job = jobs().get(0);
         assertThat(job.at("/status").asText()).isEqualTo("PARTIAL");
@@ -158,6 +159,8 @@ class CollectionIntegrityTest extends IntegrationTestBase {
 
         JsonNode first = instances();
         assertThat(first.at("/instances")).as("인스턴스 정보는 보여 준다").hasSize(2);
+        assertThat(first.at("/freshness/warningDetails/0/code").asText()).as("요청 제한은 따로 구분한다")
+                .isEqualTo("AWS_THROTTLED");
         assertThat(aws.cloudWatchCalls).as("첫 구간 3회 시도 후 다른 인스턴스는 부르지 않는다").isEqualTo(3);
         assertThat(jobs().get(0).at("/status").asText()).isEqualTo("PARTIAL");
         assertThat(jobs().get(0).at("/error/code").asText()).isEqualTo("THROTTLED");
@@ -179,6 +182,7 @@ class CollectionIntegrityTest extends IntegrationTestBase {
         JsonNode failed = instances();
         assertThat(failed.at("/instances")).as("저장된 데이터는 계속 보여 준다").hasSize(2);
         assertThat(failed.at("/freshness/warnings").toString()).contains("Role을 맡을 수 없습니다");
+        assertThat(failed.at("/freshness/warningDetails/0/code").asText()).isEqualTo("COLLECTION_FAILED");
         JsonNode account = account();
         assertThat(account.at("/status").asText()).isEqualTo("ERROR");
         assertThat(account.at("/lastError/code").asText()).isEqualTo("ASSUME_ROLE_DENIED");
@@ -189,6 +193,7 @@ class CollectionIntegrityTest extends IntegrationTestBase {
         JsonNode waiting = instances();
         assertThat(aws.assumeCalls).as("ERROR 연결은 1시간에 한 번만 다시 확인한다").isEqualTo(2);
         assertThat(waiting.at("/freshness/warnings").toString()).contains("AWS 연결에 문제가 있어").contains("Role을 맡을 수 없습니다");
+        assertThat(waiting.at("/freshness/warningDetails/0/code").asText()).isEqualTo("CONNECTION_ERROR");
 
         aws.assumeError = null;
         clock.advance(Duration.ofMinutes(40));

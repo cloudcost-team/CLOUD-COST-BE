@@ -146,7 +146,7 @@ public class DashboardService {
             .toList();
         MonthlyBudget budget = budgets.findByOwnerIdAndAccountId(ownerId, accountId).orElse(null);
         return compose(accountId, today, daily, present, budget, krwRateFor(budget),
-            daily.costs().freshness().withWarnings(instances.freshness().warnings()), clock.instant());
+            daily.costs().freshness().withWarnings(instances.freshness().warningDetails()), clock.instant());
     }
 
     public BudgetGuide budgetGuide(String ownerId, UUID accountId) {

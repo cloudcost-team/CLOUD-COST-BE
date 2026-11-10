@@ -122,6 +122,72 @@ public final class TeamBenchmark {
         return best.setScale(1, RoundingMode.HALF_UP);
     }
 
+    /** 분포 막대의 과다 사양 비율 구간 경계 (%). [0,20) [20,40) [40,60) [60,80) [80,100] */
+    static final List<BigDecimal> DISTRIBUTION_EDGES = List.of(
+        BigDecimal.ZERO, BigDecimal.valueOf(20), BigDecimal.valueOf(40), BigDecimal.valueOf(60), BigDecimal.valueOf(80),
+        BigDecimal.valueOf(100));
+
+    /**
+     * 비교 팀 분포의 구간 하나.
+     *
+     * @param fromPercent  과다 사양 비율 하한 (포함)
+     * @param toPercent    상한 (마지막 구간만 포함, 나머지는 미포함)
+     * @param teamsPercent 이 구간에 드는 팀의 비율 (%)
+     */
+    public record DistributionBucket(BigDecimal fromPercent, BigDecimal toPercent, BigDecimal teamsPercent) {
+    }
+
+    /**
+     * 백분위 표로 어림한 비교 팀 분포. 표의 한 줄(p%)은 바로 앞 줄과의 차이만큼의 팀을 대표한다고 보고,
+     * 표 마지막 줄 위(예: 95~100%)의 팀은 마지막 줄 값의 구간에 넣는다. 원본이 아니라 표에서 만든 근사라 구간마다 표 간격(5%p)만큼 틀릴 수 있다.
+     * 표가 없으면 빈 목록.
+     */
+    public static List<DistributionBucket> distribution(List<Percentile> table) {
+        if (table.isEmpty()) {
+            return List.of();
+        }
+        int n = DISTRIBUTION_EDGES.size() - 1;
+        BigDecimal[] shares = new BigDecimal[n];
+        java.util.Arrays.fill(shares, BigDecimal.ZERO);
+        BigDecimal previous = BigDecimal.ZERO;
+        for (Percentile p : table) {
+            int i = bucketIndex(p.ratioPercent());
+            shares[i] = shares[i].add(p.percentile().subtract(previous));
+            previous = p.percentile();
+        }
+        int last = bucketIndex(table.getLast().ratioPercent());
+        shares[last] = shares[last].add(BigDecimal.valueOf(100).subtract(previous));
+        List<DistributionBucket> buckets = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            buckets.add(new DistributionBucket(DISTRIBUTION_EDGES.get(i), DISTRIBUTION_EDGES.get(i + 1),
+                shares[i].setScale(1, RoundingMode.HALF_UP)));
+        }
+        return List.copyOf(buckets);
+    }
+
+    /** 과다 사양 비율이 드는 분포 구간 번호 (0부터). 100%는 마지막 구간 */
+    public static int bucketIndex(BigDecimal ratioPercent) {
+        for (int i = 1; i < DISTRIBUTION_EDGES.size() - 1; i++) {
+            if (ratioPercent.compareTo(DISTRIBUTION_EDGES.get(i)) < 0) {
+                return i - 1;
+            }
+        }
+        return DISTRIBUTION_EDGES.size() - 2;
+    }
+
+    /**
+     * 월 지출 범위 막대 위의 위치 (%). 하한 = 0, 상한 = 100이고 범위 밖이면 0 또는 100으로 맞춘다 (BELOW·ABOVE는 position으로 구분).
+     */
+    public static BigDecimal barPositionPercent(BigDecimal monthlyUsd, BenchmarkReference.Spend spend) {
+        BigDecimal width = spend.maxUsd().subtract(spend.minUsd());
+        if (width.signum() <= 0) {
+            return monthlyUsd.compareTo(spend.minUsd()) < 0 ? BigDecimal.ZERO.setScale(1) : BigDecimal.valueOf(100).setScale(1);
+        }
+        BigDecimal raw = monthlyUsd.subtract(spend.minUsd()).multiply(BigDecimal.valueOf(100))
+            .divide(width, 1, RoundingMode.HALF_UP);
+        return raw.max(BigDecimal.ZERO.setScale(1)).min(BigDecimal.valueOf(100).setScale(1));
+    }
+
     /** 월 지출이 범위 아래(min 미만)·안(min~max)·위(max 초과) */
     public static Position position(BigDecimal monthlyUsd, BenchmarkReference.Spend spend) {
         if (monthlyUsd.compareTo(spend.minUsd()) < 0) {
