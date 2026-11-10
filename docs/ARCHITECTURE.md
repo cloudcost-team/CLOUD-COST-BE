@@ -112,6 +112,7 @@ DISCONNECTED: 수집하지 않음. 새 스택으로 실제 검증에 성공할 �
 | `DEV_OWNER_ID` | local-dev-user | 헤더가 없을 때의 사용자 |
 | `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | localhost:5432/cci, cci, (local 프로필만 cci) | |
 | `GOOGLE_CLIENT_ID` | (없음) | Google 로그인 웹 클라이언트 ID (공개 값) |
+| `GOOGLE_CLIENT_SECRET` | (없음) | 같은 클라이언트의 시크릿 (비밀). 인가 코드 로그인(ADR-018)에만 필요 |
 | `JWT_SECRET` | (없음, dev는 임시 키) | 액세스 토큰 서명 키 32바이트 이상. google 모드 필수 |
 | `CCI_BACKEND_ROLE_ARN` | (없음) | 고객 Trust Policy Principal |
 | `CCI_TEMPLATE_URL` | (없음) | S3에 올린 고객용 템플릿 |

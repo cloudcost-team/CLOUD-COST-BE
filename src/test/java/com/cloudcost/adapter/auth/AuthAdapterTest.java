@@ -16,9 +16,17 @@ import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -64,7 +72,11 @@ class AuthAdapterTest {
         @Test
         void 서명_발급처_클라이언트ID_만료_이메일인증이_맞으면_신원을_돌려준다() throws Exception {
             VerifiedIdentity identity = verifier.verify(googleToken(googleKey, validClaims().build()));
-            assertThat(identity).isEqualTo(new VerifiedIdentity("google", "1122334455", "user@example.com", "홍길동"));
+            assertThat(identity).isEqualTo(new VerifiedIdentity("google", "1122334455", "user@example.com", "홍길동", null));
+
+            VerifiedIdentity withPicture = verifier.verify(googleToken(googleKey,
+                    validClaims().claim("picture", "https://lh3.googleusercontent.com/a/photo").build()));
+            assertThat(withPicture.picture()).isEqualTo("https://lh3.googleusercontent.com/a/photo");
         }
 
         @Test
@@ -105,6 +117,83 @@ class AuthAdapterTest {
             assertThatThrownBy(() -> verifier.verify(token))
                     .isInstanceOfSatisfying(AuthenticationFailedException.class,
                             e -> assertThat(e.code()).isEqualTo("INVALID_ID_TOKEN"));
+        }
+    }
+
+    /** 가짜 Google 토큰 엔드포인트(로컬 HTTP 서버)로 인가 코드 교환을 확인한다. */
+    @Nested
+    class Google_인가_코드 {
+
+        private HttpServer server;
+        private final AtomicReference<String> receivedForm = new AtomicReference<>();
+        private volatile int status = 200;
+        private volatile String responseBody = "{}";
+
+        @BeforeEach
+        void start() throws IOException {
+            server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/token", exchange -> {
+                receivedForm.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+                byte[] body = responseBody.getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(status, body.length);
+                exchange.getResponseBody().write(body);
+                exchange.close();
+            });
+            server.start();
+        }
+
+        @AfterEach
+        void stop() {
+            server.stop(0);
+        }
+
+        private GoogleIdTokenVerifier verifier(String secret) {
+            return new GoogleIdTokenVerifier(CLIENT_ID, secret,
+                    URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/token"),
+                    new ImmutableJWKSet<>(new JWKSet(googleKey.toPublicJWK())));
+        }
+
+        @Test
+        void 코드를_postmessage로_교환하고_받은_ID_토큰을_같은_규칙으로_검증한다() throws Exception {
+            responseBody = "{\"access_token\":\"ya29.x\",\"id_token\":\""
+                    + googleToken(googleKey, validClaims().claim("picture", "https://lh3.googleusercontent.com/a/p").build())
+                    + "\",\"token_type\":\"Bearer\"}";
+
+            VerifiedIdentity identity = verifier("test-secret").verifyAuthCode("4/0Ab-code&x=1");
+
+            assertThat(identity.subject()).isEqualTo("1122334455");
+            assertThat(identity.picture()).isEqualTo("https://lh3.googleusercontent.com/a/p");
+            assertThat(receivedForm.get().split("&")).containsExactlyInAnyOrder(
+                    "code=4%2F0Ab-code%26x%3D1", "client_id=" + CLIENT_ID, "client_secret=test-secret",
+                    "redirect_uri=postmessage", "grant_type=authorization_code");
+        }
+
+        @Test
+        void Google이_코드를_거절하거나_받은_토큰이_틀리면_INVALID_AUTH_CODE() throws Exception {
+            status = 400;
+            responseBody = "{\"error\":\"invalid_grant\"}";
+            assertInvalidCode(verifier("test-secret"));
+
+            status = 200;
+            responseBody = "{\"access_token\":\"ya29.x\"}";
+            assertInvalidCode(verifier("test-secret"));
+
+            responseBody = "{\"id_token\":\"" + googleToken(otherKey, validClaims().build()) + "\"}";
+            assertInvalidCode(verifier("test-secret"));
+        }
+
+        @Test
+        void 클라이언트_시크릿이_없으면_설정_오류() {
+            assertThatThrownBy(() -> verifier("").verifyAuthCode("code"))
+                    .isInstanceOfSatisfying(AuthenticationFailedException.class,
+                            e -> assertThat(e.code()).isEqualTo("GOOGLE_LOGIN_NOT_CONFIGURED"));
+            assertThat(receivedForm.get()).as("Google을 부르지 않는다").isNull();
+        }
+
+        private void assertInvalidCode(GoogleIdTokenVerifier v) {
+            assertThatThrownBy(() -> v.verifyAuthCode("code"))
+                    .isInstanceOfSatisfying(AuthenticationFailedException.class,
+                            e -> assertThat(e.code()).isEqualTo("INVALID_AUTH_CODE"));
         }
     }
 

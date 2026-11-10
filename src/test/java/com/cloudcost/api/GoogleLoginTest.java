@@ -76,6 +76,15 @@ class GoogleLoginTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$.error.code").value("INVALID_ID_TOKEN"));
         mvc.perform(post("/api/v1/auth/google").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/v1/auth/google").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"not-a-code\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_AUTH_CODE"));
+        mvc.perform(post("/api/v1/auth/google").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"idToken\":\"" + FakeGoogleIdentityVerifier.token("both", "both@example.com")
+                                + "\",\"code\":\"" + FakeGoogleIdentityVerifier.code("both", "both@example.com") + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
     }
 
     @Test
@@ -84,5 +93,25 @@ class GoogleLoginTest extends IntegrationTestBase {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.authMode").value("dev"));
         mvc.perform(get("/login.html")).andExpect(status().isOk());
+    }
+
+    @Test
+    void 인가_코드로도_로그인되고_같은_Google_계정이면_같은_사용자다() throws Exception {
+        String sub = "code-" + UUID.randomUUID();
+        JsonNode byCode = body(mvc.perform(post("/api/v1/auth/google")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"" + FakeGoogleIdentityVerifier.code(sub, "code@example.com") + "\"}"))
+                .andExpect(status().isOk()));
+        assertThat(byCode.at("/newUser").asBoolean()).isTrue();
+        assertThat(byCode.at("/user/picture").asText()).isEqualTo(FakeGoogleIdentityVerifier.picture(sub));
+
+        JsonNode byIdToken = login(sub, "code@example.com");
+        assertThat(byIdToken.at("/user/id").asText()).isEqualTo(byCode.at("/user/id").asText());
+        assertThat(byIdToken.at("/user/picture").asText()).as("ID 토큰 방식도 사진을 준다")
+                .isEqualTo(FakeGoogleIdentityVerifier.picture(sub));
+
+        mvc.perform(get("/api/v1/me").header("Authorization", bearer(byCode)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.picture").doesNotExist());
     }
 }

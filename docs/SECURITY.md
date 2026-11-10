@@ -46,5 +46,6 @@
 - Google 로그인: 서버가 Google ID 토큰의 서명(JWKS)·iss·aud(우리 클라이언트 ID)·exp·email_verified를 검증한다. 비밀번호를 받거나 저장하지 않는다.
 - 저장: Google sub(식별자), 이메일·이름(표시용). 이메일은 식별자로 쓰지 않는다.
 - 서버가 HS256 JWT(1시간)를 발급하고 `Authorization: Bearer`의 sub를 owner_id로 쓴다. `JWT_SECRET`(32바이트 이상)은 환경변수/Parameter Store.
+- 인가 코드 로그인(ADR-018)의 `GOOGLE_CLIENT_SECRET`도 환경변수로만 둔다. 코드 교환 요청·Google 응답 본문은 로그·응답에 남기지 않는다.
 - AUTH_MODE=google(배포): 토큰 필수, X-Owner-Id 무시. AUTH_MODE=dev는 APP_ENV=local에서만 허용되고, 토큰이 없을 때만 X-Owner-Id를 쓴다.
 - 토큰·Authorization 헤더는 로그에 남기지 않는다(마스킹). 로그인 실패 사유는 자세히 알려 주지 않는다.

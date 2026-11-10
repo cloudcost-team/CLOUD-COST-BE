@@ -8,15 +8,17 @@
 | 엔드포인트 | 인증 | 설명 |
 |---|---|---|
 | `GET /auth/config` | 없음 | `{ authMode: dev\|google, googleClientId }` |
-| `POST /auth/google` | 없음 | 요청 `{ "idToken": "<Google credential>" }` → `{ accessToken, tokenType: "Bearer", expiresAt, newUser, user: { id, email, name, provider } }`. 처음이면 자동 가입 |
+| `POST /auth/google` | 없음 | 요청 `{ "idToken": "<Google credential>" }` 또는 `{ "code": "<authorization code>" }` (둘 중 하나만) → `{ accessToken, tokenType: "Bearer", expiresAt, newUser, user: { id, email, name, provider, picture } }`. 처음이면 자동 가입 |
 | `POST /auth/refresh` | `cci_refresh` 쿠키 | → `{ accessToken, tokenType: "Bearer", expiresAt }` + 새 쿠키. 한 번 쓴 쿠키는 재사용 불가 (ADR-017) |
 | `POST /auth/logout` | `cci_refresh` 쿠키 | 204. 리프레시 토큰 무효화 + 쿠키 삭제 |
 | `GET /me` | 필요 | 내 정보 |
 
+- `code` 방식 (ADR-018): FE가 `google.accounts.oauth2.initCodeClient({ ux_mode: "popup", scope: "openid email profile" })`로 받은 인가 코드를 보낸다. 서버가 Google 토큰 엔드포인트에서 `redirect_uri=postmessage`로 ID 토큰과 바꾼 뒤 `idToken` 방식과 같은 규칙으로 검증한다. `idToken` 방식도 계속 받는다.
+- `user.picture`: Google 프로필 사진 URL (없으면 `null`). 저장하지 않으므로 로그인 응답에만 있고 `GET /me`에서는 `null`이다.
 - 이후 모든 API: `Authorization: Bearer <accessToken>` (1시간). AUTH_MODE=dev(로컬)에서는 토큰이 없을 때만 X-Owner-Id 허용.
 - 리프레시 토큰은 본문이 아니라 HttpOnly 쿠키 `cci_refresh`(Path=/api/v1/auth, SameSite=Lax, 14일)로만 온다. 브라우저는 login·refresh·logout을 `credentials: 'include'`로 호출한다.
 - 브라우저 테스트 페이지: `/login.html` → 토큰 복사 → Swagger Authorize의 `bearerAuth`.
-- 401 코드: `LOGIN_REQUIRED`(토큰 없음), `INVALID_TOKEN`(만료·위조), `INVALID_ID_TOKEN`(Google 검증 실패), `INVALID_REFRESH_TOKEN`(쿠키 없음·만료·무효), `REFRESH_TOKEN_REUSED`(이미 쓴 쿠키 → 그 로그인 전체 무효화). 503 `GOOGLE_LOGIN_NOT_CONFIGURED`.
+- 401 코드: `LOGIN_REQUIRED`(토큰 없음), `INVALID_TOKEN`(만료·위조), `INVALID_ID_TOKEN`(Google 검증 실패), `INVALID_AUTH_CODE`(인가 코드 교환 실패·만료·재사용, 교환한 토큰 검증 실패), `INVALID_REFRESH_TOKEN`(쿠키 없음·만료·무효), `REFRESH_TOKEN_REUSED`(이미 쓴 쿠키 → 그 로그인 전체 무효화). 503 `GOOGLE_LOGIN_NOT_CONFIGURED`(`GOOGLE_CLIENT_ID` 없음, `code` 방식은 `GOOGLE_CLIENT_SECRET`도 필요). 400 `VALIDATION_ERROR`: `idToken`·`code`가 둘 다 없거나 둘 다 있음.
 
 ## 오류 형식
 ```json
@@ -34,6 +36,15 @@
 | 503 | `BACKEND_AWS_NOT_CONFIGURED` | 서버 AWS 자격증명 없음 (사용자 잘못 아님) |
 
 ## 1. AWS 연결 (ADR-003, 예비: ADR-001)
+### `GET /aws/regions` — 연결할 때 고를 수 있는 리전
+```json
+{ "regions": [ { "code": "ap-northeast-2", "label": "서울", "isDefault": true },
+               { "code": "ap-northeast-1", "label": "도쿄", "isDefault": false }, … ] }
+```
+- 화면에 보일 순서대로 준다. 첫 번째(`ap-northeast-2`)가 기본값이다. 고른 `code`를 아래 `POST /aws/accounts`의 `region`으로 보낸다.
+- 계정마다 따로 켜야 하는 옵트인 리전(홍콩·자카르타 등)은 넣지 않는다. AWS를 호출하지 않는다.
+- 목록: 서울, 도쿄, 오사카, 싱가포르, 시드니, 뭄바이, 버지니아 북부, 오하이오, 캘리포니아 북부, 오레곤, 캐나다 중부, 프랑크푸르트, 아일랜드, 런던, 파리, 스톡홀름, 상파울루.
+
 ### `POST /aws/accounts` → 201
 요청(선택): `{ "region": "ap-northeast-2", "alias": "개인 계정" }` — `alias`는 연결 이름(앞뒤 공백 제거, 40자 이하, 줄바꿈·제어 문자 불가, 비우면 null)
 ```json
@@ -76,7 +87,7 @@
 - 목록은 기본으로 **시작한 지 1시간이 지나도록 `PENDING`인 연결**(링크만 받고 스택을 만들지 않은 것)을 뺀다. `includePending=true`면 모두 보여 준다.
   상세 조회와 삭제는 숨겨진 연결에도 그대로 된다.
 - `alias`: 연결 이름 (없으면 null → 화면에서는 "이름 없는 연결").
-- `regionLabel`: 한국어 리전 이름. `ap-northeast-2`→서울, `ap-northeast-1`→도쿄, `us-east-1`→버지니아 북부, `us-west-2`→오레곤, 그 밖은 코드 그대로.
+- `regionLabel`: 한국어 리전 이름 (`GET /aws/regions`의 `label`과 같다. 예: `ap-northeast-2`→서울). 목록에 없는 리전은 코드 그대로.
 - `stackName`: 고객 계정에 만들어지는 스택 이름 (`CloudCostInsight-` + 연결 id 앞 8자리).
 
 연결 `status`: `PENDING`(Role 전) / `ACTIVE` / `ERROR`(고쳐야 하는 오류, `lastError`에 한국어 원인) / `DISCONNECTED`(스택 삭제).
@@ -208,7 +219,8 @@
 - `budget`은 §2-1 대시보드의 `budget`과 같다 (없으면 `null`). `forecastMonthEndCost`도 같은 값이다.
 - `recentAverage`: 이번 달 앞 **3개월** 중 기록 시작일 이후 **온전한 달**의 평균 추정 비용. 처음 쓰기 전의 달(기록 전체에서 처음 사용한 날 기준, 3개월 앞에서 이미 썼다면 사용이 없던 0원인 달도 넣는다)·단가를 모르는 달은 뺀다. 쓸 달이 없으면 `null` + `notes`.
 - `slider` (요청 통화 기준): `step` 원화 1만 원 · 달러 10달러, `min` = 한 칸,
-  `max` = 지난 3개월 평균 × 2 · 월말 예상 × 1.5 · 지금 예산 × 1.5 중 큰 값을 한 칸 단위로 올림 (근거가 없으면 100만 원 · 1,000달러),
+  `max` = 지난 3개월 평균 × 2 · 월말 예상 × 1.5 · 지금 예산 × 1.5 중 큰 값을 한 칸 단위로 올림.
+  사용 근거(지난 3개월 평균·월말 예상)가 없으면 지금 예산이 있어도 기본값 100만 원 · 1,000달러 아래로 내려가지 않는다 (`max(지금 예산 × 1.5, 기본값)`, 저장할 때마다 범위가 좁아지지 않게),
   `suggested`(처음 위치) = 지금 예산 → 지난 3개월 평균 → 월말 예상 순으로 있는 값을 올림.
 - 대시보드처럼 조회할 수 있는 연결이어야 한다 (대기·끊긴 연결은 409). 남의 연결은 404.
 - 체험 모드: `POST /demo/budget` (§3 설정 + 선택 `budget`). 기간의 마지막 날이 속한 달 앞의 3개월로 평균을 낸다.
