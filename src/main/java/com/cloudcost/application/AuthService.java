@@ -62,8 +62,9 @@ public class AuthService {
     /**
      * @param refreshToken 원문. HttpOnly 쿠키로만 내려보낸다
      * @param newUser 이번 로그인으로 가입했는지
+     * @param picture Google 프로필 사진 URL (없으면 null, 저장하지 않는다)
      */
-    public record LoginResult(IssuedToken token, IssuedToken refreshToken, AppUser user, boolean newUser) {}
+    public record LoginResult(IssuedToken token, IssuedToken refreshToken, AppUser user, boolean newUser, String picture) {}
 
     /** @param refreshToken 새로 바뀐 리프레시 토큰 원문 */
     public record RefreshResult(IssuedToken token, IssuedToken refreshToken) {}
@@ -72,7 +73,18 @@ public class AuthService {
         if (idToken == null || idToken.isBlank()) {
             throw new AuthenticationFailedException("INVALID_ID_TOKEN", "Google 로그인 정보가 없습니다.");
         }
-        VerifiedIdentity identity = google.verify(idToken.trim());
+        return login(google.verify(idToken.trim()));
+    }
+
+    /** OAuth 팝업(initCodeClient)이 준 인가 코드로 로그인한다. 서버가 Google에서 ID 토큰으로 바꿔 같은 방식으로 검증한다. */
+    public LoginResult loginWithGoogleCode(String code) {
+        if (code == null || code.isBlank()) {
+            throw new AuthenticationFailedException("INVALID_AUTH_CODE", "Google 로그인 정보가 없습니다.");
+        }
+        return login(google.verifyAuthCode(code.trim()));
+    }
+
+    private LoginResult login(VerifiedIdentity identity) {
         Instant now = clock.instant();
         Optional<AppUser> existing = users.findByProvider(identity.provider(), identity.subject());
         AppUser user = unitOfWork.inTransaction(() -> users.save(existing
@@ -82,7 +94,7 @@ public class AuthService {
             refreshTokens.deleteExpired(user.id(), now);
             return issueRefreshToken(user.id(), UUID.randomUUID(), now);
         });
-        return new LoginResult(tokens.issue(user.id(), now), refresh, user, existing.isEmpty());
+        return new LoginResult(tokens.issue(user.id(), now), refresh, user, existing.isEmpty(), identity.picture());
     }
 
     /** 리프레시 토큰 → 새 액세스 토큰 + 새 리프레시 토큰. 쓴 토큰은 다시 쓸 수 없다. */

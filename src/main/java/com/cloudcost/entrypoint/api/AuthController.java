@@ -12,7 +12,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Duration;
 import java.time.Instant;
@@ -46,12 +46,33 @@ class AuthController {
             @Schema(description = "dev: 로컬 개발(헤더 허용) / google: 로그인 필수") String authMode,
             @Schema(description = "Google 로그인 버튼에 쓰는 OAuth 클라이언트 ID (공개 값)") String googleClientId) {}
 
+    @Schema(description = "idToken과 code 중 하나만 보낸다")
     record GoogleLoginRequest(
-            @NotBlank @Schema(description = "Google 로그인 버튼이 돌려준 ID 토큰(credential)") String idToken) {}
+            @Schema(description = "Google 로그인 버튼·One Tap이 돌려준 ID 토큰(credential)") String idToken,
+            @Schema(description = "OAuth 팝업(initCodeClient, ux_mode=popup)이 돌려준 인가 코드") String code) {
 
-    record UserResponse(String id, String email, String name, String provider, Instant createdAt, Instant lastLoginAt) {
+        @AssertTrue(message = "idToken과 code 중 하나만 보내세요.")
+        @Schema(hidden = true)
+        boolean isExactlyOne() {
+            return isBlank(idToken) != isBlank(code);
+        }
+
+        private static boolean isBlank(String value) {
+            return value == null || value.isBlank();
+        }
+    }
+
+    record UserResponse(
+            String id, String email, String name, String provider,
+            @Schema(description = "Google 프로필 사진 URL. 로그인 응답에만 있고 /me에서는 null (저장하지 않는다)") String picture,
+            Instant createdAt, Instant lastLoginAt) {
         static UserResponse of(AppUser u) {
-            return new UserResponse(u.id(), u.email(), u.displayName(), u.provider(), u.createdAt(), u.lastLoginAt());
+            return of(u, null);
+        }
+
+        static UserResponse of(AppUser u, String picture) {
+            return new UserResponse(
+                    u.id(), u.email(), u.displayName(), u.provider(), picture, u.createdAt(), u.lastLoginAt());
         }
     }
 
@@ -80,14 +101,18 @@ class AuthController {
     @SecurityRequirements
     @Operation(
             summary = "Google로 로그인 (처음이면 자동 가입)",
-            description = "Google ID 토큰의 서명·발급처·클라이언트 ID·만료·이메일 인증 여부를 검증하고 액세스 토큰을 발급한다. "
-                    + "저장하는 것은 Google 고유 ID, 이메일, 이름뿐이다. 브라우저 테스트: /login.html. "
+            description = "idToken(로그인 버튼·One Tap) 또는 code(OAuth 팝업 인가 코드, redirect_uri=postmessage) 중 하나를 받는다. "
+                    + "code면 서버가 Google 토큰 엔드포인트에서 ID 토큰으로 바꾼다. "
+                    + "Google ID 토큰의 서명·발급처·클라이언트 ID·만료·이메일 인증 여부를 검증하고 액세스 토큰을 발급한다. "
+                    + "저장하는 것은 Google 고유 ID, 이메일, 이름뿐이다(사진 URL은 응답에만). 브라우저 테스트: /login.html. "
                     + "리프레시 토큰은 본문이 아니라 HttpOnly 쿠키(cci_refresh)로 내려준다.")
     LoginResponse loginWithGoogle(@Valid @RequestBody GoogleLoginRequest request, HttpServletResponse response) {
-        LoginResult result = auth.loginWithGoogle(request.idToken());
+        LoginResult result = request.code() != null && !request.code().isBlank()
+                ? auth.loginWithGoogleCode(request.code())
+                : auth.loginWithGoogle(request.idToken());
         setRefreshCookie(response, result.refreshToken());
         return new LoginResponse(result.token().value(), "Bearer", result.token().expiresAt(), result.newUser(),
-                UserResponse.of(result.user()));
+                UserResponse.of(result.user(), result.picture()));
     }
 
     @PostMapping("/api/v1/auth/refresh")

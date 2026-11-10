@@ -56,6 +56,7 @@ DOMAIN=<DOMAIN>
 APP_ENV=prod
 AUTH_MODE=google
 GOOGLE_CLIENT_ID=<Google 클라이언트 ID>
+GOOGLE_CLIENT_SECRET=<같은 클라이언트의 시크릿>
 JWT_SECRET=$(openssl rand -base64 48)
 DB_PASSWORD=$(openssl rand -hex 24)
 CCI_BACKEND_ROLE_ARN=arn:aws:iam::<계정ID>:role/CloudCostInsightBackendRole

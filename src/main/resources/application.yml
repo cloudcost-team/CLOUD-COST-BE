@@ -53,6 +53,8 @@ cci:
     dev-default-owner: ${DEV_OWNER_ID:local-dev-user}
     # Google 로그인 (docs/decisions/004). 클라이언트 ID는 공개 값, JWT_SECRET은 비밀 (32바이트 이상)
     google-client-id: ${GOOGLE_CLIENT_ID:}
+    # 인가 코드(OAuth 팝업) 로그인에서 코드를 교환할 때만 쓴다. 비밀 값 — 환경변수로만 넣는다 (ADR-018)
+    google-client-secret: ${GOOGLE_CLIENT_SECRET:}
     jwt-secret: ${JWT_SECRET:}
     token-ttl: 1h
     # 리프레시 토큰: HttpOnly 쿠키(cci_refresh, Path=/api/v1/auth, SameSite=Lax). ADR-017

@@ -8,15 +8,17 @@
 | 엔드포인트 | 인증 | 설명 |
 |---|---|---|
 | `GET /auth/config` | 없음 | `{ authMode: dev\|google, googleClientId }` |
-| `POST /auth/google` | 없음 | 요청 `{ "idToken": "<Google credential>" }` → `{ accessToken, tokenType: "Bearer", expiresAt, newUser, user: { id, email, name, provider } }`. 처음이면 자동 가입 |
+| `POST /auth/google` | 없음 | 요청 `{ "idToken": "<Google credential>" }` 또는 `{ "code": "<authorization code>" }` (둘 중 하나만) → `{ accessToken, tokenType: "Bearer", expiresAt, newUser, user: { id, email, name, provider, picture } }`. 처음이면 자동 가입 |
 | `POST /auth/refresh` | `cci_refresh` 쿠키 | → `{ accessToken, tokenType: "Bearer", expiresAt }` + 새 쿠키. 한 번 쓴 쿠키는 재사용 불가 (ADR-017) |
 | `POST /auth/logout` | `cci_refresh` 쿠키 | 204. 리프레시 토큰 무효화 + 쿠키 삭제 |
 | `GET /me` | 필요 | 내 정보 |
 
+- `code` 방식 (ADR-018): FE가 `google.accounts.oauth2.initCodeClient({ ux_mode: "popup", scope: "openid email profile" })`로 받은 인가 코드를 보낸다. 서버가 Google 토큰 엔드포인트에서 `redirect_uri=postmessage`로 ID 토큰과 바꾼 뒤 `idToken` 방식과 같은 규칙으로 검증한다. `idToken` 방식도 계속 받는다.
+- `user.picture`: Google 프로필 사진 URL (없으면 `null`). 저장하지 않으므로 로그인 응답에만 있고 `GET /me`에서는 `null`이다.
 - 이후 모든 API: `Authorization: Bearer <accessToken>` (1시간). AUTH_MODE=dev(로컬)에서는 토큰이 없을 때만 X-Owner-Id 허용.
 - 리프레시 토큰은 본문이 아니라 HttpOnly 쿠키 `cci_refresh`(Path=/api/v1/auth, SameSite=Lax, 14일)로만 온다. 브라우저는 login·refresh·logout을 `credentials: 'include'`로 호출한다.
 - 브라우저 테스트 페이지: `/login.html` → 토큰 복사 → Swagger Authorize의 `bearerAuth`.
-- 401 코드: `LOGIN_REQUIRED`(토큰 없음), `INVALID_TOKEN`(만료·위조), `INVALID_ID_TOKEN`(Google 검증 실패), `INVALID_REFRESH_TOKEN`(쿠키 없음·만료·무효), `REFRESH_TOKEN_REUSED`(이미 쓴 쿠키 → 그 로그인 전체 무효화). 503 `GOOGLE_LOGIN_NOT_CONFIGURED`.
+- 401 코드: `LOGIN_REQUIRED`(토큰 없음), `INVALID_TOKEN`(만료·위조), `INVALID_ID_TOKEN`(Google 검증 실패), `INVALID_AUTH_CODE`(인가 코드 교환 실패·만료·재사용, 교환한 토큰 검증 실패), `INVALID_REFRESH_TOKEN`(쿠키 없음·만료·무효), `REFRESH_TOKEN_REUSED`(이미 쓴 쿠키 → 그 로그인 전체 무효화). 503 `GOOGLE_LOGIN_NOT_CONFIGURED`(`GOOGLE_CLIENT_ID` 없음, `code` 방식은 `GOOGLE_CLIENT_SECRET`도 필요). 400 `VALIDATION_ERROR`: `idToken`·`code`가 둘 다 없거나 둘 다 있음.
 
 ## 오류 형식
 ```json
@@ -34,8 +36,6 @@
 | 503 | `BACKEND_AWS_NOT_CONFIGURED` | 서버 AWS 자격증명 없음 (사용자 잘못 아님) |
 
 ## 1. AWS 연결 (ADR-003, 예비: ADR-001)
-### `POST /aws/accounts` → 201
-요청(선택): `{ "region": "ap-northeast-2", "alias": "개인 계정" }` — `alias`는 연결 이름(앞뒤 공백 제거, 40자 이하, 줄바꿈·제어 문자 불가, 비우면 null)
 ### `GET /aws/regions` — 연결할 때 고를 수 있는 리전
 ```json
 { "regions": [ { "code": "ap-northeast-2", "label": "서울", "isDefault": true },
@@ -45,6 +45,8 @@
 - 계정마다 따로 켜야 하는 옵트인 리전(홍콩·자카르타 등)은 넣지 않는다. AWS를 호출하지 않는다.
 - 목록: 서울, 도쿄, 오사카, 싱가포르, 시드니, 뭄바이, 버지니아 북부, 오하이오, 캘리포니아 북부, 오레곤, 캐나다 중부, 프랑크푸르트, 아일랜드, 런던, 파리, 스톡홀름, 상파울루.
 
+### `POST /aws/accounts` → 201
+요청(선택): `{ "region": "ap-northeast-2", "alias": "개인 계정" }` — `alias`는 연결 이름(앞뒤 공백 제거, 40자 이하, 줄바꿈·제어 문자 불가, 비우면 null)
 ```json
 { "account": { "accountId": "…", "alias": "개인 계정", "status": "PENDING", "region": "ap-northeast-2", "regionLabel": "서울",
                "externalId": "cci-0123456789abcdef01234567", "roleArn": null, "awsAccountId": null, "lastError": null, "verifiedAt": null,
