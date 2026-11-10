@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 class CorsApiTest extends IntegrationTestBase {
 
     @ParameterizedTest
-    @ValueSource(strings = {"http://localhost:3000", "https://www.cloud-cost.cloud"})
+    @ValueSource(strings = {"http://localhost:3000", "https://www.cloud-cost.cloud", "https://cloud-cost.cloud"})
     void 등록된_프론트_출처의_사전요청을_허용한다(String origin) throws Exception {
         mvc.perform(options("/api/v1/dashboard")
                         .header("Origin", origin)
