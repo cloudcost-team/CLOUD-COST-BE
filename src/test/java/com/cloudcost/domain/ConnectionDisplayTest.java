@@ -47,7 +47,8 @@ class ConnectionDisplayTest {
         "ap-northeast-1, 도쿄",
         "us-east-1, 버지니아 북부",
         "us-west-2, 오레곤",
-        "eu-west-1, eu-west-1"
+        "eu-west-1, 아일랜드",
+        "ap-east-1, ap-east-1"
     })
     void 리전은_한국어_이름으로_보여_주고_모르면_코드_그대로(String code, String label) {
         assertThat(new AwsRegion(code).koreanLabel()).isEqualTo(label);

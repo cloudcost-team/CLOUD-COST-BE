@@ -36,6 +36,15 @@
 ## 1. AWS 연결 (ADR-003, 예비: ADR-001)
 ### `POST /aws/accounts` → 201
 요청(선택): `{ "region": "ap-northeast-2", "alias": "개인 계정" }` — `alias`는 연결 이름(앞뒤 공백 제거, 40자 이하, 줄바꿈·제어 문자 불가, 비우면 null)
+### `GET /aws/regions` — 연결할 때 고를 수 있는 리전
+```json
+{ "regions": [ { "code": "ap-northeast-2", "label": "서울", "isDefault": true },
+               { "code": "ap-northeast-1", "label": "도쿄", "isDefault": false }, … ] }
+```
+- 화면에 보일 순서대로 준다. 첫 번째(`ap-northeast-2`)가 기본값이다. 고른 `code`를 아래 `POST /aws/accounts`의 `region`으로 보낸다.
+- 계정마다 따로 켜야 하는 옵트인 리전(홍콩·자카르타 등)은 넣지 않는다. AWS를 호출하지 않는다.
+- 목록: 서울, 도쿄, 오사카, 싱가포르, 시드니, 뭄바이, 버지니아 북부, 오하이오, 캘리포니아 북부, 오레곤, 캐나다 중부, 프랑크푸르트, 아일랜드, 런던, 파리, 스톡홀름, 상파울루.
+
 ```json
 { "account": { "accountId": "…", "alias": "개인 계정", "status": "PENDING", "region": "ap-northeast-2", "regionLabel": "서울",
                "externalId": "cci-0123456789abcdef01234567", "roleArn": null, "awsAccountId": null, "lastError": null, "verifiedAt": null,
@@ -76,7 +85,7 @@
 - 목록은 기본으로 **시작한 지 1시간이 지나도록 `PENDING`인 연결**(링크만 받고 스택을 만들지 않은 것)을 뺀다. `includePending=true`면 모두 보여 준다.
   상세 조회와 삭제는 숨겨진 연결에도 그대로 된다.
 - `alias`: 연결 이름 (없으면 null → 화면에서는 "이름 없는 연결").
-- `regionLabel`: 한국어 리전 이름. `ap-northeast-2`→서울, `ap-northeast-1`→도쿄, `us-east-1`→버지니아 북부, `us-west-2`→오레곤, 그 밖은 코드 그대로.
+- `regionLabel`: 한국어 리전 이름 (`GET /aws/regions`의 `label`과 같다. 예: `ap-northeast-2`→서울). 목록에 없는 리전은 코드 그대로.
 - `stackName`: 고객 계정에 만들어지는 스택 이름 (`CloudCostInsight-` + 연결 id 앞 8자리).
 
 연결 `status`: `PENDING`(Role 전) / `ACTIVE` / `ERROR`(고쳐야 하는 오류, `lastError`에 한국어 원인) / `DISCONNECTED`(스택 삭제).
