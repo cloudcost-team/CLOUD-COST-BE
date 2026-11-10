@@ -76,4 +76,17 @@ class ApiErrorTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$.paths['/api/v1/aws/accounts/{accountId}/costs/daily']").exists())
                 .andExpect(jsonPath("$.components.securitySchemes.devOwner.name").value("X-Owner-Id"));
     }
+
+    @Test
+    void 이름이_같은_DTO도_Swagger_스키마가_서로_덮어쓰지_않는다() throws Exception {
+        // 대시보드·시뮬레이션·알림 설정에 BudgetDto가 각각 있다. 이름이 겹치면 한 스키마만 문서에 남는다
+        getJson("/v3/api-docs")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.components.schemas.DashboardBudget.properties.usageRate").exists())
+                .andExpect(jsonPath("$.components.schemas.DashboardBudget.properties.thresholdReached").exists())
+                .andExpect(jsonPath("$.components.schemas.DashboardBudget.properties.enteredCurrency").exists())
+                .andExpect(jsonPath("$.components.schemas.SimulationBudget.properties.enteredAmount").exists())
+                .andExpect(jsonPath("$.components.schemas.AlertSettingsBudget.properties.currency").exists())
+                .andExpect(jsonPath("$.components.schemas.FreshnessWarning.properties.code").exists());
+    }
 }

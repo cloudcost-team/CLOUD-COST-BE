@@ -70,7 +70,7 @@ public final class SimulationDtos {
             @Schema(description = "월 비용 (currency 기준)", example = "374400") BigDecimal monthlyCost,
             @Schema(description = "예산 대비 (%). 예산이 없으면 null", example = "93.6") BigDecimal budgetRate) {}
 
-    @Schema(description = "월 예산. 정하지 않았으면 null")
+    @Schema(name = "SimulationBudget", description = "월 예산. 정하지 않았으면 null")
     public record BudgetDto(
             @Schema(description = "예산 (currency 기준). 원화 예산인데 환율이 없으면 null") BigDecimal amount,
             BigDecimal enteredAmount,

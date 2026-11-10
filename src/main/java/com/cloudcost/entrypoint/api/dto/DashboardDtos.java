@@ -75,7 +75,7 @@ public final class DashboardDtos {
         }
     }
 
-    @Schema(description = "월 예산. 정하지 않았으면 null")
+    @Schema(name = "DashboardBudget", description = "월 예산. 정하지 않았으면 null")
     public record BudgetDto(
             @Schema(description = "예산 (currency 기준). 원화 예산인데 환율이 없어 달러로 바꿀 수 없으면 null", example = "400000")
                     BigDecimal amount,

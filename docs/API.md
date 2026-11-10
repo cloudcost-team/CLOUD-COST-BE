@@ -116,8 +116,12 @@
 ```json
 "freshness": { "instancesRefreshedAt": "…", "instancesFromCache": true,
                "usageRefreshedAt": "2026-10-08T03:00:00Z", "usageFromCache": true,
-               "nextUsageRefreshAt": "2026-10-08T04:00:00Z", "warnings": [] }
+               "nextUsageRefreshAt": "2026-10-08T04:00:00Z", "warnings": [], "warningDetails": [] }
 ```
+`warningDetails`는 `warnings`와 같은 순서의 `{ "code", "message" }`다. 문구는 바뀔 수 있으니 화면은 `code`로 상태를 나눈다:
+`PARTIAL_COLLECTION`(CloudWatch 호출 상한으로 일부만 수집, 다음 수집 때 이어서) · `AWS_THROTTLED`(AWS 요청 제한) ·
+`USAGE_COLLECTION_FAILED`(그 밖의 이유로 사용량 일부 실패) · `COLLECTION_FAILED`(수집 전체 실패, 저장된 데이터 표시) ·
+`CONNECTION_ERROR`(연결 ERROR 상태) · `PRICE_UNAVAILABLE`(단가 조회 실패).
 `ACTIVE`이거나 검증된 뒤 `ERROR`가 된 연결이면 조회할 수 있다 (ERROR면 저장된 데이터 + `freshness.warnings`에 원인). 그 밖은 409.
 일부 수집이 실패하면 받은 부분은 저장되고 `freshness.warnings`에 안내가 붙는다.
 
@@ -369,7 +373,7 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 비슷한 규모 팀의 공개 자료와 견준다. 비교 기준은 교체 가능한 파일(`CCI_BENCHMARK_REFERENCE`, 기본 `classpath:benchmark/reference.json`)이다.
 ```json
 { "dataSource": "aws", "currency": "KRW", "status": "OK", "availableAt": null, "window": { "from": "…", "to": "…" },
-  "appliedRecommendationIds": [],
+  "appliedRecommendationIds": [], "selectedMonthlySavings": null,
   "oversizedRatio": {
     "status": "OK", "ours": { "judgedCount": 4, "oversizedCount": 2, "ratio": 50.0 }, "moreEfficientTeamsPercent": 55.0,
     "matchedSizeBand": "3-20",
@@ -378,12 +382,16 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
                    "averageRatio": 42, "medianRatio": 33, "percentileAvailable": true },
     "sizeBands": [ { "key": "1-2", "label": "서버 1~2대", "minServers": 1, "maxServers": 2, "dataAvailable": false, "matchesOurs": false },
                    { "key": "3-20", "label": "서버 3~20대", "minServers": 3, "maxServers": 20, "dataAvailable": true, "matchesOurs": true } ],
+    "distribution": { "approximate": true, "basis": "백분위 표(5% 간격)로 어림한 분포라 …", "sizeBand": "3-20",
+                      "buckets": [ { "fromPercent": 0, "toPercent": 20, "label": "0~20%", "teamsPercent": 30.0, "ours": false, "afterSimulation": false },
+                                   { "fromPercent": 40, "toPercent": 60, "label": "40~60%", "teamsPercent": 15.0, "ours": true, "afterSimulation": false }, … ],
+                      "oursBucketIndex": 2, "afterSimulationBucketIndex": null },
     "servers": [ { "instanceId": "i-0abc", "name": "api-server", "instanceType": "m5.large", "cpuP95": 6.20, "cpuHours": 336,
                    "oversized": true, "verdict": "과다 사양 (P95 10% 미만)" } ],
     "afterSimulation": null },
   "wasteRatio": { "status": "UNAVAILABLE", "reason": "전체 낭비 비율을 구하려면 … 계산하지 않아요.",
                   "referenceSource": "Flexera 2026 State of the Cloud", "referenceDescription": "…", "referenceAverage": 29 },
-  "monthlySpend": { "status": "OK", "monthlyCost": 312000, "position": "WITHIN",
+  "monthlySpend": { "status": "OK", "monthlyCost": 312000, "monthlyCostUsd": 234.05, "position": "WITHIN", "barPositionPercent": 33.5,
                     "range": { "source": "SpendArk Cloud Cost Benchmark 2026", "description": "1~10명 팀의 월 클라우드 지출 범위",
                                "min": 133309, "max": 666545, "minUsd": 100, "maxUsd": 500 },
                     "afterSimulation": null },
@@ -399,12 +407,18 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
     `1-2` 구독 1,473곳 평균 47%·중앙값 50%, `3-20` 구독 2,622곳 평균 42%·중앙값 33% (ADR-013).
   - `moreEfficientTeamsPercent`: 우리보다 비율이 **확실히 낮은** 팀의 비율(%). 백분위 표에서 비율이 우리보다 낮은 가장 큰 백분위다
     (5% 단위 하한값. 같은 비율인 팀은 넣지 않는다 — 1~2대 팀은 비율이 0·50·100%뿐이라 같은 값이 많다). 표가 없으면 `null` + `notes` 안내.
+  - `distribution`: 비교 구간(`reference.sizeBand`) 팀들의 과다 사양 비율 분포. 0~20·20~40·40~60·60~80·80~100% 다섯 칸(하한 포함, 100%는 마지막 칸)이고
+    `teamsPercent`를 모두 더하면 100이다. 원본이 아니라 **백분위 표로 어림한 값**(`approximate: true`)이라 칸마다 5%p 정도 틀릴 수 있다.
+    우리 비율이 드는 칸은 `ours`·`oursBucketIndex`, 추천 적용 후는 `afterSimulation`·`afterSimulationBucketIndex`. 비교 구간이나 백분위 표가 없으면 `null`.
 - **② 전체 낭비 비율**(`wasteRatio`): 미연결 볼륨·스냅샷·고정 IP·로드밸런서를 지금 권한으로 볼 수 없어 항상 `UNAVAILABLE` + 사유. Flexera 평균은 참고값이다.
 - **③ 월 지출**(`monthlySpend`): 월말 예상(§2-1, USD)을 비교 범위($100~$500)와 견줘 `BELOW`(미만)·`WITHIN`·`ABOVE`(초과). 범위는 요청 통화로도 준다.
+  `monthlyCostUsd`는 범위(`minUsd`·`maxUsd`)와 같은 달러 금액, `barPositionPercent`는 범위 막대 위 위치(하한 0 ~ 상한 100, 범위 밖이면 0 또는 100에 붙고 `position`으로 구분).
+  `afterSimulation`에도 `monthlyCostUsd`·`barPositionPercent`가 있다.
   월말 예상이 없으면 `status: "NO_FORECAST"`, 금액·위치 `null`. 기록이 14일 미만이어도 월말 예상이 있으면 비교한다.
   월말 예상의 안내(단가를 모르는 서버를 뺐다는 등 §2-1 `notes`)도 이 응답 `notes`에 함께 준다 (같은 문구는 한 번만).
 - **`recommendationIds`**(쉼표 구분 또는 여러 번)를 주면 `afterSimulation`을 채운다: 과다 사양 추천을 적용한 서버는 적정, 유휴 추천(중지)을 적용한 서버는 판단 대상에서 빠진다고 보고,
   월 지출은 §4-1 시뮬레이터와 같은 계산(증가율 0)의 적용 후 금액으로 위치를 다시 잡는다. 모르는 id는 400 `UNKNOWN_RECOMMENDATION`.
+  `selectedMonthlySavings`는 고른 추천의 월 절감액 합으로 §4-1 응답의 같은 이름 값과 같다 (추천을 주지 않으면 `null`). 절감액 문구를 위해 시뮬레이션을 따로 부르지 않아도 된다.
 - 최상위 `status`: `OK` 또는 `INSUFFICIENT_HISTORY`(+ `availableAt`).
 - 오류: §2와 같다.
 

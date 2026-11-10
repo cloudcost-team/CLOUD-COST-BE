@@ -7,6 +7,8 @@ import com.cloudcost.application.BenchmarkService.SpendSection;
 import com.cloudcost.application.CurrencyService.Resolved;
 import com.cloudcost.domain.benchmark.BenchmarkReference;
 import com.cloudcost.domain.benchmark.BenchmarkReference.SizeBand;
+import com.cloudcost.domain.benchmark.TeamBenchmark;
+import com.cloudcost.domain.benchmark.TeamBenchmark.DistributionBucket;
 import com.cloudcost.domain.benchmark.TeamBenchmark.Ratio;
 import com.cloudcost.domain.benchmark.TeamBenchmark.ServerVerdict;
 import com.cloudcost.domain.cost.CostNotes;
@@ -85,6 +87,51 @@ public final class BenchmarkDtos {
             @Schema(description = "비교 자료가 있으면 true") boolean dataAvailable,
             @Schema(description = "우리 서버 대수가 속한 구간이면 true") boolean matchesOurs) {}
 
+    @Schema(description = "분포 막대 한 칸")
+    public record DistributionBucketDto(
+            @Schema(description = "과다 사양 비율 하한 (%, 포함)", example = "20") BigDecimal fromPercent,
+            @Schema(description = "상한 (%). 마지막 칸(80~100)만 100을 포함", example = "40") BigDecimal toPercent,
+            @Schema(example = "20~40%") String label,
+            @Schema(description = "이 칸에 드는 비교 팀 비율 (%). 칸을 모두 더하면 100", example = "17.5") BigDecimal teamsPercent,
+            @Schema(description = "우리 팀 과다 사양 비율이 이 칸이면 true") boolean ours,
+            @Schema(description = "추천 적용 후 비율이 이 칸이면 true (recommendationIds가 없으면 모두 false)")
+                    boolean afterSimulation) {}
+
+    @Schema(description = "비교 팀의 과다 사양 비율 분포 (reference 구간). 백분위 표가 없거나 비교 구간이 없으면 null")
+    public record DistributionDto(
+            @Schema(description = "원본이 아니라 백분위 표로 어림한 값이면 true") boolean approximate,
+            @Schema(description = "분포를 만든 방법") String basis,
+            @Schema(description = "분포를 만든 구간 키 (reference.sizeBand와 같다)", example = "3-20") String sizeBand,
+            @Schema(description = "0~20 · 20~40 · 40~60 · 60~80 · 80~100% 다섯 칸") List<DistributionBucketDto> buckets,
+            @Schema(description = "우리 팀이 드는 칸 번호 (0부터). 우리 비율이 없으면 null", example = "3") Integer oursBucketIndex,
+            @Schema(description = "추천 적용 후 드는 칸 번호. 적용 후가 없으면 null", example = "0")
+                    Integer afterSimulationBucketIndex) {
+
+        static final String BASIS = "백분위 표(5% 간격)로 어림한 분포라 칸마다 5%p 정도 틀릴 수 있어요.";
+
+        static DistributionDto of(OversizedSection s) {
+            SizeBand band = s.selectedBand();
+            if (band == null || !band.hasData() || band.percentiles().isEmpty()) {
+                return null;
+            }
+            List<DistributionBucket> buckets = TeamBenchmark.distribution(band.percentiles());
+            Integer ours = bucket(s.ratio());
+            Integer after = bucket(s.after());
+            List<DistributionBucketDto> rows = new java.util.ArrayList<>();
+            for (int i = 0; i < buckets.size(); i++) {
+                DistributionBucket b = buckets.get(i);
+                rows.add(new DistributionBucketDto(b.fromPercent(), b.toPercent(),
+                        b.fromPercent().toPlainString() + "~" + b.toPercent().toPlainString() + "%", b.teamsPercent(),
+                        ours != null && ours == i, after != null && after == i));
+            }
+            return new DistributionDto(true, BASIS, band.key(), List.copyOf(rows), ours, after);
+        }
+
+        private static Integer bucket(Ratio r) {
+            return r == null || r.ratioPercent() == null ? null : TeamBenchmark.bucketIndex(r.ratioPercent());
+        }
+    }
+
     @Schema(description = "① 과다 사양 서버 비율 (S09-2·S09-3)")
     public record OversizedDto(
             @Schema(description = "OK | NOT_COMPARABLE(판단한 서버가 없거나 고른 구간의 비교 자료 없음) | INSUFFICIENT_HISTORY(기록 14일 미만)")
@@ -96,6 +143,7 @@ public final class BenchmarkDtos {
                     String matchedSizeBand,
             @Schema(description = "비교에 쓴 구간 (요청한 sizeBand, 없으면 matchedSizeBand)") OversizedReferenceDto reference,
             @Schema(description = "고를 수 있는 구간 (작은 순)") List<SizeBandDto> sizeBands,
+            DistributionDto distribution,
             @Schema(description = "서버별 P95와 판정 (P95 낮은 순)") List<ServerDto> servers,
             @Schema(description = "추천을 적용한 뒤 (recommendationIds가 없으면 null)") RatioDto afterSimulation) {
 
@@ -106,7 +154,7 @@ public final class BenchmarkDtos {
                     .toList();
             return new OversizedDto(s.status().name(), RatioDto.of(s.ratio()), s.moreEfficientTeamsPercent(),
                     matched == null ? null : matched.key(), OversizedReferenceDto.of(ref, s.selectedBand()), bands,
-                    s.servers().stream().map(ServerDto::of).toList(), RatioDto.of(s.after()));
+                    DistributionDto.of(s), s.servers().stream().map(ServerDto::of).toList(), RatioDto.of(s.after()));
         }
     }
 
@@ -126,13 +174,21 @@ public final class BenchmarkDtos {
             @Schema(example = "100") BigDecimal minUsd,
             @Schema(example = "500") BigDecimal maxUsd) {}
 
-    public record SpendAfterDto(BigDecimal monthlyCost, @Schema(example = "WITHIN") String position) {}
+    public record SpendAfterDto(
+            @Schema(description = "적용 후 월 비용 (currency 기준)") BigDecimal monthlyCost,
+            @Schema(description = "적용 후 월 비용 (USD)", example = "79.64") BigDecimal monthlyCostUsd,
+            @Schema(example = "WITHIN") String position,
+            @Schema(description = "범위 막대 위 위치 (%, 0=하한 100=상한, 범위 밖이면 0 또는 100)", example = "0.0")
+                    BigDecimal barPositionPercent) {}
 
     @Schema(description = "③ 월 지출 (S09-4)")
     public record SpendDto(
             @Schema(description = "OK | NO_FORECAST") String status,
             @Schema(description = "월말 예상 (currency 기준)", example = "312000") BigDecimal monthlyCost,
+            @Schema(description = "월말 예상 (USD, 범위 minUsd·maxUsd와 같은 단위)", example = "197.90") BigDecimal monthlyCostUsd,
             @Schema(description = "BELOW(범위 아래) | WITHIN | ABOVE. NO_FORECAST면 null") String position,
+            @Schema(description = "범위 막대 위 우리 위치 (%, 0=하한 100=상한, 범위 밖이면 0 또는 100). NO_FORECAST면 null",
+                    example = "24.5") BigDecimal barPositionPercent,
             SpendRangeDto range,
             @Schema(description = "추천을 적용한 뒤 (recommendationIds가 없으면 null)") SpendAfterDto afterSimulation) {
 
@@ -140,9 +196,16 @@ public final class BenchmarkDtos {
             SpendRangeDto range = new SpendRangeDto(ref.source(), ref.description(), d.cost(ref.minUsd()),
                     d.cost(ref.maxUsd()), ref.minUsd(), ref.maxUsd());
             SpendAfterDto after = s.afterUsd() == null ? null
-                    : new SpendAfterDto(d.cost(s.afterUsd()), s.afterPosition().name());
-            return new SpendDto(s.status().name(), d.cost(s.monthEndUsd()),
-                    s.position() == null ? null : s.position().name(), range, after);
+                    : new SpendAfterDto(d.cost(s.afterUsd()), usd(s.afterUsd()), s.afterPosition().name(),
+                            TeamBenchmark.barPositionPercent(s.afterUsd(), ref));
+            return new SpendDto(s.status().name(), d.cost(s.monthEndUsd()), usd(s.monthEndUsd()),
+                    s.position() == null ? null : s.position().name(),
+                    s.monthEndUsd() == null ? null : TeamBenchmark.barPositionPercent(s.monthEndUsd(), ref), range, after);
+        }
+
+        /** 달러 표시 금액 (센트 단위) */
+        private static BigDecimal usd(BigDecimal value) {
+            return value == null ? null : value.setScale(2, java.math.RoundingMode.HALF_UP);
         }
     }
 
@@ -156,6 +219,8 @@ public final class BenchmarkDtos {
             @Schema(description = "INSUFFICIENT_HISTORY일 때 비교를 시작하는 날") LocalDate availableAt,
             WasteDtos.WindowDto window,
             @Schema(description = "적용한다고 본 추천 id") List<String> appliedRecommendationIds,
+            @Schema(description = "고른 추천의 월 절감액 합 (currency 기준, 시뮬레이션의 selectedMonthlySavings와 같은 값). "
+                    + "recommendationIds가 없으면 null", example = "132000") BigDecimal selectedMonthlySavings,
             OversizedDto oversizedRatio,
             WasteRatioDto wasteRatio,
             SpendDto monthlySpend,
@@ -182,6 +247,8 @@ public final class BenchmarkDtos {
                     dataSource, CostNotes.COST_BASIS, d.currency().name(), ExchangeRateDto.of(d), v.accountId(),
                     v.status().name(), v.availableAt(), new WasteDtos.WindowDto(v.windowStart(), v.windowEnd()),
                     v.applied().stream().map(WasteFinding::recommendationId).toList(),
+                    v.applied().isEmpty() ? null : d.cost(v.applied().stream().map(WasteFinding::monthlySavingsUsd)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add)),
                     OversizedDto.of(v.oversized(), ref.oversized()),
                     new WasteRatioDto(v.wasteStatus().name(),
                             BenchmarkService.WASTE_UNAVAILABLE_REASON, ref.waste().source(),

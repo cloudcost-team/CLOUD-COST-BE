@@ -109,7 +109,7 @@ public class Ec2DataRefresher {
 
         SyncJob job = syncJobs.save(SyncJob.start(
             UUID.randomUUID(), account.ownerId(), account.id(), SyncJob.Trigger.QUERY, now));
-        List<String> warnings = new ArrayList<>();
+        List<Freshness.Warning> warnings = new ArrayList<>();
         boolean instancesDone = false;
         boolean usageAttempted = false;
 
@@ -126,7 +126,7 @@ public class Ec2DataRefresher {
                 usageAttempted = true;
                 outcome = refreshUsage(session, account, tracked, job, now);
                 warnings.addAll(outcome.warnings());
-                outcome.warnings().forEach(job::warn);
+                outcome.warnings().forEach(w -> job.warn(w.message()));
                 if (outcome.complete()) {
                     job.usageDone();
                 }
@@ -152,7 +152,10 @@ public class Ec2DataRefresher {
                 saveAccountAndJob(account, job);
                 throw e;
             }
-            warnings.add("AWS 수집에 실패해 마지막으로 저장된 데이터를 보여 줍니다. " + e.getMessage());
+            warnings.add(new Freshness.Warning(
+                e.category() == AwsAccessException.Category.THROTTLED
+                    ? Freshness.WarningCode.AWS_THROTTLED : Freshness.WarningCode.COLLECTION_FAILED,
+                "AWS 수집에 실패해 마지막으로 저장된 데이터를 보여 줍니다. " + e.getMessage()));
         } catch (RuntimeException e) {
             // DB 오류 등. 이미 저장한 구간은 남아 있고, 진행 표시를 넘기지 않았으므로 다음 수집에서 다시 읽는다.
             job.fail("INTERNAL", "수집 중 내부 오류가 발생했습니다. 저장된 구간은 유지되고 다음 수집 때 이어서 가져옵니다.",
@@ -202,7 +205,7 @@ public class Ec2DataRefresher {
      * @param failure  CloudWatch 호출 실패 (없으면 null). 성공한 구간은 이미 저장되어 있다.
      * @param complete 수집할 인스턴스를 모두 끝냈는지
      */
-    private record UsageOutcome(List<String> warnings, AwsAccessException failure, boolean complete) {
+    private record UsageOutcome(List<Freshness.Warning> warnings, AwsAccessException failure, boolean complete) {
         static final UsageOutcome NOT_ATTEMPTED = new UsageOutcome(List.of(), null, true);
     }
 
@@ -218,7 +221,7 @@ public class Ec2DataRefresher {
         CustomerAwsSession session, AwsAccount account, List<TrackedInstance> tracked, SyncJob job, Instant now) {
         int budget = settings.maxCwRequestsPerRefresh();
         int[] calls = {0};
-        List<String> warnings = new ArrayList<>();
+        List<Freshness.Warning> warnings = new ArrayList<>();
         AwsAccessException firstFailure = null;
         int failedInstances = 0;
         boolean complete = true;
@@ -281,7 +284,8 @@ public class Ec2DataRefresher {
                 }
             }
             if (budgetHit) {
-                warnings.add("CloudWatch 호출 상한(" + budget + "건)에 도달해 일부 인스턴스는 다음 수집 때 이어서 가져옵니다.");
+                warnings.add(new Freshness.Warning(Freshness.WarningCode.PARTIAL_COLLECTION,
+                    "CloudWatch 호출 상한(" + budget + "건)에 도달해 일부 인스턴스는 다음 수집 때 이어서 가져옵니다."));
                 break;
             }
             if (failure != null) {
@@ -295,8 +299,11 @@ public class Ec2DataRefresher {
             }
         }
         if (firstFailure != null) {
-            warnings.add("사용량 수집 실패: " + firstFailure.getMessage() + " (인스턴스 " + failedInstances
-                + "개의 실패한 구간은 다음 수집 때 다시 가져옵니다. 이미 가져온 구간은 저장되었습니다.)");
+            warnings.add(new Freshness.Warning(
+                firstFailure.category() == AwsAccessException.Category.THROTTLED
+                    ? Freshness.WarningCode.AWS_THROTTLED : Freshness.WarningCode.USAGE_COLLECTION_FAILED,
+                "사용량 수집 실패: " + firstFailure.getMessage() + " (인스턴스 " + failedInstances
+                + "개의 실패한 구간은 다음 수집 때 다시 가져옵니다. 이미 가져온 구간은 저장되었습니다.)"));
         }
         return new UsageOutcome(List.copyOf(warnings), firstFailure, complete);
     }
@@ -383,10 +390,11 @@ public class Ec2DataRefresher {
     }
 
     private Freshness freshness(AwsAccount account, boolean instancesFetched, boolean usageFetched,
-                                List<String> warnings) {
+                                List<Freshness.Warning> warnings) {
         if (warnings.isEmpty() && account.status() == AwsAccount.Status.ERROR && account.lastErrorMessage() != null) {
-            warnings = List.of("AWS 연결에 문제가 있어 마지막으로 저장된 데이터를 보여 줍니다. " + account.lastErrorMessage()
-                + " (고치면 1시간 안에 자동으로 다시 확인해 복구합니다.)");
+            warnings = List.of(new Freshness.Warning(Freshness.WarningCode.CONNECTION_ERROR,
+                "AWS 연결에 문제가 있어 마지막으로 저장된 데이터를 보여 줍니다. " + account.lastErrorMessage()
+                + " (고치면 1시간 안에 자동으로 다시 확인해 복구합니다.)"));
         }
         return new Freshness(
             account.instancesRefreshedAt(),

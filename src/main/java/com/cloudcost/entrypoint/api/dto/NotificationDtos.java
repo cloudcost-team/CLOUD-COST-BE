@@ -59,6 +59,7 @@ public final class NotificationDtos {
         }
     }
 
+    @Schema(name = "AlertSettingsBudget", description = "알림 설정에 함께 보여 주는 연결별 월 예산 (입력한 통화 그대로)")
     public record BudgetDto(BigDecimal amount, String currency) {}
 
     public record ConnectionBudgetDto(

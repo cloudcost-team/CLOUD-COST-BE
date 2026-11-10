@@ -80,7 +80,24 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(spend.at("/status").asText()).isEqualTo("OK");
         assertThat(spend.at("/monthlyCost").decimalValue()).isEqualByComparingTo("197.90");
         assertThat(spend.at("/position").asText()).isEqualTo("WITHIN");
+        assertThat(spend.at("/monthlyCostUsd").decimalValue()).isEqualByComparingTo("197.90");
+        assertThat(spend.at("/barPositionPercent").decimalValue()).as("(197.904 − 100) ÷ 400").isEqualByComparingTo("24.5");
         assertThat(spend.at("/range/minUsd").decimalValue()).isEqualByComparingTo("100");
+        assertThat(body.at("/selectedMonthlySavings").isNull()).as("추천을 고르지 않으면 null").isTrue();
+
+        JsonNode distribution = oversized.at("/distribution");
+        assertThat(distribution.at("/approximate").asBoolean()).isTrue();
+        assertThat(distribution.at("/sizeBand").asText()).isEqualTo("3-20");
+        assertThat(distribution.at("/buckets")).hasSize(5);
+        java.math.BigDecimal total = java.math.BigDecimal.ZERO;
+        for (JsonNode b : distribution.at("/buckets")) {
+            total = total.add(b.at("/teamsPercent").decimalValue());
+        }
+        assertThat(total).isEqualByComparingTo("100");
+        assertThat(distribution.at("/oursBucketIndex").asInt()).as("66.7%는 60~80% 칸").isEqualTo(3);
+        assertThat(distribution.at("/buckets/3/ours").asBoolean()).isTrue();
+        assertThat(distribution.at("/buckets/3/label").asText()).isEqualTo("60~80%");
+        assertThat(distribution.at("/afterSimulationBucketIndex").isNull()).isTrue();
         assertThat(spend.at("/afterSimulation").isNull()).isTrue();
         assertThat(body.at("/notes").toString()).as("백분위 표가 있어 안내 없음").doesNotContain("백분위 표가 없어");
     }
@@ -110,6 +127,12 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(body.at("/monthlySpend/afterSimulation/monthlyCost").decimalValue())
                 .as("197.904 − 118.26").isEqualByComparingTo("79.64");
         assertThat(body.at("/monthlySpend/afterSimulation/position").asText()).isEqualTo("BELOW");
+        assertThat(body.at("/monthlySpend/afterSimulation/monthlyCostUsd").decimalValue()).isEqualByComparingTo("79.64");
+        assertThat(body.at("/monthlySpend/afterSimulation/barPositionPercent").decimalValue()).isEqualByComparingTo("0");
+        assertThat(body.at("/oversizedRatio/distribution/afterSimulationBucketIndex").asInt()).as("적용 후 0%").isZero();
+        assertThat(body.at("/oversizedRatio/distribution/buckets/0/afterSimulation").asBoolean()).isTrue();
+        assertThat(body.at("/selectedMonthlySavings").decimalValue())
+                .as("시뮬레이션 selectedMonthlySavings와 같은 값 (SimulationApiTest 같은 서버 구성)").isEqualByComparingTo("118.26");
 
         getJson("/api/v1/aws/accounts/" + accountId + "/benchmark?recommendationIds=i-web:IDLE")
                 .andExpect(status().isBadRequest())
