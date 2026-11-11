@@ -49,12 +49,17 @@ DISK_PCT=$(cfg ALERT_DISK_PCT 85)
 
 mkdir -p "$STATE_DIR"/{firing,cooldown,streak}
 exec 9>"$STATE_DIR/lock"
-flock -n 9 || exit 0   # 이전 실행이 아직 안 끝났으면 건너뛴다
+if [ "$MODE" = run ]; then
+  flock -n 9 || exit 0   # 타이머 실행끼리는 겹치면 건너뛴다
+else
+  # test·hello·dry는 사람이 직접 부른 것이라 건너뛰지 않고 타이머 실행이 끝나길 기다린다
+  flock -w 60 9 || { echo "다른 검사가 60초 넘게 실행 중입니다. 잠시 뒤 다시 실행하세요." >&2; exit 1; }
+fi
 
 # ── 디스코드 전송 ───────────────────────────────────────────────
 # send <crit|warn|info|ok> <제목> <내용>
 send() {
-  local level=$1 title=$2 desc=$3 color content=""
+  local level=$1 title=$2 desc=$3 color content="" code
   case $level in
     crit) color=15158332; title="🔴 $title"; content=$MENTION ;;
     warn) color=15965202; title="🟠 $title" ;;
@@ -66,13 +71,16 @@ send() {
     printf '\n[%s] %s\n%s\n' "$level" "$title" "$desc"
     return 0
   fi
-  [ -n "$WEBHOOK" ] || { echo "DISCORD_ALERT_WEBHOOK_URL이 없습니다" >&2; return 1; }
-  jq -n --arg c "$content" --arg t "$title" --arg d "$desc" --argjson col "$color" \
+  [ -n "$WEBHOOK" ] || { echo "DISCORD_ALERT_WEBHOOK_URL이 없습니다 ($ENV_FILE)" >&2; return 1; }
+  code=$(jq -n --arg c "$content" --arg t "$title" --arg d "$desc" --argjson col "$color" \
         --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg host "${DOMAIN:-cloudcost-server}" \
     '{content: $c, embeds: [{title: $t, description: $d, color: $col,
        footer: {text: ("☁️ " + $host + " · sentinel")}, timestamp: $ts}]}' \
-  | curl -sS -m 10 -o /dev/null -H 'Content-Type: application/json' -d @- "$WEBHOOK" \
-  || echo "디스코드 전송 실패: $title" >&2
+  | curl -sS -m 10 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d @- "$WEBHOOK")
+  case $code in
+    2??) [ "$MODE" = run ] || echo "디스코드로 보냄: $title" ;;
+    *) echo "디스코드 전송 실패 (HTTP ${code:-000}): $title" >&2; return 1 ;;
+  esac
 }
 
 # 쿨다운 알림: 같은 key는 COOLDOWN 동안 한 번만
@@ -315,10 +323,10 @@ check_app_errors() {
 
 case $MODE in
   test)
-    send info "테스트 알림" "CloudCost 서버 감시가 디스코드에 연결됐어요. 문제가 생길 때만 알림이 와요."
+    send info "테스트 알림" "CloudCost 서버 감시가 디스코드에 연결됐어요. 문제가 생길 때만 알림이 와요." || exit 1
     ;;
   hello)
-    send info "서버 감시 시작" "1분마다 검사하고, 이상이 있을 때만 알려요."$'\n'"컨테이너 · 앱 헬스 · 외부 접속 · 인증서 · 트래픽 폭증/DDoS · 5xx · 인증 실패 · 취약점 스캔 · 응답 속도 · SSH · CPU · 메모리 · 디스크 · 앱 ERROR"
+    send info "서버 감시 시작" "1분마다 검사하고, 이상이 있을 때만 알려요."$'\n'"컨테이너 · 앱 헬스 · 외부 접속 · 인증서 · 트래픽 폭증/DDoS · 5xx · 인증 실패 · 취약점 스캔 · 응답 속도 · SSH · CPU · 메모리 · 디스크 · 앱 ERROR" || exit 1
     ;;
   run|dry)
     check_containers
