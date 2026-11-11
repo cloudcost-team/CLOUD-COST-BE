@@ -8,6 +8,9 @@
 
 ![CloudCost 아키텍처](assets/architecture.png)
 
+- 프론트엔드(Next.js)는 Vercel 서울 엣지에서 서비스하며, 브라우저의 `/api/v1` 요청을 Vercel 리라이트로 이 서버(Caddy)에 넘깁니다. 같은 출처라 리프레시 쿠키가 그대로 오갑니다. → [CLOUD-COST-FE](https://github.com/cloudcost-team/CLOUD-COST-FE)
+- 프론트엔드 오류·성능은 Sentry, 사용자 행동은 Google Analytics 4로 수집합니다.
+
 ## Key Features
 
 | | 영역 | 한 줄 요약 |
@@ -68,7 +71,7 @@
 
 | 기능 | 내용 |
 |---|---|
-| 로그인 | Google ID Token 검증 후 자체 JWT 발급 |
+| 로그인 | Google 팝업 인가 코드 교환 · ID Token 검증 후 자체 JWT 발급 |
 | 읽기 전용 연동 | STS AssumeRole + 연결별 External ID |
 | 최소 권한 | 고객 계정에는 `ec2:DescribeInstances`, `cloudwatch:GetMetricStatistics`만 호출 |
 | 데이터 격리 | 모든 조회에 `owner_id` 조건, 남의 리소스는 404 |
