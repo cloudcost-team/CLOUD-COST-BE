@@ -55,11 +55,12 @@ else
   # test·hello·dry는 사람이 직접 부른 것이라 건너뛰지 않고 타이머 실행이 끝나길 기다린다
   flock -w 60 9 || { echo "다른 검사가 60초 넘게 실행 중입니다. 잠시 뒤 다시 실행하세요." >&2; exit 1; }
 fi
+NOW=$(date +%s)   # 잠금을 기다린 시간만큼 '최근 1분' 기준이 밀리지 않게 다시 잰다
 
 # ── 디스코드 전송 ───────────────────────────────────────────────
 # send <crit|warn|info|ok> <제목> <내용>
 send() {
-  local level=$1 title=$2 desc=$3 color content="" code
+  local level=$1 title=$2 desc=$3 color content="" code rc
   case $level in
     crit) color=15158332; title="🔴 $title"; content=$MENTION ;;
     warn) color=15965202; title="🟠 $title" ;;
@@ -77,10 +78,12 @@ send() {
     '{content: $c, embeds: [{title: $t, description: $d, color: $col,
        footer: {text: ("☁️ " + $host + " · sentinel")}, timestamp: $ts}]}' \
   | curl -sS -m 10 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d @- "$WEBHOOK")
-  case $code in
-    2??) [ "$MODE" = run ] || echo "디스코드로 보냄: $title" ;;
-    *) echo "디스코드 전송 실패 (HTTP ${code:-000}): $title" >&2; return 1 ;;
-  esac
+  rc=$?   # pipefail: jq나 curl이 실패하면 0이 아니다 (응답 도중 끊겨도 code는 200일 수 있다)
+  if [ "$rc" -ne 0 ] || [[ $code != 2?? ]]; then
+    echo "디스코드 전송 실패 (HTTP ${code:-000}, 종료 코드 $rc): $title" >&2
+    return 1
+  fi
+  [ "$MODE" = run ] || echo "디스코드로 보냄: $title"
 }
 
 # 쿨다운 알림: 같은 key는 COOLDOWN 동안 한 번만
