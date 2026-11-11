@@ -91,18 +91,19 @@ alert() {
   local key=$1 f="$STATE_DIR/cooldown/$1" last
   last=$(cat "$f" 2>/dev/null || echo 0)
   [ $(( NOW - last )) -lt "$COOLDOWN" ] && return 0
-  send "$2" "$3" "$4"
+  send "$2" "$3" "$4" || return 1   # 못 보냈으면 쿨다운을 남기지 않아 다음 실행(1분 뒤)에 다시 시도한다
   [ "$MODE" = dry ] || echo "$NOW" >"$f"
 }
 
 # 상태형 알림: 처음엔 바로, 계속되면 쿨다운마다, 풀리면 resolve가 복구 알림
 fire() {
   local key=$1 level=$2 title=$3 desc=$4 f="$STATE_DIR/firing/$1" since
-  if [ -f "$f" ]; then
+  # 첫 알림을 실제로 보낸 적이 있을 때만(쿨다운 기록이 있을 때만) "계속"으로 보낸다
+  if [ -f "$f" ] && [ -f "$STATE_DIR/cooldown/$key" ]; then
     since=$(head -n1 "$f")
     alert "$key" "$level" "$title (계속 · $(( (NOW - since) / 60 ))분째)" "$desc"
   else
-    [ "$MODE" = dry ] || { printf '%s\n%s\n' "$NOW" "$title" >"$f"; rm -f "$STATE_DIR/cooldown/$key"; }
+    [ "$MODE" = dry ] || [ -f "$f" ] || { printf '%s\n%s\n' "$NOW" "$title" >"$f"; rm -f "$STATE_DIR/cooldown/$key"; }
     alert "$key" "$level" "$title" "$desc"
   fi
 }
