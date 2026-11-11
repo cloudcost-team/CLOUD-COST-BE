@@ -153,7 +153,8 @@ check_containers() {
     if [ "$restarts" -gt "$prev" ]; then
       local why="크래시 후 자동 재시작됐어요."
       [ "$oom" = true ] && why="**메모리 부족(OOM)으로 죽었다가** 자동 재시작됐어요."
-      alert "restart_$svc" warn "컨테이너 재시작: $svc" "$why (누적 ${restarts}회)"
+      # 못 보냈으면 이전 횟수를 그대로 둬서 다음 실행에 다시 알린다
+      alert "restart_$svc" warn "컨테이너 재시작: $svc" "$why (누적 ${restarts}회)" || continue
     fi
     rm -f "$STATE_DIR"/restarts_"${svc}"_*
     echo "$restarts" >"$STATE_DIR/restarts_${svc}_$id"
