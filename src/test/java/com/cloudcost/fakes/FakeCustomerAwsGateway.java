@@ -45,8 +45,18 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
     public ExternalId lastExternalId;
     public RoleArn lastRoleArn;
     public int openSessions;
+    /** 확장 수집 (ADR-020): 켜진 리전과 리전별 리소스 */
+    public final List<String> regions = new ArrayList<>();
+    public final Map<String, List<com.cloudcost.domain.resource.AwsResource>> regionResources = new HashMap<>();
+    public AwsAccessException resourceError;
+    public int regionScans;
 
     public void reset() {
+        regions.clear();
+        regions.addAll(List.of("ap-northeast-2", "us-east-1"));
+        regionResources.clear();
+        resourceError = null;
+        regionScans = 0;
         instances.clear();
         samples.clear();
         network.clear();
@@ -158,6 +168,29 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
                                 ? new HourlyNetwork(instanceId, n.hourStart(), n.inBytes(), null)
                                 : new HourlyNetwork(instanceId, n.hourStart(), null, n.outBytes()))
                         .toList();
+            }
+
+            @Override
+            public List<String> enabledRegions() {
+                if (resourceError != null) {
+                    throw resourceError;
+                }
+                return List.copyOf(regions);
+            }
+
+            @Override
+            public RegionScan scanRegion(String region, boolean withInstances, Instant now) {
+                synchronized (FakeCustomerAwsGateway.this) {
+                    regionScans++;
+                }
+                if (resourceError != null) {
+                    throw resourceError;
+                }
+                List<com.cloudcost.domain.resource.AwsResource> found = regionResources.getOrDefault(region, List.of())
+                        .stream()
+                        .filter(r -> withInstances || r.type() != com.cloudcost.domain.resource.ResourceType.INSTANCE)
+                        .toList();
+                return new RegionScan(found, 5, 0);
             }
 
             @Override

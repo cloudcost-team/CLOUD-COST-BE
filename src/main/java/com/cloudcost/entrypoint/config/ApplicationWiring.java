@@ -15,12 +15,15 @@ import com.cloudcost.application.NotificationService;
 import com.cloudcost.application.Pauser;
 import com.cloudcost.application.PriceService;
 import com.cloudcost.application.ReportService;
+import com.cloudcost.application.ResourceScanService;
+import com.cloudcost.application.ResourceWasteService;
 import com.cloudcost.application.ScheduledCollectionService;
 import com.cloudcost.application.SimulationService;
 import com.cloudcost.application.StackCallbackService;
 import com.cloudcost.application.UsageSettings;
 import com.cloudcost.application.WasteService;
 import com.cloudcost.application.port.AccessTokens;
+import com.cloudcost.application.port.AccountResourceRepository;
 import com.cloudcost.application.port.AwsAccountRepository;
 import com.cloudcost.application.port.BenchmarkReferenceSource;
 import com.cloudcost.application.port.AlertSettingsRepository;
@@ -101,13 +104,14 @@ class ApplicationWiring {
             SyncJobRepository syncJobs,
             BudgetRepository budgets,
             NotificationRepository notifications,
+            AccountResourceRepository resources,
             CustomerAwsGateway gateway,
             UnitOfWork unitOfWork,
             Clock clock,
             CloudCostProperties properties) {
         return new AwsAccountService(
-                accounts, users, instances, usage, syncJobs, budgets, notifications, gateway, unitOfWork, clock,
-                properties.connectionSettings());
+                accounts, users, instances, usage, syncJobs, budgets, notifications, resources, gateway, unitOfWork,
+                clock, properties.connectionSettings());
     }
 
     @Bean
@@ -262,8 +266,28 @@ class ApplicationWiring {
 
     @Bean
     ScheduledCollectionService scheduledCollectionService(
-            AwsAccountRepository accounts, Ec2DataRefresher refresher, AlertEvaluationService alerts) {
-        return new ScheduledCollectionService(accounts, refresher, alerts);
+            AwsAccountRepository accounts,
+            Ec2DataRefresher refresher,
+            ResourceScanService resourceScans,
+            AlertEvaluationService alerts) {
+        return new ScheduledCollectionService(accounts, refresher, resourceScans, alerts);
+    }
+
+    @Bean
+    ResourceScanService resourceScanService(
+            AwsAccountRepository accounts, AccountResourceRepository resources, CustomerAwsGateway gateway, Clock clock) {
+        return new ResourceScanService(accounts, resources, gateway, clock);
+    }
+
+    @Bean
+    ResourceWasteService resourceWasteService(
+            AwsAccountService accounts,
+            ResourceScanService scans,
+            AccountResourceRepository resources,
+            PriceService prices,
+            Clock clock,
+            CloudCostProperties properties) {
+        return new ResourceWasteService(accounts, scans, resources, prices, clock, properties.aws().templateUrl());
     }
 
     @Bean

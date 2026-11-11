@@ -26,12 +26,15 @@ public class ScheduledCollectionService {
 
     private final AwsAccountRepository accounts;
     private final Ec2DataRefresher refresher;
+    private final ResourceScanService resourceScans;
     private final AlertEvaluationService alerts;
 
     public ScheduledCollectionService(
-        AwsAccountRepository accounts, Ec2DataRefresher refresher, AlertEvaluationService alerts) {
+        AwsAccountRepository accounts, Ec2DataRefresher refresher, ResourceScanService resourceScans,
+        AlertEvaluationService alerts) {
         this.accounts = accounts;
         this.refresher = refresher;
+        this.resourceScans = resourceScans;
         this.alerts = alerts;
     }
 
@@ -55,6 +58,8 @@ public class ScheduledCollectionService {
         } catch (AwsAccessException e) {
             return Outcome.DONE;
         }
+        // 방치 리소스도 미리 훑어 둔다 (6시간 캐시, 권한이 없으면 상태만 남긴다 — ADR-020)
+        resourceScans.refreshIfStale(ownerId, accountId);
         // 수집 뒤 상태(ERROR 복구·전환)를 반영해 다시 읽는다
         accounts.findByOwnerIdAndId(ownerId, accountId).ifPresent(a -> alerts.evaluate(ownerId, a));
         return Outcome.DONE;

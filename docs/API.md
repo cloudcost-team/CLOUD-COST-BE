@@ -353,6 +353,37 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 - 오류: §2와 같다 (404 남의 연결, 409 대기·끊긴 연결, 429/502 AWS).
 
 
+## 4-0. 방치 리소스·잊힌 리전 (ADR-020)
+`GET /aws/accounts/{accountId}/waste` 응답에 `resources`가 붙고, 같은 내용을 `GET /aws/accounts/{accountId}/resources/waste?currency=KRW|USD`로 따로 받을 수 있다
+(응답: `{ dataSource, exchangeRate, accountId, resources }`). 체험 모드 `POST /demo/waste`에도 예시 `resources`가 붙는다.
+켜진 모든 리전을 6시간에 한 번 Describe로 훑는다 (예약 수집 뒤에도). 위 `items`(서버 사양·유휴)와 따로 센다.
+```json
+"resources": {
+  "costBasis": "estimated_list_price", "currency": "KRW", "homeRegion": "ap-northeast-2",
+  "scan": { "status": "OK", "permissionVersion": 2, "scannedAt": "…", "message": null },
+  "upgrade": null,
+  "findingCount": 5, "totalMonthlyCost": 84000,
+  "otherRegions": [ { "region": "us-east-1", "runningServers": 1 } ],
+  "items": [ { "recommendationId": "us-east-1:i-0abc:FORGOTTEN_REGION", "kind": "FORGOTTEN_REGION", "kindLabel": "잊힌 리전의 서버",
+               "resourceType": "INSTANCE", "resourceTypeLabel": "서버", "resourceId": "i-0abc", "name": "test-server",
+               "region": "us-east-1", "otherRegion": true, "monthlyCost": 41000,
+               "evidence": "연결한 기본 리전이 아닌 us-east-1에서 t3.medium 서버가 실행 중이에요", "action": "…",
+               "consoleSteps": [ "…" ], "cautions": [ "…" ], "priceNote": null } ],
+  "notes": [ "볼륨·고정 IP·스냅샷·로드밸런서 금액은 AWS 공개 정가로 계산한 월 추정치예요 …", "CloudCost는 읽기만 해요 …" ] }
+```
+| `kind` | `resourceType` | 조건 | 월 추정 |
+|---|---|---|---|
+| `UNATTACHED_VOLUME` | `VOLUME` | 어떤 서버에도 연결 안 됨 (available) | 크기 × 볼륨 타입 GB-월 정가 |
+| `UNUSED_EIP` | `ADDRESS` | 연결 안 된 고정 IP | $0.005 × 730 |
+| `OLD_SNAPSHOT` | `SNAPSHOT` | 내 스냅샷, 만든 지 90일 초과 | 원본 크기 × $0.05 (최대치) |
+| `IDLE_LB` | `LOAD_BALANCER` | 만든 지 14일 초과, 최근 14일 요청 0 (ALB RequestCount / NLB NewFlowCount) | 시간당 기본 요금 × 730 (LCU 제외) |
+| `FORGOTTEN_REGION` | `INSTANCE` | 기본 리전 밖에서 실행 중 | 온디맨드 단가 × 730 |
+- 정렬: 월 추정 큰 순. 금액을 모르면 `monthlyCost: null`. 서울·버지니아 밖 리전의 정가는 버지니아 값으로 추정하고 `priceNote`에 적는다.
+- `scan.status`: `NOT_SCANNED`(수집할 수 없는 연결) · `OK` · `FAILED`(일시 오류, 이전 목록 유지, `message`) ·
+  **`PERMISSION_UPGRADE_REQUIRED`**: 이전 템플릿(v1)으로 연결해 권한이 없다. 오류가 아니라 안내다 — `upgrade`에 방법이 온다:
+  `{ "stackName": "CloudCostInsight-…", "consoleUrl": "https://console.aws.amazon.com/cloudformation/home?region=…", "templateUrl": "https://…/customer-readonly-role.yaml", "steps": [ … ] }`.
+  1시간마다 다시 확인해, 스택을 업데이트했으면 `OK`·`permissionVersion: 2`가 된다. 서버 낭비(`items`)와 연결 상태에는 영향이 없다.
+
 ## 4-1. 비용 시뮬레이터 (이슈 #31, ADR-012)
 ### `POST /aws/accounts/{accountId}/simulations?currency=KRW|USD` — S08 · S08-2
 저장하지 않는 계산이다. 추천은 §4 낭비 리소스 응답의 `recommendationId`를 그대로 보낸다 (기본 전체 선택은 프론트가 처리).

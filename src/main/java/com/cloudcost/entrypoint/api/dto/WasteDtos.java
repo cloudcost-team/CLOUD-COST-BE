@@ -269,7 +269,17 @@ public final class WasteDtos {
             @Schema(description = "판단하지 않았거나 추천하지 못한 서버와 이유") List<SkippedDto> skipped,
             FreshnessDto freshness,
             List<String> notes,
-            Instant asOf) {
+            Instant asOf,
+            @Schema(description = "방치 리소스·잊힌 리전 (ADR-020). 위 items(서버 사양·유휴)와 따로 센다. "
+                    + "권한이 부족하면 scan.status=PERMISSION_UPGRADE_REQUIRED와 upgrade 안내")
+                    ResourceDtos.ResourceWasteDto resources) {
+
+        /** 방치 리소스를 붙인 응답 */
+        public WasteResponse withResources(ResourceDtos.ResourceWasteDto resources) {
+            return new WasteResponse(dataSource, costBasis, currency, exchangeRate, accountId, status, availableAt, window,
+                    totalMonthlySavings, forecastMonthEndCost, savingsRateOfForecast, findingCount, counts, judgedCount,
+                    sort, type, items, skipped, freshness, notes, asOf, resources);
+        }
 
         /**
          * @param forecast 대시보드의 월말 예상 (없으면 null)
@@ -307,7 +317,7 @@ public final class WasteDtos {
                     sort.apply(r.findings(), type).stream()
                             .map(f -> ItemDto.of(f, d, view.cpuSeries().get(f.instance().instanceId()))).toList(),
                     r.skipped().stream().map(s -> new SkippedDto(s.instanceId(), s.name(), s.reason())).toList(),
-                    FreshnessDto.of(view.freshness()), List.copyOf(notes), view.asOf());
+                    FreshnessDto.of(view.freshness()), List.copyOf(notes), view.asOf(), null);
         }
 
         private static BigDecimal savingsRate(BigDecimal savingsUsd, MonthEndForecast forecast) {

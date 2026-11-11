@@ -7,8 +7,8 @@
 |---|---|---|
 | S1 | 사용자에게 AWS Access Key / Secret Key를 받지 않는다. 입력란·API 필드·DB 컬럼을 만들지 않는다 | A(엔티티 필드명 검사), R |
 | S2 | AssumeRole 임시 자격증명은 `StsAssumeRoleCredentialsProvider` 인스턴스 안에만 둔다. DB·캐시·로그·응답·예외 메시지에 넣지 않는다 | T(응답에 자격증명 없음), R |
-| S3 | 고객 계정에는 `ec2:DescribeInstances`, `cloudwatch:GetMetricStatistics`만 호출한다 | A(허용 메서드 외 호출 금지), R |
-| S4 | 고객 Role 정책에 쓰기 권한과 Action 와일드카드를 넣지 않는다. Resource `*`는 두 액션이 리소스 단위 권한을 지원하지 않아 불가피하며, `aws:RequestedRegion`으로 리전을 제한한다 | T(정책 JSON) |
+| S3 | 고객 계정에는 허용 목록의 읽기 API만 호출한다: `ec2:DescribeInstances`, `cloudwatch:GetMetricStatistics`, `ec2:DescribeRegions`, `ec2:DescribeVolumes`, `ec2:DescribeAddresses`, `ec2:DescribeSnapshots`(OwnerIds=self), `elasticloadbalancing:DescribeLoadBalancers` (ADR-020) | A(허용 메서드 외 호출 금지), R |
+| S4 | 고객 Role 정책에 쓰기 권한과 Action 와일드카드를 넣지 않는다. Resource `*`는 Describe·GetMetricStatistics가 리소스 단위 권한을 지원하지 않아 불가피하다. 잊힌 리전을 찾기 위해 리전 조건은 두지 않는다 (ADR-020) | T(정책 JSON·템플릿) |
 | S5 | Trust Policy Principal은 우리 백엔드 Role 하나이고 `sts:ExternalId` 조건이 반드시 있다 | T |
 | S6 | External ID는 연결마다 서버가 `SecureRandom`으로 만든다 (`cci-` + hex 24자). 사용자가 정하지 못한다 | T |
 | S7 | 백엔드 Role ARN, DB 비밀번호, JWT Secret은 환경변수 또는 Parameter Store에 둔다. 실제 계정 ID·ARN을 코드·문서·테스트에 쓰지 않는다 (예시: 고객 `123456789012`, 우리 `111122223333`) | R |
@@ -17,11 +17,11 @@
 | S10 | "연결 성공"은 실제 AssumeRole + 실제 DescribeInstances 응답으로만 판정한다 | R |
 | S11 | 고객 리소스를 만들거나 바꾸거나 지우지 않는다 | A |
 | S13 | 스택 신호(SNS → SQS)는 믿지 않는다. 연결 ID + External ID가 맞고 실제 AssumeRole이 성공해야 ACTIVE. CloudFormation 응답은 CloudFormation 응답용 S3 호스트로만 보낸다(SSRF 방지) | T(`StackCallbackTest`, `StackCallbackAdapterTest`) |
-| S12 | 고객 데이터는 필요한 필드만 저장한다: 인스턴스 ID·타입·리전·AZ·상태·LaunchTime·platformDetails·테넌시·Spot 여부·Name 태그. IP·키페어·보안그룹·전체 태그·사용자 데이터는 저장하지 않는다 | R(`Ec2InstanceMapper`), T |
+| S12 | 고객 데이터는 필요한 필드만 저장한다: 인스턴스 ID·타입·리전·AZ·상태·LaunchTime·platformDetails·테넌시·Spot 여부·Name 태그. 방치 리소스는 ID·Name 태그·리전·종류·크기·연결 여부·생성 시각·LB 요청 수만 (ADR-020). IP 주소·키페어·보안그룹·전체 태그·사용자 데이터는 저장하지 않는다 | R(`Ec2InstanceMapper`, `AwsCustomerSession.scanRegion`), T |
 
 ## 고객 Role (사용자가 빠른 생성 링크로 만든다, ADR-003)
 - 템플릿 원본: `src/main/resources/cloudformation/customer-readonly-role.yaml`. Role 하나 + 우리 SNS로 알리는 Custom Resource만 만든다 (Lambda 없음).
-- 권한: `scripts/customer-role-allowlist.txt`의 2개 액션 (템플릿·정책 JSON과 같은지 테스트로 확인)
+- 권한: `scripts/customer-role-allowlist.txt`의 7개 읽기 액션 (템플릿·정책 JSON과 같은지 테스트로 확인). v1(2개 액션) 스택은 오류 대신 "권한 업데이트 필요"로 안내한다 (ADR-020)
 - 신뢰 정책: Principal = `CCI_BACKEND_ROLE_ARN`, `sts:ExternalId` = 그 연결의 External ID
 - 예비 경로: `roleSetup.trustPolicy`·`permissionPolicy`로 직접 만들고 `PUT .../role`로 등록
 - 백엔드는 `DurationSeconds=900`, `RoleSessionName=cci-<연결 id>`로 AssumeRole한다 (고객 CloudTrail에서 추적 가능).
@@ -43,7 +43,8 @@
 - 백엔드는 이 이름 범위 밖의 Role을 맡을 수 없어, 실수나 악용으로 다른 Role을 맡는 범위를 줄인다.
 
 ## 비용 (고객 계정)
-- STS·DescribeInstances: 무료. CloudWatch `GetMetricStatistics`: 월 100만 건 무료(계정 전체 공유), 초과 시 1,000건당 $0.01.
+- STS·Describe 호출: 무료. CloudWatch `GetMetricStatistics`: 월 100만 건 무료(계정 전체 공유), 초과 시 1,000건당 $0.01.
+- 확장 수집(ADR-020)은 6시간에 한 번, 리전마다 Describe 5건 안팎 + LB당 GetMetricStatistics 1건. Describe 호출은 고객 CloudTrail에 남는다 (추가 Trail을 쓰는 고객은 10만 건당 약 $2).
 - 계정당 1시간에 1회만 호출하고 호출 수를 `sync_jobs.cw_request_count`에 남긴다 (ADR-002).
 - `GetMetricData`, Cost Explorer는 쓰지 않는다.
 
