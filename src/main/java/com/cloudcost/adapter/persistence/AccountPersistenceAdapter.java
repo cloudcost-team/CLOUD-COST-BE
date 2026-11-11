@@ -134,6 +134,14 @@ class AccountPersistenceAdapter implements AwsAccountRepository, UserRepository 
         return accounts.findByExternalId(externalId).map(AccountPersistenceAdapter::toDomain);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<AwsAccount> findCollectableForSchedule() {
+        return accounts.findCollectableForSchedule().stream()
+            .map(AccountPersistenceAdapter::toDomain)
+            .toList();
+    }
+
     private static AwsAccount toDomain(AwsAccountEntity e) {
         return new AwsAccount(
             e.id,

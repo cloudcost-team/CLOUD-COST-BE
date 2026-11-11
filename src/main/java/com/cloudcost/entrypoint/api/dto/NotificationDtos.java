@@ -2,6 +2,7 @@ package com.cloudcost.entrypoint.api.dto;
 
 import com.cloudcost.application.NotificationService.BudgetChange;
 import com.cloudcost.application.NotificationService.BudgetRow;
+import com.cloudcost.application.NotificationService.DeliveryView;
 import com.cloudcost.application.NotificationService.Page;
 import com.cloudcost.application.NotificationService.SettingsView;
 import com.cloudcost.domain.alert.AlertSettings;
@@ -25,9 +26,9 @@ public final class NotificationDtos {
     private NotificationDtos() {}
 
     public static final String CHANNEL_NOTE =
-            "알림은 서비스 안 알림창(헤더 벨·알림 목록)으로만 보여 드려요. 이메일·메신저로는 보내지 않아요.";
+            "알림은 서비스 안 알림창(헤더 벨·알림 목록)에 보여 드리고, 등록한 Discord 채널로도 보내 드려요.";
     public static final String EVALUATION_NOTE =
-            "알림 조건은 알림을 열어 볼 때 확인해요. 서비스에 접속하지 않은 동안에는 새 알림이 생기지 않아요.";
+            "알림 조건은 자동 수집(하루 4번) 뒤와 알림을 열어 볼 때 확인해요. 접속하지 않아도 알림이 생겨요.";
 
     @Schema(description = "연결 하나의 예산 바꾸기. amount가 null이면 예산을 지운다 (설정 안 함)")
     public record BudgetChangeRequest(
@@ -101,11 +102,31 @@ public final class NotificationDtos {
             @Schema(example = "운영 서버의 이번 달 예상 비용이 예산의 80%를 넘었어요") String message,
             Instant createdAt,
             boolean read,
-            Instant readAt) {
+            Instant readAt,
+            @Schema(description = "외부 채널별 발송 상태. 채널이 없거나 채널 등록 전 알림이면 빈 목록") List<DeliveryDto> deliveries) {
 
-        static NotificationDto of(Notification n, String accountName) {
+        static NotificationDto of(Notification n, String accountName, List<DeliveryView> deliveries) {
             return new NotificationDto(n.id(), n.type().name(), n.type().label(), n.accountId(), accountName,
-                    n.message(), n.createdAt(), n.read(), n.readAt());
+                    n.message(), n.createdAt(), n.read(), n.readAt(),
+                    deliveries == null ? List.of() : deliveries.stream().map(DeliveryDto::of).toList());
+        }
+    }
+
+    @Schema(description = "알림 1건을 채널 1개로 보낸 상태")
+    public record DeliveryDto(
+            UUID channelId,
+            @Schema(example = "DISCORD") String channelType,
+            @Schema(example = "https://discord.com/api/webhooks/…7890/••••") String target,
+            @Schema(description = "PENDING | SENT | FAILED") String status,
+            @Schema(example = "보냄") String statusLabel,
+            int attempts,
+            @Schema(description = "마지막 실패 사유 (한국어). 없으면 null") String lastError,
+            Instant sentAt) {
+
+        static DeliveryDto of(DeliveryView v) {
+            return new DeliveryDto(v.channel().id(), v.channel().type().name(), v.channel().maskedTarget(),
+                    v.delivery().status().name(), v.delivery().status().label(), v.delivery().attempts(),
+                    v.delivery().lastError(), v.delivery().sentAt());
         }
     }
 
@@ -117,7 +138,8 @@ public final class NotificationDtos {
 
         public static NotificationPageResponse of(Page p) {
             return new NotificationPageResponse(
-                    p.items().stream().map(n -> NotificationDto.of(n, p.accountNames().get(n.accountId()))).toList(),
+                    p.items().stream().map(n -> NotificationDto.of(
+                            n, p.accountNames().get(n.accountId()), p.deliveries().get(n.id()))).toList(),
                     p.nextCursor(), p.unreadCount(), List.of(CHANNEL_NOTE, EVALUATION_NOTE));
         }
     }

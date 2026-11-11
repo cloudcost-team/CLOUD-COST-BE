@@ -41,6 +41,11 @@ final class SpringDataRepositories {
         /** 스택 신호 처리 전용 (owner는 결과 행에서 읽는다) */
         Optional<AwsAccountEntity> findByExternalId(String externalId);
 
+        /** 예약 수집 전용 (owner는 결과 행에서 읽는다). ACTIVE와, 확인된 적 있는 ERROR */
+        @Query("select a from AwsAccountEntity a where a.status = 'ACTIVE' "
+            + "or (a.status = 'ERROR' and a.verifiedAt is not null) order by a.createdAt")
+        List<AwsAccountEntity> findCollectableForSchedule();
+
         boolean existsByOwnerIdAndAwsAccountIdAndRegionAndStatusAndIdNot(
             String ownerId, String awsAccountId, String region, String status, UUID id);
 
@@ -133,6 +138,52 @@ final class SpringDataRepositories {
 
         @Modifying(clearAutomatically = true, flushAutomatically = true)
         @Query("delete from NotificationEntity n where n.ownerId = :ownerId and n.accountId = :accountId")
+        int deleteByOwnerIdAndAccountId(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);
+    }
+
+    interface NotificationChannelJpa extends Repository<NotificationChannelEntity, UUID> {
+        NotificationChannelEntity save(NotificationChannelEntity entity);
+
+        Optional<NotificationChannelEntity> findByOwnerIdAndId(String ownerId, UUID id);
+
+        List<NotificationChannelEntity> findByOwnerIdOrderByCreatedAtAsc(String ownerId);
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("delete from NotificationChannelEntity c where c.ownerId = :ownerId and c.id = :id")
+        int deleteByOwnerIdAndId(@Param("ownerId") String ownerId, @Param("id") UUID id);
+    }
+
+    interface NotificationDeliveryJpa extends Repository<NotificationDeliveryEntity, UUID> {
+        NotificationDeliveryEntity save(NotificationDeliveryEntity entity);
+
+        NotificationDeliveryEntity saveAndFlush(NotificationDeliveryEntity entity);
+
+        boolean existsByNotificationIdAndChannelId(UUID notificationId, UUID channelId);
+
+        /** 발송 작업 전용: 켜진 채널 × 그 채널 등록 뒤(그리고 since 이후)에 생긴 알림 중 발송 기록이 없는 쌍 */
+        @Query("select n.ownerId, n.id, c.id from NotificationEntity n, NotificationChannelEntity c "
+            + "where c.ownerId = n.ownerId and c.enabled = true and n.createdAt >= c.createdAt "
+            + "and n.createdAt >= :since and not exists (select d.id from NotificationDeliveryEntity d "
+            + "where d.notificationId = n.id and d.channelId = c.id) order by n.createdAt")
+        List<Object[]> findUndelivered(@Param("since") Instant since, Limit limit);
+
+        /** 발송 작업 전용: 보낼 차례가 된 발송과 알림·채널·연결 이름 */
+        @Query("select d, n, c, a.alias from NotificationDeliveryEntity d, NotificationEntity n, "
+            + "NotificationChannelEntity c, AwsAccountEntity a "
+            + "where n.id = d.notificationId and c.id = d.channelId and a.id = n.accountId "
+            + "and d.ownerId = n.ownerId and c.ownerId = n.ownerId and a.ownerId = n.ownerId "
+            + "and d.status = 'PENDING' and d.nextAttemptAt <= :now and c.enabled = true order by d.nextAttemptAt")
+        List<Object[]> findDue(@Param("now") Instant now, Limit limit);
+
+        List<NotificationDeliveryEntity> findByOwnerIdAndNotificationIdIn(String ownerId, Collection<UUID> ids);
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("delete from NotificationDeliveryEntity d where d.ownerId = :ownerId and d.channelId = :channelId")
+        int deleteByOwnerIdAndChannelId(@Param("ownerId") String ownerId, @Param("channelId") UUID channelId);
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("delete from NotificationDeliveryEntity d where d.ownerId = :ownerId and d.notificationId in "
+            + "(select n.id from NotificationEntity n where n.ownerId = :ownerId and n.accountId = :accountId)")
         int deleteByOwnerIdAndAccountId(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);
     }
 

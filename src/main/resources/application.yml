@@ -17,6 +17,11 @@ spring:
           time_zone: UTC
   flyway:
     enabled: true
+  # 스택 신호 폴링·예약 수집 워커·알림 발송이 서로 막지 않게 스레드를 나눈다 (ADR-019)
+  task:
+    scheduling:
+      pool:
+        size: 4
 
 server:
   port: ${PORT:8080}
@@ -67,6 +72,8 @@ cci:
     template-url: ${CCI_TEMPLATE_URL:}
     callback-topic-arn: ${CCI_CALLBACK_TOPIC_ARN:}
     callback-queue-url: ${CCI_CALLBACK_QUEUE_URL:}
+    # 예약 수집 작업 큐 (DLQ 재전송 정책 maxReceiveCount=3). 비어 있으면 예약 수집을 켜지 않는다 (ADR-019)
+    collection-queue-url: ${CCI_COLLECTION_QUEUE_URL:}
     verify-attempts: 6
     verify-interval: 10s
     assume-role-duration-seconds: 900
@@ -78,6 +85,14 @@ cci:
   # 팀 벤치마킹 비교 기준 파일 (docs/decisions/013). 바꾸려면 file:/경로/reference.json
   benchmark:
     reference: ${CCI_BENCHMARK_REFERENCE:classpath:benchmark/reference.json}
+  # 예약 수집 시각 (KST, cci.usage.zone). 기본 하루 4번 03·09·15·21시
+  collection:
+    cron: ${CCI_COLLECTION_CRON:0 0 3,9,15,21 * * *}
+  # 외부 알림 발송 (Discord 웹훅, ADR-019)
+  notification:
+    dispatch-enabled: ${CCI_NOTIFY_DISPATCH_ENABLED:true}
+    dispatch-interval: 60s
+    app-url: ${CCI_APP_URL:https://www.cloud-cost.cloud}
   usage:
     instance-ttl: ${CCI_INSTANCE_TTL:10m}
     usage-ttl: ${CCI_USAGE_TTL:1h}

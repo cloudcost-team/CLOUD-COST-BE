@@ -143,5 +143,34 @@ UNIQUE `(owner_id, event_key)` — 같은 일은 한 번만 만든다. 인덱스
 `id`(UUID), `owner_id`, `family_id`(한 번의 로그인에서 rotation으로 이어지는 묶음), `token_hash`(SHA-256 hex, UNIQUE), `created_at`, `expires_at`, `used_at`, `revoked_at`.
 토큰 원문은 저장하지 않는다. 조회는 해시로만 한다.
 
+## V10 (2026-11-12) — 예약 수집 · 외부 알림 (ADR-019)
+- `sync_jobs.trigger_type`에 `SCHEDULED`(예약 수집)를 더한다.
+
+### notification_channels — 사용자별 외부 알림 채널
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| id | UUID PK | |
+| owner_id | VARCHAR(64) | 조회·수정은 항상 owner 조건. 인덱스 `(owner_id, created_at)` |
+| type | VARCHAR(20) | `DISCORD` |
+| webhook_url | VARCHAR(300) | 비밀 값. API에는 가린 주소만, 로그에는 토큰을 가린다 |
+| enabled | BOOLEAN | |
+| created_at / updated_at | TIMESTAMPTZ | 이 시각 뒤에 생긴 알림만 보낸다 |
+
+### notification_deliveries — 알림 1건 × 채널 1개의 발송 상태 (Outbox)
+UNIQUE `(notification_id, channel_id)`. 인덱스 `(status, next_attempt_at)`(보낼 차례), `(owner_id, notification_id)`(목록 표시).
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| id | UUID PK | |
+| owner_id | VARCHAR(64) | |
+| notification_id | UUID FK notifications | |
+| channel_id | UUID FK notification_channels | |
+| status | VARCHAR(16) | PENDING / SENT / FAILED |
+| attempts | INT | 보낸 횟수 |
+| last_error | VARCHAR(300) NULL | 마지막 실패 사유 (한국어) |
+| next_attempt_at | TIMESTAMPTZ | 다음에 보낼 시각 |
+| sent_at | TIMESTAMPTZ NULL | |
+| created_at | TIMESTAMPTZ | |
+- 연결 삭제 때는 `notifications`보다 먼저 그 알림의 발송 기록을 지운다. 채널 삭제 때도 그 채널의 발송 기록을 먼저 지운다.
+
 ## 보존 (백로그)
-ec2_usage_hourly는 455일, sync_jobs는 90일, notifications는 읽은 지 90일 정도로 정리하는 작업이 필요하다.
+ec2_usage_hourly는 455일, sync_jobs는 90일, notifications·notification_deliveries는 읽은 지 90일 정도로 정리하는 작업이 필요하다.

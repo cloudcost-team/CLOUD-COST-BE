@@ -4,13 +4,16 @@ import ch.qos.logback.classic.pattern.MessageConverter;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import java.util.regex.Pattern;
 
-/** 로그 메시지 마스킹: AWS 액세스 키 ID, 임시 자격증명 필드, JWT, Authorization/Bearer 값. */
+/** 로그 메시지 마스킹: AWS 액세스 키 ID, 임시 자격증명 필드, JWT, Authorization/Bearer 값, Discord 웹훅 토큰. */
 public class MaskingMessageConverter extends MessageConverter {
 
     private static final Pattern ACCESS_KEY_ID = Pattern.compile("(AKIA|ASIA)[A-Z0-9]{16}");
     private static final Pattern JWT = Pattern.compile("eyJ[\\w-]+\\.[\\w-]+\\.[\\w-]+");
     private static final Pattern SECRET_FIELDS = Pattern.compile(
             "(?i)((?:SessionToken|SecretAccessKey|AccessKeyId|Authorization|X-Amz-Security-Token)[\"']?\\s*[:=]\\s*[\"']?)[^\\s\"',}]+");
+    /** Discord 웹훅 토큰 (ADR-019) */
+    private static final Pattern DISCORD_WEBHOOK =
+            Pattern.compile("(?i)(discord(?:app)?\\.com/api/webhooks/\\d+/)[\\w-]+");
     private static final Pattern BEARER = Pattern.compile("(?i)(Bearer\\s+)\\S+");
 
     @Override
@@ -25,6 +28,7 @@ public class MaskingMessageConverter extends MessageConverter {
         String masked = ACCESS_KEY_ID.matcher(message).replaceAll("***");
         masked = JWT.matcher(masked).replaceAll("***");
         masked = SECRET_FIELDS.matcher(masked).replaceAll("$1***");
+        masked = DISCORD_WEBHOOK.matcher(masked).replaceAll("$1***");
         return BEARER.matcher(masked).replaceAll("$1***");
     }
 }

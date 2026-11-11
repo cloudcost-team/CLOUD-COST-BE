@@ -437,9 +437,9 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 ### `POST /demo/benchmark?currency=KRW|USD` — 체험 모드
 §3 설정에 `recommendationIds`(선택)를 더한다. `?sizeBand=`도 실제와 같다. 기간의 마지막 14일을 서버별 `usagePattern`으로 판단한다 (`OVERSIZED`·`IDLE`은 과다 사양, `NORMAL`은 적정).
 
-## 5. 서비스 안 알림 (이슈 #35, ADR-014)
-알림은 **서비스 안 알림창(헤더 벨·알림 목록)으로만** 보여 준다. 이메일·Slack·Discord·푸시는 보내지 않는다.
-예약 수집이 없으므로 **알림 목록·안 읽은 수를 조회할 때** 연결마다 조건을 확인해 새로 생긴 일만 알림으로 저장한다.
+## 5. 알림 (이슈 #35, ADR-014 · ADR-019)
+알림은 서비스 안 알림창(헤더 벨·알림 목록)에 보여 주고, **등록한 Discord 채널로도 보낸다** (§5-1).
+조건은 **예약 수집 뒤(기본 하루 4번, KST 03·09·15·21시)**와 **알림 목록·안 읽은 수를 조회할 때** 연결마다 확인해 새로 생긴 일만 알림으로 저장한다.
 수집할 수 없는 연결(대기·끊김)과 AWS 오류가 난 연결은 그 조회에서 건너뛴다 (목록 조회는 실패하지 않는다).
 
 | 종류 `type` | 조건 (설정에서 켠 것만) | 한 번만 (`event_key`) | 문구 예 |
@@ -470,17 +470,44 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 ### `GET /notifications?cursor=&limit=20` — S14-6
 ```json
 { "items": [ { "id": "…", "type": "BUDGET", "typeLabel": "예산", "accountId": "…", "accountName": "운영 서버",
-               "message": "운영 서버의 이번 달 예상 비용이 예산의 80%를 넘었어요", "createdAt": "…", "read": false, "readAt": null } ],
+               "message": "운영 서버의 이번 달 예상 비용이 예산의 80%를 넘었어요", "createdAt": "…", "read": false, "readAt": null,
+               "deliveries": [ { "channelId": "…", "channelType": "DISCORD", "target": "https://discord.com/api/webhooks/…5678/••••",
+                                 "status": "SENT", "statusLabel": "보냄", "attempts": 1, "lastError": null, "sentAt": "…" } ] } ],
   "nextCursor": "MTc2…", "unreadCount": 3, "notes": [ … ] }
 ```
 최신순. `limit` 1~50(기본 20). 더 있으면 `nextCursor`를 그대로 `cursor`로 보낸다 (없으면 `null`). 잘못된 커서·limit은 400 `VALIDATION_ERROR`.
+`deliveries`: 외부 채널별 발송 상태 `PENDING`(보내는 중·다시 보낼 예정) / `SENT` / `FAILED`(그만 보냄, `lastError`에 한국어 사유). 채널이 없거나 채널 등록 전 알림이면 `[]`.
 ### `GET /notifications/unread-count` — S14-2 헤더 벨
 `{ "unreadCount": 3 }`. 이 조회도 조건을 확인한다.
 ### `POST /notifications/read-all` → 200 `{ "unreadCount": 0 }`
 ### `POST /notifications/{notificationId}/read` → 204
 이미 읽었어도 204. 남의 알림이거나 없으면 404 `NOTIFICATION_NOT_FOUND`.
 
-연결을 삭제하면 그 연결의 알림도 함께 지운다.
+연결을 삭제하면 그 연결의 알림과 발송 기록도 함께 지운다.
+
+## 5-1. 외부 알림 채널 — Discord 웹훅 (ADR-019)
+등록한 뒤에 생긴 알림부터, 켜진 채널마다 1분 안에 보낸다. 실패하면 1분·5분·30분·2시간 간격으로 다시 보내고 5번째에 멈춘다.
+웹훅 주소는 비밀 값이라 **저장 뒤에는 가린 주소(`target`)만** 돌려준다. 사용자당 5개까지.
+
+메시지 형식: `[CloudCost] 예산 · 운영 서버⏎운영 서버의 이번 달 예상 비용이 예산의 80%를 넘었어요⏎https://www.cloud-cost.cloud/notifications`
+
+### `GET /settings/alerts/channels`
+```json
+{ "items": [ { "channelId": "…", "type": "DISCORD", "typeLabel": "Discord", "target": "https://discord.com/api/webhooks/…5678/••••",
+               "enabled": true, "createdAt": "…", "updatedAt": "…" } ],
+  "maxChannels": 5, "notes": [ "Discord 서버 설정 → 연동 → 웹후크에서 만든 주소를 넣어 주세요. …" ] }
+```
+### `POST /settings/alerts/channels` → 201 (응답은 목록의 항목 1개)
+`{ "type": "DISCORD", "webhookUrl": "https://discord.com/api/webhooks/123…/abc…", "enabled": true }` (`type`·`enabled` 생략 가능)
+- `https://discord.com/api/webhooks/{숫자}/{토큰}` 형식이 아니면 400 `INVALID_WEBHOOK_URL`, `type`이 DISCORD가 아니면 400 `UNSUPPORTED_CHANNEL`,
+  6번째는 400 `CHANNEL_LIMIT_EXCEEDED`.
+### `PUT /settings/alerts/channels/{channelId}` → 200
+`{ "enabled": false }` 또는 `{ "webhookUrl": "…새 주소…", "enabled": true }` (`webhookUrl`이 없거나 빈 값이면 주소는 그대로). 남의 채널이면 404 `CHANNEL_NOT_FOUND`.
+### `DELETE /settings/alerts/channels/{channelId}` → 204
+그 채널의 발송 기록도 지운다 (알림은 남는다).
+### `POST /settings/alerts/channels/{channelId}/test` → 200
+`{ "ok": true, "reason": null }` / `{ "ok": false, "reason": "Discord 웹훅을 찾을 수 없어요. 웹훅이 삭제되지 않았는지 확인하고 주소를 다시 등록해 주세요." }`
+꺼진 채널도 보낸다. 실패해도 HTTP는 200이고 `reason`에 한국어 사유를 준다.
 
 ## 6. 월간 리포트 (이슈 #37, ADR-015)
 저장하지 않고 조회할 때 §2 월별·일별 비용, §2 급증일, §4 낭비 탐지 규칙으로 계산한다.

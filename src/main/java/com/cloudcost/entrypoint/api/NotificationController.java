@@ -25,8 +25,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1")
 @Tag(name = "5. 알림 (서비스 안)",
-    description = "예산 80·100·120%, 비용 급증, 주간 요약을 헤더 벨·알림 목록으로 보여 준다 (S14). 이메일·메신저·푸시는 보내지 않는다. "
-        + "조건은 알림 목록·안 읽은 수를 조회할 때 확인한다 (예약 수집 없음).")
+    description = "예산 80·100·120%, 비용 급증, 주간 요약을 헤더 벨·알림 목록으로 보여 주고, 등록한 Discord 채널로도 보낸다 (S14, ADR-019). "
+        + "조건은 예약 수집 뒤와 알림 목록·안 읽은 수를 조회할 때 확인한다.")
 class NotificationController {
 
     private final NotificationService notifications;

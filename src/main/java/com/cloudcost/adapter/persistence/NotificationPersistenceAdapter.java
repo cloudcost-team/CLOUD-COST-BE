@@ -1,6 +1,7 @@
 package com.cloudcost.adapter.persistence;
 
 import com.cloudcost.adapter.persistence.SpringDataRepositories.AlertSettingsJpa;
+import com.cloudcost.adapter.persistence.SpringDataRepositories.NotificationDeliveryJpa;
 import com.cloudcost.adapter.persistence.SpringDataRepositories.NotificationJpa;
 import com.cloudcost.application.port.AlertSettingsRepository;
 import com.cloudcost.application.port.NotificationRepository;
@@ -28,12 +29,15 @@ class NotificationPersistenceAdapter implements NotificationRepository, AlertSet
 
     private final NotificationJpa notifications;
     private final AlertSettingsJpa settings;
+    private final NotificationDeliveryJpa deliveries;
     private final TransactionTemplate requiresNew;
 
     NotificationPersistenceAdapter(
-        NotificationJpa notifications, AlertSettingsJpa settings, PlatformTransactionManager transactionManager) {
+        NotificationJpa notifications, AlertSettingsJpa settings, NotificationDeliveryJpa deliveries,
+        PlatformTransactionManager transactionManager) {
         this.notifications = notifications;
         this.settings = settings;
+        this.deliveries = deliveries;
         this.requiresNew = new TransactionTemplate(transactionManager);
         this.requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -132,6 +136,8 @@ class NotificationPersistenceAdapter implements NotificationRepository, AlertSet
     @Override
     @Transactional
     public int deleteByOwnerIdAndAccountId(String ownerId, UUID accountId) {
+        // 발송 기록이 알림을 참조하므로 먼저 지운다 (ADR-019)
+        deliveries.deleteByOwnerIdAndAccountId(ownerId, accountId);
         return notifications.deleteByOwnerIdAndAccountId(ownerId, accountId);
     }
 

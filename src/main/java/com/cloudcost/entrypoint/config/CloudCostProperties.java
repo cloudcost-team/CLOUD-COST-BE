@@ -15,7 +15,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 @ConfigurationProperties(prefix = "cci")
 public record CloudCostProperties(
         @DefaultValue("local") String appEnv, @DefaultValue Auth auth, @DefaultValue Aws aws, @DefaultValue Usage usage,
-        @DefaultValue Demo demo) {
+        @DefaultValue Demo demo, @DefaultValue Notification notification) {
 
     /**
      * @param mode dev: Bearer 토큰이 없으면 X-Owner-Id 헤더로 사용자 구분 (APP_ENV=local 전용) / google: Bearer 토큰 필수
@@ -43,12 +43,14 @@ public record CloudCostProperties(
      * @param templateUrl S3에 올린 고객용 CloudFormation 템플릿 (CCI_TEMPLATE_URL)
      * @param callbackTopicArn 스택 신호를 받는 SNS 토픽 (CCI_CALLBACK_TOPIC_ARN)
      * @param callbackQueueUrl SNS가 전달하는 SQS 큐. 비어 있으면 신호 수신기를 켜지 않는다 (CCI_CALLBACK_QUEUE_URL)
+     * @param collectionQueueUrl 예약 수집 작업 큐. 비어 있으면 예약 수집을 켜지 않는다 (CCI_COLLECTION_QUEUE_URL, ADR-019)
      */
     public record Aws(
             String backendRoleArn,
             String templateUrl,
             String callbackTopicArn,
             String callbackQueueUrl,
+            String collectionQueueUrl,
             @DefaultValue("6") int verifyAttempts,
             @DefaultValue("10s") Duration verifyInterval) {}
 
@@ -66,6 +68,14 @@ public record CloudCostProperties(
      * 체험 모드 간이 로그인 (실제 AWS 계정이 아님). 화면에 안내하는 공개 값이다.
      */
     public record Demo(@DefaultValue("cloudcost") String username, @DefaultValue("1234") String password) {}
+
+    /**
+     * 외부 알림 발송 (ADR-019).
+     *
+     * @param dispatchEnabled 발송 작업을 켤지 (테스트에서는 끈다)
+     * @param appUrl 알림 메시지 끝에 붙일 서비스 주소 (CCI_APP_URL, 비우면 붙이지 않는다)
+     */
+    public record Notification(@DefaultValue("true") boolean dispatchEnabled, String appUrl) {}
 
     public ConnectionSettings connectionSettings() {
         return new ConnectionSettings(

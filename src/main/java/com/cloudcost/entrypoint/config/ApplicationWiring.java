@@ -1,5 +1,6 @@
 package com.cloudcost.entrypoint.config;
 
+import com.cloudcost.application.AlertEvaluationService;
 import com.cloudcost.application.AuthService;
 import com.cloudcost.application.AwsAccountService;
 import com.cloudcost.application.BenchmarkService;
@@ -8,10 +9,13 @@ import com.cloudcost.application.Ec2DataRefresher;
 import com.cloudcost.application.DashboardService;
 import com.cloudcost.application.DemoUsageService;
 import com.cloudcost.application.Ec2UsageQueryService;
+import com.cloudcost.application.NotificationChannelService;
+import com.cloudcost.application.NotificationDispatchService;
 import com.cloudcost.application.NotificationService;
 import com.cloudcost.application.Pauser;
 import com.cloudcost.application.PriceService;
 import com.cloudcost.application.ReportService;
+import com.cloudcost.application.ScheduledCollectionService;
 import com.cloudcost.application.SimulationService;
 import com.cloudcost.application.StackCallbackService;
 import com.cloudcost.application.UsageSettings;
@@ -21,6 +25,9 @@ import com.cloudcost.application.port.AwsAccountRepository;
 import com.cloudcost.application.port.BenchmarkReferenceSource;
 import com.cloudcost.application.port.AlertSettingsRepository;
 import com.cloudcost.application.port.BudgetRepository;
+import com.cloudcost.application.port.NotificationChannelGateway;
+import com.cloudcost.application.port.NotificationChannelRepository;
+import com.cloudcost.application.port.NotificationDeliveryRepository;
 import com.cloudcost.application.port.NotificationRepository;
 import com.cloudcost.application.port.CustomerAwsGateway;
 import com.cloudcost.application.port.Ec2InstanceRepository;
@@ -208,19 +215,55 @@ class ApplicationWiring {
     }
 
     @Bean
-    NotificationService notificationService(
+    AlertEvaluationService alertEvaluationService(
             AwsAccountService accounts,
             DashboardService dashboards,
             Ec2UsageQueryService queries,
-            BudgetRepository budgets,
             AlertSettingsRepository settings,
             NotificationRepository notifications,
-            UnitOfWork unitOfWork,
             CurrencyService currencies,
             Clock clock,
             UsageSettings usage) {
+        return new AlertEvaluationService(
+                accounts, dashboards, queries, settings, notifications, currencies, clock, usage);
+    }
+
+    @Bean
+    NotificationService notificationService(
+            AwsAccountService accounts,
+            DashboardService dashboards,
+            BudgetRepository budgets,
+            AlertSettingsRepository settings,
+            NotificationRepository notifications,
+            NotificationChannelRepository channels,
+            NotificationDeliveryRepository deliveries,
+            AlertEvaluationService alerts,
+            UnitOfWork unitOfWork,
+            Clock clock) {
         return new NotificationService(
-                accounts, dashboards, queries, budgets, settings, notifications, unitOfWork, currencies, clock, usage);
+                accounts, dashboards, budgets, settings, notifications, channels, deliveries, alerts, unitOfWork,
+                clock);
+    }
+
+    @Bean
+    NotificationChannelService notificationChannelService(
+            NotificationChannelRepository channels, NotificationChannelGateway gateway, Clock clock) {
+        return new NotificationChannelService(channels, gateway, clock);
+    }
+
+    @Bean
+    NotificationDispatchService notificationDispatchService(
+            NotificationDeliveryRepository deliveries,
+            NotificationChannelGateway gateway,
+            Clock clock,
+            CloudCostProperties properties) {
+        return new NotificationDispatchService(deliveries, gateway, clock, properties.notification().appUrl());
+    }
+
+    @Bean
+    ScheduledCollectionService scheduledCollectionService(
+            AwsAccountRepository accounts, Ec2DataRefresher refresher, AlertEvaluationService alerts) {
+        return new ScheduledCollectionService(accounts, refresher, alerts);
     }
 
     @Bean

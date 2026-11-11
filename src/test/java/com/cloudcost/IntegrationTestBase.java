@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.cloudcost.fakes.FakeCustomerAwsGateway;
 import com.cloudcost.fakes.FakeExchangeRateSource;
 import com.cloudcost.fakes.FakeGoogleIdentityVerifier;
+import com.cloudcost.fakes.FakeNotificationChannelGateway;
 import com.cloudcost.fakes.FakeStackCallbackResponder;
 import com.cloudcost.fakes.FakePriceCatalog;
 import com.cloudcost.fakes.Fixtures;
@@ -52,6 +53,7 @@ public abstract class IntegrationTestBase {
     @Autowired protected FakeStackCallbackResponder cfnResponses;
     @Autowired protected FakeExchangeRateSource exchangeRates;
     @Autowired protected RecordingPauser pauser;
+    @Autowired protected FakeNotificationChannelGateway channelGateway;
     @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     protected String owner;
@@ -96,6 +98,12 @@ public abstract class IntegrationTestBase {
 
         @Bean
         @Primary
+        FakeNotificationChannelGateway fakeNotificationChannelGateway() {
+            return new FakeNotificationChannelGateway();
+        }
+
+        @Bean
+        @Primary
         RecordingPauser recordingPauser() {
             return new RecordingPauser();
         }
@@ -111,6 +119,7 @@ public abstract class IntegrationTestBase {
         exchangeRates.reset();
         pauser.pauses.clear();
         pauser.onPause = null;
+        channelGateway.reset();
         clock.set(NOW);
         owner = "user-" + UUID.randomUUID().toString().substring(0, 8);
     }

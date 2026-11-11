@@ -7,8 +7,12 @@ import java.util.UUID;
 
 /**
  * 사용자 요청의 조회는 ownerId를 첫 인자로 받는다. owner 없이 id만으로 찾는 메서드는 두지 않는다.
- * 예외는 {@link #findByExternalIdForCallback} 하나다: CloudFormation 신호에는 owner가 없어서
- * 추측할 수 없는 External ID(96비트)와 연결 id를 함께 맞춰 본 뒤, owner는 찾은 행에서 읽는다.
+ * 예외는 둘이다.
+ * <ul>
+ *   <li>{@link #findByExternalIdForCallback}: CloudFormation 신호에는 owner가 없어서
+ *       추측할 수 없는 External ID(96비트)와 연결 id를 함께 맞춰 본 뒤, owner는 찾은 행에서 읽는다.
+ *   <li>{@link #findCollectableForSchedule}: 예약 수집이 수집할 연결을 고른다 (ADR-019). owner는 결과 행에서 읽는다.
+ * </ul>
  */
 public interface AwsAccountRepository {
 
@@ -35,4 +39,7 @@ public interface AwsAccountRepository {
 
     /** 스택 신호 처리 전용. 사용자 요청 경로에서는 쓰지 않는다. */
     Optional<AwsAccount> findByExternalIdForCallback(String externalId);
+
+    /** 예약 수집 전용. 수집할 수 있는 상태(ACTIVE, 확인된 적 있는 ERROR)의 모든 연결. 사용자 요청 경로에서는 쓰지 않는다. */
+    List<AwsAccount> findCollectableForSchedule();
 }

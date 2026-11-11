@@ -22,7 +22,9 @@ public final class SyncJob {
 
     public enum Trigger {
         QUERY,
-        MANUAL
+        MANUAL,
+        /** 예약 수집 (ADR-019) */
+        SCHEDULED
     }
 
     private final UUID id;

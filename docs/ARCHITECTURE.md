@@ -15,15 +15,22 @@ application
    ├─ DashboardService       대시보드 요약(월말 예상·전월 같은 기간 대비·최근 급증)·연결별 월 예산
    ├─ WasteService           낭비 리소스 (최근 14일 사용률 + 단가 → WasteDetector, ADR-010)
    ├─ SimulationService      비용 시뮬레이터 (낭비 추천 + 월말 예상·예산 → CostSimulation, ADR-012)
-   ├─ NotificationService    서비스 안 알림 (조회할 때 예산·급증·주간 요약 조건 평가 → AlertRules, 발생 키로 한 번만, ADR-014)
+   ├─ NotificationService    서비스 안 알림 목록·설정 (조회할 때도 AlertEvaluationService로 평가, ADR-014)
+   ├─ AlertEvaluationService 예산·급증·주간 요약 조건 평가 → AlertRules, 발생 키로 한 번만 (조회 시점 + 예약 수집 뒤)
+   ├─ ScheduledCollectionService  예약 수집: 수집할 연결 고르기 · 연결 1개 수집(Ec2DataRefresher) 뒤 알림 평가 (ADR-019)
+   ├─ NotificationDispatchService 외부 채널 발송 (notifications = Outbox → notification_deliveries, 재시도, ADR-019)
+   ├─ NotificationChannelService  Discord 웹훅 채널 등록·수정·삭제·테스트 발송
    ├─ ReportService          월간 리포트 (월별 비용·급증일·그 달 마지막 14일 낭비 탐지·서버별 비중, ADR-015)
    ├─ BenchmarkService       팀 벤치마킹 (최근 14일 사용률·월말 예상 vs 비교 기준 파일 → TeamBenchmark, ADR-013)
    ├─ PriceService           온디맨드 단가 (DB 캐시 7일)
    └─ CurrencyService        원화 환산 환율 (Frankfurter, DB 캐시 6시간, ADR-005)
    ▼ ports
 adapter/awscustomer  ── STS AssumeRole → EC2 DescribeInstances, CloudWatch GetMetricStatistics  [고객 계정]
-adapter/awsinternal  ── Price List GetProducts (us-east-1), SQS 신호 수신, CloudFormation 응답 PUT  [우리 계정]
+adapter/awsinternal  ── Price List GetProducts (us-east-1), SQS 신호 수신, SQS 수집 큐, CloudFormation 응답 PUT  [우리 계정]
+adapter/notify       ── Discord 웹훅 POST (discord.com/api/webhooks/만, 리다이렉트 안 따라감)
 entrypoint/worker    ── StackCallbackPoller: SQS long polling (CCI_CALLBACK_QUEUE_URL 있을 때만)
+                        CollectionScheduler(cron) → SQS 수집 큐(+DLQ) → CollectionWorker (CCI_COLLECTION_QUEUE_URL 있을 때만)
+                        NotificationDispatcher: 1분마다 외부 채널 발송
 adapter/persistence  ── JPA + Flyway (PostgreSQL / 테스트는 H2)
 adapter/benchmark    ── 벤치마킹 비교 기준 JSON (classpath:benchmark/reference.json, 교체 가능)
 ```
@@ -118,6 +125,10 @@ DISCONNECTED: 수집하지 않음. 새 스택으로 실제 검증에 성공할 �
 | `CCI_TEMPLATE_URL` | (없음) | S3에 올린 고객용 템플릿 |
 | `CCI_CALLBACK_TOPIC_ARN` | (없음) | 스택 신호 SNS 토픽 (스택 리전 = 토픽 리전) |
 | `CCI_CALLBACK_QUEUE_URL` | (없음) | 비어 있으면 신호 수신기를 켜지 않는다 |
+| `CCI_COLLECTION_QUEUE_URL` | (없음) | 예약 수집 작업 큐 (DLQ 재전송 정책 maxReceiveCount 3). 비어 있으면 예약 수집을 켜지 않는다 (ADR-019) |
+| `CCI_COLLECTION_CRON` | `0 0 3,9,15,21 * * *` | 예약 수집 시각 (KST) |
+| `CCI_NOTIFY_DISPATCH_ENABLED` | true | 외부 채널(Discord) 발송 작업 |
+| `CCI_APP_URL` | https://www.cloud-cost.cloud | 알림 메시지 끝의 링크 (비우면 붙이지 않음) |
 | `AWS_PROFILE` | | 백엔드 자격증명 프로필 (로컬) |
 | `CCI_INSTANCE_TTL` / `CCI_USAGE_TTL` / `CCI_USAGE_BACKFILL` | 10m / 1h / 90d | |
 | `CCI_MAX_CW_REQUESTS` | 500 | 수집 1회 CloudWatch 호출 상한 |
@@ -137,4 +148,4 @@ DISCONNECTED: 수집하지 않음. 새 스택으로 실제 검증에 성공할 �
 서버가 죽어도 대시보드·알림은 Grafana Cloud에 남아 있어 장애를 밖에서 알 수 있다. 설정 파일: `deploy/alloy/config.alloy`.
 
 ## 아직 없는 것 (기획서 대비)
-- 사용량 예약 수집(조회가 있을 때만 수집), 이메일+비밀번호 로그인, 리프레시 토큰, 프론트 연동.
+- 이메일+비밀번호 로그인, 이메일·Slack 알림 채널 (리프레시 토큰·프론트 연동·예약 수집·Discord 알림은 완료).

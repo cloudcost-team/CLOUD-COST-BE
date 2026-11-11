@@ -13,6 +13,8 @@ import com.cloudcost.application.NotificationService.BudgetChange;
 import com.cloudcost.application.error.NotFoundException;
 import com.cloudcost.application.port.AlertSettingsRepository;
 import com.cloudcost.application.port.BudgetRepository;
+import com.cloudcost.application.port.NotificationChannelRepository;
+import com.cloudcost.application.port.NotificationDeliveryRepository;
 import com.cloudcost.application.port.NotificationRepository;
 import com.cloudcost.application.port.UnitOfWork;
 import com.cloudcost.domain.alert.AlertSettings;
@@ -34,6 +36,8 @@ class AlertSettingsAtomicityTest extends IntegrationTestBase {
     @Autowired BudgetRepository budgets;
     @Autowired AlertSettingsRepository settings;
     @Autowired NotificationRepository notifications;
+    @Autowired NotificationChannelRepository channels;
+    @Autowired NotificationDeliveryRepository deliveries;
     @Autowired UnitOfWork unitOfWork;
     @Autowired CurrencyService currencies;
     @Autowired Clock clock;
@@ -46,8 +50,10 @@ class AlertSettingsAtomicityTest extends IntegrationTestBase {
         DashboardService failing = spy(dashboards);
         doCallRealMethod().doThrow(new NotFoundException("NOT_FOUND", "연결을 찾을 수 없어요."))
             .when(failing).setBudget(eq(owner), eq(first), any());
+        AlertEvaluationService alerts = new AlertEvaluationService(
+            accounts, failing, queries, settings, notifications, currencies, clock, usage);
         NotificationService service = new NotificationService(
-            accounts, failing, queries, budgets, settings, notifications, unitOfWork, currencies, clock, usage);
+            accounts, failing, budgets, settings, notifications, channels, deliveries, alerts, unitOfWork, clock);
         MonthlyBudget budget = new MonthlyBudget(new BigDecimal("100"), Currency.USD);
         AlertSettings off = new AlertSettings(false, false, false, false, false);
 

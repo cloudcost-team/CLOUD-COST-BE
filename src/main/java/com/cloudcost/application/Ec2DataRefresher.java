@@ -84,19 +84,26 @@ public class Ec2DataRefresher {
     }
 
     public Freshness refreshIfStale(String ownerId, UUID accountId) {
+        return refreshIfStale(ownerId, accountId, SyncJob.Trigger.QUERY);
+    }
+
+    /**
+     * @param trigger 조회 시점(QUERY)인지 예약 수집(SCHEDULED)인지. 캐시 규칙은 같다 (예약 수집도 1시간 안이면 AWS를 부르지 않는다).
+     */
+    public Freshness refreshIfStale(String ownerId, UUID accountId, SyncJob.Trigger trigger) {
         ReentrantLock lock = locks.computeIfAbsent(accountId, id -> new ReentrantLock());
         lock.lock();
         try {
             // 잠금을 기다리는 동안 다른 요청이 수집했을 수 있으므로 다시 읽는다.
             AwsAccount account = accounts.findByOwnerIdAndId(ownerId, accountId)
                 .orElseThrow(AwsAccountService::notFound);
-            return refresh(account);
+            return refresh(account, trigger);
         } finally {
             lock.unlock();
         }
     }
 
-    private Freshness refresh(AwsAccount account) {
+    private Freshness refresh(AwsAccount account, SyncJob.Trigger trigger) {
         Instant now = clock.instant();
         boolean needUsage = policy.usageStale(account.usageRefreshedAt(), now);
         // ERROR 연결은 1시간에 한 번만, 인스턴스와 사용량을 함께 다시 확인한다 (복구 판단을 한 번에 하기 위해).
@@ -108,7 +115,7 @@ public class Ec2DataRefresher {
         }
 
         SyncJob job = syncJobs.save(SyncJob.start(
-            UUID.randomUUID(), account.ownerId(), account.id(), SyncJob.Trigger.QUERY, now));
+            UUID.randomUUID(), account.ownerId(), account.id(), trigger, now));
         List<Freshness.Warning> warnings = new ArrayList<>();
         boolean instancesDone = false;
         boolean usageAttempted = false;

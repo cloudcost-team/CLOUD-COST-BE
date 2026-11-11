@@ -24,6 +24,7 @@ class NotificationPersistenceAdapterTest extends IntegrationTestBase {
     @Autowired NotificationRepository notifications;
     @Autowired NotificationJpa notificationJpa;
     @Autowired AlertSettingsJpa alertSettingsJpa;
+    @Autowired SpringDataRepositories.NotificationDeliveryJpa deliveryJpa;
     @Autowired PlatformTransactionManager transactionManager;
 
     private Notification notification(UUID accountId, String key) {
@@ -67,7 +68,7 @@ class NotificationPersistenceAdapterTest extends IntegrationTestBase {
                 }
             });
         NotificationPersistenceAdapter adapter =
-            new NotificationPersistenceAdapter(racing, alertSettingsJpa, transactionManager);
+            new NotificationPersistenceAdapter(racing, alertSettingsJpa, deliveryJpa, transactionManager);
         UUID accountId = UUID.fromString(activeAccount());
 
         // 바깥 트랜잭션 안에서 불러도 위반이 바깥을 rollback-only로 만들지 않는다 (커밋 때 UnexpectedRollbackException 없음)

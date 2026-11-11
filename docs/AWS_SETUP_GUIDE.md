@@ -45,6 +45,15 @@
 2. 표시 제한 시간(Visibility timeout) **3분**, 메시지 보존 기간 **4일**
 3. URL 복사 → `CCI_CALLBACK_QUEUE_URL` (예: `https://sqs.ap-northeast-2.amazonaws.com/<A>/cloudcost-insight-connections`)
 
+### 2.4 SQS: 예약 수집 큐 + DLQ (ADR-019, 선택)
+비워 두면 예약 수집이 꺼지고 조회 시점 수집만 한다.
+1. DLQ 먼저: 대기열 생성 → 표준, 이름 `cloudcost-insight-collection-dlq`, 메시지 보존 기간 **14일**
+2. 수집 큐: 대기열 생성 → 표준, 이름 `cloudcost-insight-collection`, 표시 제한 시간 **15분**, 보존 기간 **1일**,
+   배달 못한 편지 대기열 → 사용 → 위 DLQ, **최대 수신 수 3**
+3. URL 복사 → `CCI_COLLECTION_QUEUE_URL` (예: `https://sqs.ap-northeast-2.amazonaws.com/<A>/cloudcost-insight-collection`)
+4. 3절 백엔드 Role 정책에 이 큐의 `sqs:SendMessage`·`sqs:ReceiveMessage`·`sqs:DeleteMessage`를 더한다.
+5. DLQ에 메시지가 쌓이면 수집이 3번 연속 실패한 연결이다. 서버 로그 `Scheduled collection failed`로 원인을 본다.
+
 ### 2.3 SNS: 고객 스택이 신호를 보내는 창구
 1. SNS → 주제 생성 → 표준, 이름 `cloudcost-insight-connections`
 2. 액세스 정책 → 고급 → 아래로 바꾼다 (다른 AWS 계정의 CloudFormation이 보낼 수 있어야 한다):
@@ -70,7 +79,9 @@
      { "Effect": "Allow", "Action": "sts:AssumeRole", "Resource": "arn:aws:iam::*:role/CloudCost*" },
      { "Effect": "Allow", "Action": "pricing:GetProducts", "Resource": "*" },
      { "Effect": "Allow", "Action": ["sqs:ReceiveMessage", "sqs:DeleteMessage"],
-       "Resource": "arn:aws:sqs:ap-northeast-2:<A>:cloudcost-insight-connections" } ] }
+       "Resource": "arn:aws:sqs:ap-northeast-2:<A>:cloudcost-insight-connections" },
+     { "Effect": "Allow", "Action": ["sqs:SendMessage", "sqs:ReceiveMessage", "sqs:DeleteMessage"],
+       "Resource": "arn:aws:sqs:ap-northeast-2:<A>:cloudcost-insight-collection" } ] }
    ```
 3. `cci-dev` 사용자에 인라인 정책: `sts:AssumeRole` on `arn:aws:iam::<A>:role/CloudCostInsightBackendRole`
 4. `~/.aws/config`에 추가:
@@ -93,6 +104,7 @@ export CCI_BACKEND_ROLE_ARN=arn:aws:iam::<A>:role/CloudCostInsightBackendRole
 export CCI_TEMPLATE_URL=https://cci-templates-<A>.s3.ap-northeast-2.amazonaws.com/customer-readonly-role.yaml
 export CCI_CALLBACK_TOPIC_ARN=arn:aws:sns:ap-northeast-2:<A>:cloudcost-insight-connections
 export CCI_CALLBACK_QUEUE_URL=https://sqs.ap-northeast-2.amazonaws.com/<A>/cloudcost-insight-connections
+export CCI_COLLECTION_QUEUE_URL=https://sqs.ap-northeast-2.amazonaws.com/<A>/cloudcost-insight-collection  # 선택 (2.4)
 ./gradlew bootRun
 ```
 → http://localhost:8080/swagger-ui.html. `CCI_CALLBACK_QUEUE_URL`이 있으면 신호 수신기가 자동으로 켜진다.

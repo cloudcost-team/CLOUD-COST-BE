@@ -19,4 +19,13 @@ class MaskingMessageConverterTest {
                 .doesNotContain("eyJhbGciOi")
                 .contains("SessionToken: ***");
     }
+
+    @Test
+    void Discord_웹훅_토큰을_가린다() {
+        String masked = MaskingMessageConverter.mask(
+                "send https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_-0123 failed");
+
+        org.assertj.core.api.Assertions.assertThat(masked)
+                .isEqualTo("send https://discord.com/api/webhooks/123456789012345678/*** failed");
+    }
 }
