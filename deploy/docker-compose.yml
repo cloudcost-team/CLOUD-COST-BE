@@ -53,6 +53,8 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
+      # 접근 로그를 서버 디스크에 남겨 서버 감시(sentinel)가 읽는다 (docs/DEPLOY.md 9-2)
+      - ./logs/caddy:/var/log/caddy
       - caddy_config:/config
 
   # 모니터링 에이전트 (Grafana Cloud로 전송). .env에 COMPOSE_PROFILES=monitoring과 Grafana Cloud 값이 있을 때만 실행된다.
