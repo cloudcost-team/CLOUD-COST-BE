@@ -8,8 +8,6 @@
 
 ![CloudCost 아키텍처](assets/architecture.png)
 
-- 프론트엔드(Next.js)는 Vercel 서울 엣지에서 서비스하며, 브라우저의 `/api/v1` 요청을 Vercel 리라이트로 이 서버(Caddy)에 넘깁니다. 같은 출처라 리프레시 쿠키가 그대로 오갑니다. → [CLOUD-COST-FE](https://github.com/cloudcost-team/CLOUD-COST-FE)
-- 프론트엔드 오류·성능은 Sentry, 사용자 행동은 Google Analytics 4로 수집합니다.
 
 ## Key Features
 
