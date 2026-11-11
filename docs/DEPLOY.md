@@ -124,6 +124,60 @@ chmod 600 ~/cloudcost/.env
 
 무료 플랜(활성 시계열 1만 개) 안에 들어간다. 끄려면 `.env`에서 `COMPOSE_PROFILES` 줄을 지우고 `docker compose --profile monitoring stop alloy`.
 
+## 9-2. 장애·공격 디스코드 알림 (sentinel)
+서버에서 `deploy/sentinel/sentinel.sh`가 **1분마다 검사**하고, **이상이 있을 때만** 디스코드로 보낸다.
+같은 문제는 10분에 한 번만 다시 알리고, 풀리면 `✅ 복구`를 한 번 보낸다. 배포 중 잠깐 멈춘 것처럼 한 번 실패하고 마는 건 무시한다.
+
+| 무엇 | 언제 알림 (기본값, `.env`로 변경) | 등급 |
+|---|---|---|
+| 컨테이너 app·db·caddy | 2분 연속 멈춤/unhealthy, 크래시·OOM 재시작 | 🔴 / 🟠 |
+| 앱 헬스 `/actuator/health` | 2분 연속 UP 아님 | 🔴 |
+| 바깥에서 `https://<DOMAIN>` 접속 | 2분 연속 200 아님 | 🔴 |
+| HTTPS 인증서 | 만료 14일 미만 (Caddy 갱신 실패) | 🟠 |
+| 트래픽 폭증 (DDoS) | 분당 전체 요청 > `ALERT_TOTAL_RPM`(3000) | 🔴 |
+| 한 IP 폭주 | 한 IP 분당 > `ALERT_IP_RPM`(600) | 🔴 |
+| 서버 오류 5xx | 분당 > `ALERT_5XX_PM`(10) | 🔴 |
+| 인증 실패 401/403 (무차별 대입·토큰 도용) | 분당 > `ALERT_AUTHFAIL_PM`(60) | 🟠 |
+| 취약점 스캔 (`/.env`, `/.git`, `wp-login`, `.php`, `/actuator`…) | 분당 > `ALERT_PROBE_PM`(20) | 🟠 |
+| 응답 느려짐 | p95 > `ALERT_SLOW_P95_SEC`(3초) 2분 연속 | 🟠 |
+| SSH 로그인 실패 | 분당 ≥ `ALERT_SSH_FAIL`(3) — 22번은 내 IP만 열려 있어서 실패 자체가 이상 신호 | 🔴 |
+| SSH 로그인 성공 | 매번 (CD 배포도 찍힘) | 🔵 |
+| CPU / 메모리 / 디스크 | `ALERT_CPU_PCT`(90) 3분 / `ALERT_MEM_PCT`(90) 2분 / `ALERT_DISK_PCT`(85) | 🟠 |
+| 앱 ERROR 로그 | 분당 > `ALERT_APP_ERROR_PM`(5) | 🟠 |
+
+트래픽은 Caddy 접근 로그(`~/cloudcost/logs/caddy/access.log`, 20MiB×5개 순환)로 본다. 헤더·쿠키·쿼리 문자열은 로그에 남기지 않는다.
+알림에는 IP와 경로만 들어간다. **디스코드 채널은 팀원만 볼 수 있게** 둔다.
+
+**한 번만: 설정**
+1. 디스코드 채널 → 채널 편집 → 연동 → 웹후크 → 새 웹후크 → URL 복사 (PR 알림 웹훅과 다른 채널을 쓰는 걸 권장)
+2. 서버 `.env`에 추가 (URL은 채팅·저장소에 쓰지 않는다):
+   ```bash
+   cat >> ~/cloudcost/.env <<'ENV'
+   DISCORD_ALERT_WEBHOOK_URL=<웹후크 URL>
+   DISCORD_ALERT_MENTION=@here
+   ENV
+   ```
+3. 배포(`deploy.sh` 또는 CD)로 `sentinel/`과 Caddy 로그 설정을 서버에 올린 뒤 등록:
+   ```bash
+   bash ~/cloudcost/sentinel/install.sh
+   ```
+   디스코드에 `서버 감시 시작`이 오면 끝. 이후 CD 배포 때마다 스크립트가 자동으로 갱신된다.
+
+| 할 일 | 명령 (서버에서) |
+|---|---|
+| 테스트 메시지 | `sudo bash ~/cloudcost/sentinel/sentinel.sh test` |
+| 지금 값·보낼 알림 미리 보기 (전송 안 함) | `sudo bash ~/cloudcost/sentinel/sentinel.sh dry` |
+| 타이머 상태 / 실행 로그 | `systemctl list-timers cci-sentinel.timer` / `journalctl -u cci-sentinel -n 50` |
+| 잠깐 끄기 / 다시 켜기 | `sudo systemctl stop cci-sentinel.timer` / `sudo systemctl start cci-sentinel.timer` |
+
+**부스·시연 때:** 부스 와이파이처럼 여러 명이 같은 공인 IP를 쓰면 `한 IP 폭주`가 정상 트래픽에도 울릴 수 있다. 그럴 땐 `.env`에서 `ALERT_IP_RPM`을 올린다 (다음 실행부터 바로 적용).
+알림만 보내고 IP를 자동으로 막지는 않는다 (같은 IP를 쓰는 관람객이 같이 막힐 수 있어서).
+
+**서버가 통째로 죽으면** sentinel도 같이 죽어 알림을 못 보낸다. 이 경우는 Grafana Cloud(9-1)가 잡는다:
+Alerting → Contact points → *Add* → Integration **Discord**, 같은 웹후크 URL → Alert rules에서 아래 규칙의 contact point로 지정.
+- `absent_over_time(up{job="cloudcost-app"}[3m])` 또는 `up{job="cloudcost-app"} == 0` — 3분 동안 지표가 안 오면 (서버·Alloy 다운). *No data* 처리를 **Alerting**으로 둔다.
+- (선택) Testing & synthetics → Synthetic Monitoring → HTTP 체크 `https://<DOMAIN>/api/v1/auth/config` — 서버 바깥에서 접속 확인
+
 ## 10. GitHub Actions CI/CD
 | 워크플로 | 언제 | 하는 일 |
 |---|---|---|
@@ -171,4 +225,5 @@ AWS 권한은 GitHub OIDC로 받는다 (GitHub에 AWS 액세스 키를 저장하
 - [ ] DB 포트(5432)는 서버 내부(127.0.0.1)에만 열림, 보안 그룹에 5432 없음
 - [ ] Actuator 포트(8081)도 127.0.0.1에만 열림, Caddy는 8080만 프록시
 - [ ] Grafana Cloud 토큰은 서버 `.env`에만, 권한은 metrics write만
+- [ ] 디스코드 알림 웹후크(`DISCORD_ALERT_WEBHOOK_URL`)는 서버 `.env`에만, 알림 채널은 팀원만 보기
 - [ ] 서버에 AWS 액세스 키 없음 (인스턴스 역할 사용)

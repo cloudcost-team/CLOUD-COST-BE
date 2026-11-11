@@ -1,6 +1,23 @@
 # DOMAIN으로 오는 요청을 앱으로 넘긴다. Let's Encrypt 인증서를 자동으로 발급·갱신한다 (80·443 포트가 열려 있어야 한다).
 {$DOMAIN} {
 	encode gzip
+	# 접근 로그: 서버 감시(deploy/sentinel)가 1분마다 읽어 DDoS·스캔·5xx를 찾는다.
+	# 헤더·쿠키·TLS 정보와 쿼리 문자열은 남기지 않는다 (docs/SECURITY.md S9).
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
+		format filter {
+			fields {
+				request>headers delete
+				request>tls delete
+				resp_headers delete
+				request>uri regexp \?.*$ ""
+			}
+			wrap json
+		}
+	}
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
