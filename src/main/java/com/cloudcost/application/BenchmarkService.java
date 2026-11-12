@@ -1,6 +1,7 @@
 package com.cloudcost.application;
 
 import com.cloudcost.application.DashboardService.DashboardView;
+import com.cloudcost.application.ResourceWasteService.ResourceWasteView;
 import com.cloudcost.application.WasteService.WasteView;
 import com.cloudcost.application.port.BenchmarkReferenceSource;
 import com.cloudcost.domain.DomainValidationException;
@@ -12,7 +13,9 @@ import com.cloudcost.domain.benchmark.TeamBenchmark;
 import com.cloudcost.domain.benchmark.TeamBenchmark.Position;
 import com.cloudcost.domain.benchmark.TeamBenchmark.Ratio;
 import com.cloudcost.domain.benchmark.TeamBenchmark.ServerVerdict;
+import com.cloudcost.domain.benchmark.WasteRatio;
 import com.cloudcost.domain.demo.DemoSetup;
+import com.cloudcost.domain.resource.ResourceScan;
 import com.cloudcost.domain.simulation.CostSimulation;
 import com.cloudcost.domain.waste.WasteFinding;
 import java.math.BigDecimal;
@@ -35,15 +38,31 @@ public class BenchmarkService {
         NOT_COMPARABLE,
         /** 기록 시작일부터 14일이 안 됨 */
         INSUFFICIENT_HISTORY,
-        /** 지금 권한으로 계산할 수 없음 */
+        /** 방치 리소스 비용을 몰라 계산할 수 없음 (권한 부족·확인 전·실패·단가 모름 — 사유는 WasteSection.reason) */
         UNAVAILABLE,
         /** 월말 예상이 없음 */
         NO_FORECAST
     }
 
-    public static final String WASTE_UNAVAILABLE_REASON =
-        "전체 낭비 비율을 구하려면 미연결 볼륨·스냅샷·고정 IP·로드밸런서 비용까지 알아야 하는데, "
-            + "지금 연결 권한(EC2 인스턴스 목록·CloudWatch 지표 읽기)으로는 볼 수 없어 계산하지 않아요.";
+    static final String WASTE_PERMISSION_REASON =
+        "권한 업데이트가 필요해요. 전체 낭비 비율에는 미연결 볼륨·스냅샷·고정 IP·로드밸런서 비용이 들어가는데, "
+            + "지금 연결 권한으로는 볼 수 없어요. 방치 리소스 화면의 안내대로 권한을 업데이트하면 계산해요.";
+    static final String WASTE_SCANNING_REASON =
+        "방치 리소스(볼륨·스냅샷·고정 IP·로드밸런서)를 확인하는 중이에요. 잠시 뒤 다시 보면 전체 낭비 비율을 계산해요.";
+    static final String WASTE_NOT_SCANNED_REASON =
+        "방치 리소스(볼륨·스냅샷·고정 IP·로드밸런서)를 아직 확인하지 못해 전체 낭비 비율을 계산하지 않았어요.";
+    static final String WASTE_FAILED_REASON =
+        "방치 리소스 확인이 이번에 실패해 전체 낭비 비율을 계산하지 않았어요. 잠시 뒤 다시 확인할게요.";
+    static final String WASTE_UNKNOWN_PRICE_REASON =
+        "단가를 모르는 방치 리소스가 있어 전체 낭비 비율을 계산하지 않았어요 (일부만 더하면 실제보다 낮게 보여요).";
+    static final String WASTE_INSUFFICIENT_REASON = "기록이 14일 미만이라 서버 낭비를 아직 판단하지 못해 전체 낭비 비율을 계산하지 않았어요.";
+    static final String WASTE_NO_FORECAST_REASON = "월말 예상 비용이 아직 없어 전체 낭비 비율을 계산하지 않았어요.";
+    static final String WASTE_PARTIAL_FORECAST_REASON =
+        "단가를 모르는 서버가 있어 월말 예상이 일부 서버만의 합이라 전체 낭비 비율을 계산하지 않았어요 (실제보다 높게 보여요).";
+    static final String WASTE_ZERO_TOTAL_REASON = "월말 예상과 방치 리소스 비용이 모두 0원이라 전체 낭비 비율을 계산하지 않았어요.";
+    static final String WASTE_BASIS =
+        "전체 낭비 비율 = (서버 낭비 월 절감액 + 방치 리소스 월 비용) ÷ (월말 예상 + 방치 리소스 월 비용). "
+            + "사용 중인 볼륨·로드밸런서 비용은 분모에 없어 실제보다 조금 높게 나올 수 있어요. 비교값은 Flexera 업계 평균이에요.";
     public static final String NO_PERCENTILES =
         "비교 자료에 백분위 표가 없어 \"우리보다 효율적인 팀 %\"는 계산하지 않았어요. 평균·중앙값과 비교해 주세요.";
 
@@ -80,6 +99,20 @@ public class BenchmarkService {
     }
 
     /**
+     * ② 전체 낭비 비율. OK가 아니면 ratio·after는 null이고 reason에 사유가 있다.
+     *
+     * @param status OK · UNAVAILABLE(방치 리소스 비용·서버 단가를 모름) · INSUFFICIENT_HISTORY · NO_FORECAST
+     *               · NOT_COMPARABLE(월말 예상과 방치 리소스 비용이 모두 0원)
+     * @param after  추천을 적용한 뒤 (추천 id를 주지 않았거나 OK가 아니면 null). 방치 리소스는 그대로라고 본다
+     */
+    public record WasteSection(Status status, String reason, WasteRatio ratio, WasteRatio after) {
+
+        static WasteSection unavailable(Status status, String reason) {
+            return new WasteSection(status, reason, null, null);
+        }
+    }
+
+    /**
      * @param status      INSUFFICIENT_HISTORY(사용률 비교 불가) 또는 OK
      * @param availableAt INSUFFICIENT_HISTORY일 때 비교를 시작하는 날
      * @param applied     적용한다고 본 추천 (요청 순서)
@@ -92,7 +125,7 @@ public class BenchmarkService {
         Instant windowEnd,
         List<WasteFinding> applied,
         OversizedSection oversized,
-        Status wasteStatus,
+        WasteSection waste,
         SpendSection spend,
         BenchmarkReference reference,
         Freshness freshness,
@@ -103,15 +136,17 @@ public class BenchmarkService {
     private final WasteService waste;
     private final DashboardService dashboards;
     private final DemoUsageService demo;
+    private final ResourceWasteService resources;
     private final BenchmarkReferenceSource references;
     private final Clock clock;
 
     public BenchmarkService(
-        WasteService waste, DashboardService dashboards, DemoUsageService demo, BenchmarkReferenceSource references,
-        Clock clock) {
+        WasteService waste, DashboardService dashboards, DemoUsageService demo, ResourceWasteService resources,
+        BenchmarkReferenceSource references, Clock clock) {
         this.waste = waste;
         this.dashboards = dashboards;
         this.demo = demo;
+        this.resources = resources;
         this.references = references;
         this.clock = clock;
     }
@@ -124,14 +159,18 @@ public class BenchmarkService {
         requireKnownBand(reference, sizeBand);
         WasteView wasteView = waste.waste(ownerId, accountId);
         DashboardView dashboard = dashboards.dashboard(ownerId, accountId);
-        return compose(accountId, wasteView, dashboard, recommendationIds, sizeBand, reference, clock.instant());
+        // 방치 리소스는 저장된 결과를 쓴다 (오래됐으면 백그라운드에서 다시 훑고 기다리지 않는다)
+        ResourceWasteView resourceView = resources.view(ownerId, accountId);
+        return compose(accountId, wasteView, dashboard, resourceView, recommendationIds, sizeBand, reference,
+            clock.instant());
     }
 
     public BenchmarkView demoBenchmark(DemoSetup setup, List<String> recommendationIds, String sizeBand) {
         BenchmarkReference reference = references.reference();
         requireKnownBand(reference, sizeBand);
+        Instant now = clock.instant();
         return compose(DemoUsageService.ACCOUNT_ID, demo.waste(setup), dashboards.demoDashboard(setup, null),
-            recommendationIds, sizeBand, reference, clock.instant());
+            ResourceWasteService.demo(now), recommendationIds, sizeBand, reference, now);
     }
 
     /** 모르는 구간 키는 400 */
@@ -144,8 +183,8 @@ public class BenchmarkService {
     }
 
     static BenchmarkView compose(
-        UUID accountId, WasteView wasteView, DashboardView dashboard, List<String> recommendationIds, String sizeBand,
-        BenchmarkReference reference, Instant asOf) {
+        UUID accountId, WasteView wasteView, DashboardView dashboard, ResourceWasteView resourceView,
+        List<String> recommendationIds, String sizeBand, BenchmarkReference reference, Instant asOf) {
         boolean simulate = recommendationIds != null && !recommendationIds.isEmpty();
         List<WasteFinding> applied = CostSimulation.select(wasteView.result().findings(), recommendationIds);
         // 월 지출 위치는 대시보드 월말 예상으로 잰다. 단가를 모르는 서버를 뺀 사실 등 그 계산의 안내도 함께 보여 준다
@@ -161,10 +200,60 @@ public class BenchmarkService {
             notes.add("적용 후: 과다 사양 추천을 적용한 서버는 적정, 유휴 추천(중지)을 적용한 서버는 판단 대상에서 빠진다고 봤어요.");
         }
         SpendSection spend = spend(dashboard, wasteView, insufficient, simulate, applied, reference, notes);
-        notes.add(WASTE_UNAVAILABLE_REASON);
+        WasteSection wasteSection = wasteRatio(dashboard, wasteView, resourceView, insufficient, simulate, applied);
+        notes.add(wasteSection.status() == Status.OK ? WASTE_BASIS : wasteSection.reason());
         return new BenchmarkView(accountId, insufficient ? Status.INSUFFICIENT_HISTORY : Status.OK,
             wasteView.availableAt(), wasteView.windowStart(), wasteView.windowEnd(), applied, oversized,
-            Status.UNAVAILABLE, spend, reference, dashboard.freshness(), List.copyOf(notes), asOf);
+            wasteSection, spend, reference, dashboard.freshness(), List.copyOf(notes), asOf);
+    }
+
+    /**
+     * ② 전체 낭비 비율. 방치 리소스 비용을 모르면(권한 부족·확인 전·실패·단가 모름) 일부만 더해 낮게 보이지 않도록 계산하지 않는다.
+     */
+    static WasteSection wasteRatio(
+        DashboardView dashboard, WasteView wasteView, ResourceWasteView resourceView, boolean insufficient,
+        boolean simulate, List<WasteFinding> applied) {
+        if (resourceView == null) {
+            return WasteSection.unavailable(Status.UNAVAILABLE, WASTE_NOT_SCANNED_REASON);
+        }
+        ResourceScan.Status scan = resourceView.scan().status();
+        if (scan == ResourceScan.Status.PERMISSION_UPGRADE_REQUIRED) {
+            return WasteSection.unavailable(Status.UNAVAILABLE, WASTE_PERMISSION_REASON);
+        }
+        if (scan == ResourceScan.Status.NOT_SCANNED) {
+            return WasteSection.unavailable(Status.UNAVAILABLE,
+                resourceView.refreshing() ? WASTE_SCANNING_REASON : WASTE_NOT_SCANNED_REASON);
+        }
+        if (scan == ResourceScan.Status.FAILED) {
+            return WasteSection.unavailable(Status.UNAVAILABLE, WASTE_FAILED_REASON);
+        }
+        if (resourceView.totalMonthlyUsd() == null) {
+            return WasteSection.unavailable(Status.UNAVAILABLE, WASTE_UNKNOWN_PRICE_REASON);
+        }
+        if (insufficient) {
+            return WasteSection.unavailable(Status.INSUFFICIENT_HISTORY, WASTE_INSUFFICIENT_REASON);
+        }
+        if (dashboard.forecast() == null) {
+            return WasteSection.unavailable(Status.NO_FORECAST, WASTE_NO_FORECAST_REASON);
+        }
+        if (dashboard.forecastPartial()) {
+            return WasteSection.unavailable(Status.UNAVAILABLE, WASTE_PARTIAL_FORECAST_REASON);
+        }
+        BigDecimal monthEnd = dashboard.forecast().monthEndUsd();
+        BigDecimal serverWaste = wasteView.result().totalMonthlySavingsUsd();
+        BigDecimal resourceWaste = resourceView.totalMonthlyUsd();
+        WasteRatio ratio = WasteRatio.of(serverWaste, resourceWaste, monthEnd);
+        if (ratio.ratioPercent() == null) {
+            return WasteSection.unavailable(Status.NOT_COMPARABLE, WASTE_ZERO_TOTAL_REASON);
+        }
+        WasteRatio after = null;
+        if (simulate) {
+            BigDecimal appliedSavings = applied.stream().map(WasteFinding::monthlySavingsUsd)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            after = WasteRatio.of(serverWaste.subtract(appliedSavings), resourceWaste,
+                CostSimulation.of(monthEnd, applied, 0, null).afterUsd());
+        }
+        return new WasteSection(Status.OK, null, ratio, after);
     }
 
     private static OversizedSection oversized(

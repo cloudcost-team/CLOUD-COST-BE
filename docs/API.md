@@ -438,7 +438,9 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
     "servers": [ { "instanceId": "i-0abc", "name": "api-server", "instanceType": "m5.large", "cpuP95": 6.20, "cpuHours": 336,
                    "oversized": true, "verdict": "과다 사양 (P95 10% 미만)" } ],
     "afterSimulation": null },
-  "wasteRatio": { "status": "UNAVAILABLE", "reason": "전체 낭비 비율을 구하려면 … 계산하지 않아요.",
+  "wasteRatio": { "status": "OK", "reason": null, "ratioPercent": 60.5, "comparison": "ABOVE",
+                  "amounts": { "serverWaste": 157652, "resourceWaste": 4866, "waste": 162518, "total": 268690, "wasteUsd": 121.91, "totalUsd": 201.55 },
+                  "afterSimulationRatioPercent": null,
                   "referenceSource": "Flexera 2026 State of the Cloud", "referenceDescription": "…", "referenceAverage": 29 },
   "monthlySpend": { "status": "OK", "monthlyCost": 263824, "monthlyCostUsd": 197.90, "monthlyVcpuHours": 4320.0, "servers": 3,
                     "teamsUsingLessPercent": 35.0, "position": "WITHIN", "barPositionPercent": 60.9,
@@ -463,7 +465,16 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
   - `distribution`: 비교 구간(`reference.sizeBand`) 팀들의 과다 사양 비율 분포. 0~20·20~40·40~60·60~80·80~100% 다섯 칸(하한 포함, 100%는 마지막 칸)이고
     `teamsPercent`를 모두 더하면 100이다. 원본이 아니라 **백분위 표로 어림한 값**(`approximate: true`)이라 칸마다 5%p 정도 틀릴 수 있다.
     우리 비율이 드는 칸은 `ours`·`oursBucketIndex`, 추천 적용 후는 `afterSimulation`·`afterSimulationBucketIndex`. 비교 구간이나 백분위 표가 없으면 `null`.
-- **② 전체 낭비 비율**(`wasteRatio`): 미연결 볼륨·스냅샷·고정 IP·로드밸런서를 지금 권한으로 볼 수 없어 항상 `UNAVAILABLE` + 사유. Flexera 평균은 참고값이다.
+- **② 전체 낭비 비율**(`wasteRatio`, ADR-020): `ratioPercent` = (서버 낭비 월 절감액 + 방치 리소스 월 비용) ÷ (월말 예상 + 방치 리소스 월 비용) × 100, 소수 첫째 자리, 최대 100.
+  - 서버 낭비 = §4 과다 사양·유휴 추천의 월 절감액 합, 방치 리소스 = §4-0 `resources.totalMonthlyCost` (볼륨·고정 IP·스냅샷·LB·잊힌 리전 서버).
+    월말 예상(EC2)에는 EBS·IP·LB가 없어 방치 리소스 비용을 분모에도 더한다. 사용 중인 볼륨·LB 비용은 몰라 분모에 없으므로 실제보다 조금 높게 나올 수 있다(`notes`에 안내).
+  - `comparison`: Flexera 업계 평균(`referenceAverage`)보다 `BELOW`·`SAME`·`ABOVE`. `amounts`: 금액(currency 기준) + `wasteUsd`·`totalUsd`.
+  - `afterSimulationRatioPercent`: `recommendationIds`를 주면 서버 낭비에서 고른 추천 절감액을 빼고 월말 예상도 시뮬레이터 적용 후 금액으로 바꿔 다시 잰다 (방치 리소스는 그대로).
+  - `status`가 `OK`가 아니면 `ratioPercent`·`comparison`·`amounts`는 `null`이고 `reason`에 사유가 있다:
+    `UNAVAILABLE` — 권한 업데이트 필요(`PERMISSION_UPGRADE_REQUIRED`) · 방치 리소스 확인 중/확인 전 · 확인 실패 · 단가를 모르는 방치 리소스가 있음 ·
+    단가를 모르는 서버가 있어 월말 예상이 일부 서버만의 합임 (부분합으로 비율이 틀리게 보이지 않도록) /
+    `INSUFFICIENT_HISTORY` — 기록 14일 미만 / `NO_FORECAST` — 월말 예상 없음 / `NOT_COMPARABLE` — 월말 예상과 방치 리소스 비용이 모두 0원.
+  - 방치 리소스는 저장된 결과를 쓰고 기다리지 않는다 (§4-0 `refreshing`). 체험 모드는 §4-0 예시 리소스를 더한다.
 - **③ 규모 대비 월 지출**(`monthlySpend`): 우리 서버 대수와 같은 규모 팀들과 **한 달 사용량(vCPU-시간 = vCPU × 켜진 시간)**으로 순위를 매긴다 (ADR-013).
   - 같은 규모 팀의 사용량 분포는 **분위 회귀 모델**이 서버 대수로 예측한다 (`range.model`). Azure 원본 구독 5,452곳(서버 1~50대)으로
     `scripts/benchmark/AzureSpend.java`가 학습했고, 학습에 쓰지 않은 1,118곳으로 검증해 기존 구간별 백분위 표보다 오차(pinball loss)가 15.3% 작고

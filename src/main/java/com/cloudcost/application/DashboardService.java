@@ -84,7 +84,13 @@ public class DashboardService {
         LatestSpike latestSpike,
         Freshness freshness,
         List<String> notes,
-        Instant asOf) {
+        Instant asOf,
+        int unpricedServers) {
+
+        /** @return 단가를 모르는 서버가 빠져 월말 예상이 일부 서버만의 합인지 */
+        public boolean forecastPartial() {
+            return forecast != null && unpricedServers > 0;
+        }
     }
 
     /** 예산 화면에 보여 줄 지난 달 수 */
@@ -269,7 +275,8 @@ public class DashboardService {
         int running = (int) present.stream().filter(Ec2Instance::isRunning).count();
         int stopped = (int) present.stream().filter(i -> InstanceStates.isStopped(i.state())).count();
         return new DashboardView(accountId, today, YearMonth.from(today), availableFrom, monthToDate, running, stopped,
-            forecast, budgetStatus, previous, latestSpike, freshness, List.copyOf(notes), asOf);
+            forecast, budgetStatus, previous, latestSpike, freshness, List.copyOf(notes), asOf,
+            daily.report().unpricedInstanceIds().size());
     }
 
     private static PreviousComparison previous(

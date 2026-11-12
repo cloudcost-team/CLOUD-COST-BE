@@ -6,10 +6,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.cloudcost.IntegrationTestBase;
+import com.cloudcost.application.error.AwsAccessException;
+import com.cloudcost.domain.resource.AwsResource;
+import com.cloudcost.domain.resource.ResourceType;
 import com.cloudcost.fakes.Fixtures;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -72,9 +76,15 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(oversized.at("/servers/2/verdict").asText()).isEqualTo("적정");
         assertThat(oversized.at("/afterSimulation").isNull()).isTrue();
 
-        assertThat(body.at("/wasteRatio/status").asText()).isEqualTo("UNAVAILABLE");
-        assertThat(body.at("/wasteRatio/reason").asText()).contains("지금 연결 권한");
-        assertThat(body.at("/wasteRatio/referenceAverage").decimalValue()).isEqualByComparingTo("29");
+        JsonNode wasteRatio = body.at("/wasteRatio");
+        assertThat(wasteRatio.at("/status").asText()).isEqualTo("OK");
+        assertThat(wasteRatio.at("/reason").isNull()).isTrue();
+        assertThat(wasteRatio.at("/ratioPercent").decimalValue())
+                .as("방치 리소스 없음: 서버 낭비 118.26 ÷ 월말 예상 197.904").isEqualByComparingTo("59.8");
+        assertThat(wasteRatio.at("/comparison").asText()).isEqualTo("ABOVE");
+        assertThat(wasteRatio.at("/amounts/resourceWaste").decimalValue()).isEqualByComparingTo("0");
+        assertThat(wasteRatio.at("/afterSimulationRatioPercent").isNull()).isTrue();
+        assertThat(wasteRatio.at("/referenceAverage").decimalValue()).isEqualByComparingTo("29");
 
         JsonNode spend = body.at("/monthlySpend");
         assertThat(spend.at("/status").asText()).isEqualTo("OK");
@@ -134,6 +144,10 @@ class BenchmarkApiTest extends IntegrationTestBase {
         java.util.List<String> notes = new java.util.ArrayList<>();
         body.at("/notes").forEach(n -> notes.add(n.asText()));
         assertThat(notes).as("겹치는 문구는 한 번만").doesNotHaveDuplicates();
+        assertThat(body.at("/wasteRatio/status").asText())
+                .as("월말 예상이 일부 서버만의 합이면 분모가 작아 비율이 높게 나온다").isEqualTo("UNAVAILABLE");
+        assertThat(body.at("/wasteRatio/reason").asText()).contains("단가를 모르는 서버");
+        assertThat(body.at("/wasteRatio/ratioPercent").isNull()).isTrue();
     }
 
     @Test
@@ -147,6 +161,8 @@ class BenchmarkApiTest extends IntegrationTestBase {
         JsonNode spend = body.at("/monthlySpend");
         assertThat(spend.at("/status").asText()).isEqualTo("NOT_COMPARABLE");
         assertThat(body.at("/notes").toString()).contains("월말 예상 비용이 0원이라").doesNotContain("팀으로 학습해 서버");
+        assertThat(body.at("/wasteRatio/status").asText()).isEqualTo("NOT_COMPARABLE");
+        assertThat(body.at("/wasteRatio/reason").asText()).contains("모두 0원");
     }
 
     @Test
@@ -171,6 +187,42 @@ class BenchmarkApiTest extends IntegrationTestBase {
         getJson("/api/v1/aws/accounts/" + accountId + "/benchmark?recommendationIds=i-web:IDLE")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("UNKNOWN_RECOMMENDATION"));
+    }
+
+    @Test
+    void 전체_낭비_비율에_방치_리소스를_더하고_추천_적용_후도_준다() throws Exception {
+        threeServers();
+        aws.regionResources.put("ap-northeast-2", List.of(new AwsResource(ResourceType.ADDRESS, "eipalloc-free", null,
+                "ap-northeast-2", null, null, false, null, null, null)));
+
+        JsonNode w = benchmark("&recommendationIds=i-batch:IDLE,i-api:OVERSIZED").at("/wasteRatio");
+        assertThat(w.at("/status").asText()).isEqualTo("OK");
+        assertThat(w.at("/amounts/serverWaste").decimalValue()).isEqualByComparingTo("118.26");
+        assertThat(w.at("/amounts/resourceWaste").decimalValue()).as("고정 IP $0.005 × 730").isEqualByComparingTo("3.65");
+        assertThat(w.at("/amounts/total").decimalValue()).as("월말 예상 + 방치 리소스").isEqualByComparingTo("201.55");
+        assertThat(w.at("/ratioPercent").decimalValue()).as("121.91 ÷ 201.554").isEqualByComparingTo("60.5");
+        assertThat(w.at("/afterSimulationRatioPercent").decimalValue())
+                .as("서버 낭비를 모두 적용하면 고정 IP만 남는다: 3.65 ÷ (79.64 + 3.65)").isEqualByComparingTo("4.4");
+    }
+
+    @Test
+    void 권한이_부족하거나_단가를_모르면_전체_낭비_비율은_사유와_함께_계산하지_않는다() throws Exception {
+        threeServers();
+        aws.resourceError = new AwsAccessException(AwsAccessException.Category.PERMISSION_DENIED, "UnauthorizedOperation",
+                "ec2:DescribeRegions", "권한이 없습니다.");
+        JsonNode denied = benchmark("").at("/wasteRatio");
+        assertThat(denied.at("/status").asText()).isEqualTo("UNAVAILABLE");
+        assertThat(denied.at("/reason").asText()).startsWith("권한 업데이트가 필요해요");
+        assertThat(denied.at("/ratioPercent").isNull()).isTrue();
+        assertThat(denied.at("/referenceAverage").decimalValue()).isEqualByComparingTo("29");
+
+        aws.resourceError = null;
+        aws.regionResources.put("ap-northeast-2", List.of(new AwsResource(ResourceType.VOLUME, "vol-odd", null,
+                "ap-northeast-2", "future-type", 10, false, Instant.parse("2026-09-01T00:00:00Z"), null, null)));
+        clock.set(clock.instant().plus(java.time.Duration.ofHours(1)));
+        JsonNode unknown = benchmark("").at("/wasteRatio");
+        assertThat(unknown.at("/status").asText()).isEqualTo("UNAVAILABLE");
+        assertThat(unknown.at("/reason").asText()).contains("단가를 모르는");
     }
 
     @Test
@@ -282,5 +334,8 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(shortPeriod.at("/monthlySpend/monthlyCost").isNull()).as("금액은 보여 준다").isFalse();
         assertThat(body.at("/monthlySpend/status").asText()).isEqualTo("OK");
         assertThat(body.at("/monthlySpend/servers").asInt()).isEqualTo(4);
+        assertThat(body.at("/wasteRatio/status").asText()).as("체험 모드 방치 리소스 예시를 더한다").isEqualTo("OK");
+        assertThat(body.at("/wasteRatio/amounts/resourceWaste").decimalValue()).isPositive();
+        assertThat(shortPeriod.at("/wasteRatio/status").asText()).isEqualTo("INSUFFICIENT_HISTORY");
     }
 }
