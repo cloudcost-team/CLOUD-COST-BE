@@ -74,6 +74,22 @@ class WasteDetectorTest {
     }
 
     @Test
+    void 절감_비율은_판단한_서버의_월_비용과_나눠_100퍼센트를_넘지_않는다() {
+        // 이번 달 중간에 켠 서버도 절감액(다음 달 한 달치)과 같은 기준인 "지금처럼 한 달 쓰면 드는 비용"으로 나눈다
+        Result result = WasteDetector.detect(List.of(
+                candidate("i-api", "m5.large", stats("i-api", 336, "6", "9", "23", LOTS_OF_NETWORK), "0.118"),
+                candidate("i-web", "t3.medium", stats("i-web", 336, "50", "70", "90", LOTS_OF_NETWORK), "0.052")));
+
+        assertThat(result.judgedMonthlyCostUsd()).as("(0.118 + 0.052) × 730").isEqualByComparingTo("124.10");
+        assertThat(result.savingsRatePercent()).as("48.18 ÷ 124.10").isEqualByComparingTo("38.8");
+
+        Result idleOnly = WasteDetector.detect(List.of(
+                candidate("i-idle", "t3.medium", stats("i-idle", 336, "0.4", "1", "1.5", 100L), "0.052")));
+        assertThat(idleOnly.savingsRatePercent()).as("유휴 서버만 있으면 전부 절감").isEqualByComparingTo("100.0");
+        assertThat(WasteDetector.detect(List.of()).savingsRatePercent()).as("판단한 서버가 없으면 null").isNull();
+    }
+
+    @Test
     void 과다_사양은_예상_P95가_기본_성능_안에_드는_가장_싼_타입을_추천한다() {
         Result result = WasteDetector.detect(List.of(
                 candidate("i-api", "m5.large", stats("i-api", 336, "6", "9", "23", LOTS_OF_NETWORK), "0.118")));

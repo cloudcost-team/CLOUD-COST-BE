@@ -286,7 +286,7 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 { "dataSource": "aws", "costBasis": "estimated_on_demand", "currency": "KRW", "exchangeRate": { … },
   "status": "OK", "availableAt": null,
   "window": { "from": "2026-10-21T02:00:00Z", "to": "2026-11-04T02:00:00Z" },
-  "totalMonthlySavings": 132000, "forecastMonthEndCost": 304200, "savingsRateOfForecast": 43.4, "findingCount": 3, "counts": { "oversized": 2, "idle": 1 }, "judgedCount": 5,
+  "totalMonthlySavings": 132000, "forecastMonthEndCost": 304200, "savingsRateOfForecast": 43.4, "currentMonthlyCost": 304200, "findingCount": 3, "counts": { "oversized": 2, "idle": 1 }, "judgedCount": 5,
   "items": [ {
       "recommendationId": "i-0abc:OVERSIZED", "instanceId": "i-0abc", "name": "api-server", "instanceType": "m5.large",
       "state": "running", "kind": "OVERSIZED", "kindLabel": "과다 사양",
@@ -349,7 +349,11 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 - 지금 꺼져 있어도 최근 14일 안에 켜져 있었으면 판단한다. 단, **지금 중지돼 있고 최근 3일 동안 한 번도 안 켜진 서버**는 이미 비용이 나지 않으므로
   판단하지 않고 `skipped`에 이유를 적는다 (밤·주말에 꺼지는 서버가 조회 시각에 따라 빠지지 않게 "지금 중지"만으로는 빼지 않는다).
   삭제된 인스턴스(`present=false`)는 빼고, 14일 동안 한 번도 안 켜진 서버는 목록에 넣지 않는다.
-- `forecastMonthEndCost`·`savingsRateOfForecast`(S07 "이번 달 예상 비용 대비 %"): §2-1 월말 예상과 같은 값, 절감 예상 ÷ 월말 예상(%). 월말 예상이 없으면 `null`.
+- `forecastMonthEndCost`: §2-1 월말 예상과 같은 값 (이번 달). 월말 예상이 없으면 `null`.
+- `savingsRateOfForecast`(S07 절감 비율 %) = 절감 예상 ÷ `currentMonthlyCost`, 최대 100. 이름과 달리 **월말 예상과 나누지 않는다**:
+  절감 예상은 "최근 14일처럼 한 달 쓰면"의 다음 달 한 달치라, 이번 달 중간에 켠 서버는 이번 달 월말 예상보다 커서 100%를 넘었다.
+  `currentMonthlyCost` = 판단한 서버를 지금처럼 한 달 쓰면 드는 비용 (절감액과 같은 기준, 단가를 모르는 서버 제외). 판단한 서버가 없으면 둘 다 `null`.
+  화면 문구는 "월말 예상 비용 대비"가 아니라 "현재 월 비용 대비"로 쓴다.
 - 오류: §2와 같다 (404 남의 연결, 409 대기·끊긴 연결, 429/502 AWS).
 
 
