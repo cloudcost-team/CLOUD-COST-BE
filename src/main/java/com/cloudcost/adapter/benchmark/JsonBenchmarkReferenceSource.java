@@ -38,7 +38,7 @@ class JsonBenchmarkReferenceSource implements BenchmarkReferenceSource {
                 throw new IllegalStateException("벤치마킹 기준 파일에 oversized·waste·spend가 모두 있어야 합니다: " + resource);
             }
             validateBands(ref.oversized().bands(), resource);
-            validateSpendBands(ref.spend().bands(), resource);
+            validateSpendModel(ref.spend().model(), resource);
             return ref;
         } catch (IOException e) {
             throw new UncheckedIOException("벤치마킹 기준 파일을 읽지 못했습니다: " + resource, e);
@@ -84,46 +84,38 @@ class JsonBenchmarkReferenceSource implements BenchmarkReferenceSource {
     }
 
     /**
-     * spend 구간도 1대 이상, 겹치지 않고 작은 순서. 숫자가 있는 구간은 중앙값과 백분위 표가 함께 있고, 표는 백분위 0~100·사용량 0 이상이며
-     * 순서대로 줄지 않고 일반 범위에 쓰는 25·75번째 백분위를 포함한다.
+     * spend 모델은 서버 대수 범위(1대 이상, min ≤ max)와 검증 결과가 있고, 백분위별 계수 3개씩이 백분위 오름차순으로 있으며
+     * 일반 범위·중앙값에 쓰는 25·50·75번째를 포함해야 한다. 학습 범위 모든 서버 대수에서 예측값이 유한해야 한다.
      */
-    private static void validateSpendBands(List<BenchmarkReference.SpendBand> bands, Resource resource) {
-        if (bands.isEmpty()) {
-            throw new IllegalStateException("spend.bands에 서버 대수 구간이 하나 이상 있어야 합니다: " + resource);
+    private static void validateSpendModel(BenchmarkReference.SpendModel model, Resource resource) {
+        if (model == null || model.minServers() < 1 || model.minServers() > model.maxServers() || model.sampleSize() <= 0
+            || model.validation() == null || model.validation().pinballLoss() == null
+            || model.validation().baselinePinballLoss() == null || model.validation().baselinePinballLoss().signum() <= 0
+            || model.validation().middleHalfCoveragePercent() == null) {
+            throw new IllegalStateException("spend.model에 서버 대수 범위·sampleSize·검증 결과가 있어야 합니다: " + resource);
         }
-        BenchmarkReference.SpendBand prevBand = null;
-        for (BenchmarkReference.SpendBand band : bands) {
-            if (band == null || band.minServers() < 1 || band.minServers() > band.maxServers()
-                || (prevBand != null && band.minServers() <= prevBand.maxServers())) {
-                throw new IllegalStateException("spend.bands는 1대 이상이고 겹치지 않게 작은 순서여야 합니다: " + resource);
+        List<BenchmarkReference.QuantileCoefficients> qs = model.quantiles();
+        for (int i = 0; i < qs.size(); i++) {
+            BenchmarkReference.QuantileCoefficients q = qs.get(i);
+            if (q == null || q.percentile() == null || q.coefficients().size() != 3
+                || q.coefficients().stream().anyMatch(java.util.Objects::isNull) || !inPercentRange(q.percentile())
+                || (i > 0 && q.percentile().compareTo(qs.get(i - 1).percentile()) <= 0)) {
+                throw new IllegalStateException("spend.model.quantiles는 백분위 0~100 오름차순이고 계수가 3개씩이어야 합니다: " + resource);
             }
-            boolean anyNumber = band.sampleSize() > 0 || band.medianVcpuHours() != null || !band.percentiles().isEmpty();
-            if (anyNumber && !band.hasData()) {
-                throw new IllegalStateException(band.key() + " spend 구간은 sampleSize·medianVcpuHours·percentiles가 모두 있거나 모두 없어야 합니다: " + resource);
-            }
-            List<BenchmarkReference.UsagePercentile> table = band.percentiles();
-            for (int i = 0; i < table.size(); i++) {
-                BenchmarkReference.UsagePercentile p = table.get(i);
-                if (p == null || p.percentile() == null || p.vcpuHours() == null) {
-                    throw new IllegalStateException("spend percentiles 항목마다 percentile·vcpuHours가 있어야 합니다: " + resource);
-                }
-                BenchmarkReference.UsagePercentile prev = i == 0 ? null : table.get(i - 1);
-                if (!inPercentRange(p.percentile()) || p.vcpuHours().signum() < 0
-                    || (prev != null && (p.percentile().compareTo(prev.percentile()) < 0
-                        || p.vcpuHours().compareTo(prev.vcpuHours()) < 0))) {
-                    throw new IllegalStateException("spend percentiles는 백분위 0~100, 사용량 0 이상이고 오름차순이어야 합니다: " + resource);
-                }
-            }
-            if (band.hasData() && (!hasPercentile(table, SpendBenchmark.LOW_PERCENTILE)
-                || !hasPercentile(table, SpendBenchmark.HIGH_PERCENTILE))) {
-                throw new IllegalStateException(band.key() + " spend 구간의 percentiles에 25·75번째 백분위가 있어야 합니다: " + resource);
-            }
-            prevBand = band;
         }
-    }
-
-    private static boolean hasPercentile(List<BenchmarkReference.UsagePercentile> table, BigDecimal percentile) {
-        return table.stream().anyMatch(p -> p.percentile().compareTo(percentile) == 0);
+        for (BigDecimal needed : List.of(SpendBenchmark.LOW_PERCENTILE, SpendBenchmark.MEDIAN_PERCENTILE,
+            SpendBenchmark.HIGH_PERCENTILE)) {
+            if (qs.stream().noneMatch(q -> q.percentile().compareTo(needed) == 0)) {
+                throw new IllegalStateException("spend.model.quantiles에 25·50·75번째 백분위가 있어야 합니다: " + resource);
+            }
+        }
+        for (int servers = model.minServers(); servers <= model.maxServers(); servers++) {
+            boolean finite = model.table(servers).orElseThrow().stream()
+                .allMatch(p -> p.vcpuHours().signum() > 0);
+            if (!finite) {
+                throw new IllegalStateException("spend.model이 서버 " + servers + "대에서 0 이하를 예측합니다: " + resource);
+            }
+        }
     }
 
     private static boolean inPercentRange(BigDecimal value) {

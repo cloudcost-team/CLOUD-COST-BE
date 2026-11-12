@@ -1,6 +1,5 @@
 package com.cloudcost.domain.benchmark;
 
-import com.cloudcost.domain.benchmark.BenchmarkReference.SpendBand;
 import com.cloudcost.domain.benchmark.BenchmarkReference.UsagePercentile;
 import com.cloudcost.domain.benchmark.TeamBenchmark.Position;
 import com.cloudcost.domain.ec2.Ec2Instance;
@@ -17,7 +16,8 @@ import java.util.TreeSet;
  * 팀 벤치마킹 ③ 규모 대비 월 지출 (ADR-013). 금액은 USD다.
  *
  * <p>비교 자료(Azure Public Dataset V2)에는 가격이 없고 코어 수도 구간뿐이라, 금액이 아니라 <b>한 달 사용량
- * (vCPU-시간 = vCPU × 켜진 시간)</b>으로 같은 서버 대수 구간 팀들과 순위를 매긴다. 우리 팀도 같은 코어 구간 규칙
+ * (vCPU-시간 = vCPU × 켜진 시간)</b>으로 순위를 매긴다. 같은 규모 팀의 사용량 분포는 서버 대수로 예측하는 분위 회귀 모델
+ * ({@link BenchmarkReference.SpendModel})이 준다. 우리 팀도 같은 코어 구간 규칙
  * ({@link #vcpuBucket})으로 재므로 단가 가정이 순위에 영향을 주지 않는다. 화면의 금액 범위는 비교 팀의 25~75번째 백분위
  * 사용량을 <b>우리 팀의 vCPU-시간당 비용</b>(월말 예상 ÷ 우리 사용량)으로 환산한 값이다.
  */
@@ -30,6 +30,7 @@ public final class SpendBenchmark {
     /** 일반 범위로 보여 주는 백분위 (가운데 절반) */
     public static final BigDecimal LOW_PERCENTILE = BigDecimal.valueOf(25);
     public static final BigDecimal HIGH_PERCENTILE = BigDecimal.valueOf(75);
+    public static final BigDecimal MEDIAN_PERCENTILE = BigDecimal.valueOf(50);
 
     private SpendBenchmark() {
     }
@@ -109,12 +110,13 @@ public final class SpendBenchmark {
      * 같은 규모 팀의 일반 범위(25~75번째 백분위 사용량)를 우리 팀의 vCPU-시간당 비용으로 환산한 금액.
      * 우리 사용량이 0이면 환산할 수 없어 empty.
      */
-    public static Optional<UsdRange> typicalRange(SpendBand band, BigDecimal monthEndUsd, BigDecimal ourVcpuHours) {
+    public static Optional<UsdRange> typicalRange(
+        List<UsagePercentile> table, BigDecimal monthEndUsd, BigDecimal ourVcpuHours) {
         if (ourVcpuHours == null || ourVcpuHours.signum() <= 0 || monthEndUsd == null) {
             return Optional.empty();
         }
-        BigDecimal low = at(band.percentiles(), LOW_PERCENTILE);
-        BigDecimal high = at(band.percentiles(), HIGH_PERCENTILE);
+        BigDecimal low = at(table, LOW_PERCENTILE);
+        BigDecimal high = at(table, HIGH_PERCENTILE);
         return Optional.of(new UsdRange(
             low.multiply(monthEndUsd).divide(ourVcpuHours, 6, RoundingMode.HALF_UP),
             high.multiply(monthEndUsd).divide(ourVcpuHours, 6, RoundingMode.HALF_UP)));

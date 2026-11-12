@@ -2,7 +2,7 @@ package com.cloudcost.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.cloudcost.domain.benchmark.BenchmarkReference.SpendBand;
+import com.cloudcost.domain.benchmark.BenchmarkReference;
 import com.cloudcost.domain.benchmark.BenchmarkReference.UsagePercentile;
 import com.cloudcost.domain.benchmark.SpendBenchmark;
 import com.cloudcost.domain.benchmark.SpendBenchmark.UsdRange;
@@ -66,13 +66,33 @@ class SpendBenchmarkTest {
 
     @Test
     void 일반_범위는_가운데_절반_사용량을_우리_vCPU_시간당_비용으로_환산한다() {
-        SpendBand band = new SpendBand(1, 2, 10, new BigDecimal("1440"), table("25:720", "75:2880"));
+        List<UsagePercentile> t = table("25:720", "50:1440", "75:2880");
 
-        UsdRange range = SpendBenchmark.typicalRange(band, new BigDecimal("36"), new BigDecimal("1440")).orElseThrow();
+        UsdRange range = SpendBenchmark.typicalRange(t, new BigDecimal("36"), new BigDecimal("1440")).orElseThrow();
 
         assertThat(range.minUsd()).as("720 × 36 ÷ 1440").isEqualByComparingTo("18");
         assertThat(range.maxUsd()).isEqualByComparingTo("72");
-        assertThat(SpendBenchmark.typicalRange(band, new BigDecimal("36"), BigDecimal.ZERO)).isEmpty();
+        assertThat(SpendBenchmark.typicalRange(t, new BigDecimal("36"), BigDecimal.ZERO)).isEmpty();
+    }
+
+    @Test
+    void 분위_회귀_모델은_서버_대수로_백분위_표를_예측하고_순서가_뒤집히면_바로잡는다() {
+        // ln(사용량) = c0 + c1·ln(s) + c2·ln(s)². c1 = 1이면 서버 수에 비례한다
+        var model = new BenchmarkReference.SpendModel(1, 50, 100,
+            new BenchmarkReference.Validation(80, 20, new BigDecimal("0.3"), new BigDecimal("0.4"), "b", new BigDecimal("50")),
+            List.of(q(25, Math.log(800), 1), q(50, Math.log(1440), 1), q(75, Math.log(1000), 1)));
+
+        List<UsagePercentile> two = model.table(2).orElseThrow();
+
+        assertThat(two).extracting(UsagePercentile::vcpuHours).map(BigDecimal::toPlainString)
+            .as("75번째 예측(2000)이 50번째(2880)보다 작아 정렬로 바로잡는다").containsExactly("1600.0", "2000.0", "2880.0");
+        assertThat(model.table(51)).isEmpty();
+        assertThat(model.validation().improvementPercent()).isEqualByComparingTo("25.0");
+    }
+
+    private static BenchmarkReference.QuantileCoefficients q(int percentile, double c0, double c1) {
+        return new BenchmarkReference.QuantileCoefficients(BigDecimal.valueOf(percentile),
+            List.of(BigDecimal.valueOf(c0), BigDecimal.valueOf(c1), BigDecimal.ZERO));
     }
 
     @Test

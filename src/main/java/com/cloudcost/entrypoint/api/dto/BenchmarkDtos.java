@@ -167,20 +167,39 @@ public final class BenchmarkDtos {
             String referenceDescription,
             @Schema(description = "참고 평균 (%)", example = "29") BigDecimal referenceAverage) {}
 
-    @Schema(description = "같은 규모 팀의 일반 범위 (가운데 절반 = 25~75번째 백분위). 금액은 그 팀들의 사용량을 우리 팀의 vCPU-시간당 비용으로 환산한 값")
+    @Schema(description = "비교 모델 정보 (학습·검증 결과)")
+    public record SpendModelDto(
+            @Schema(example = "QUANTILE_REGRESSION") String method,
+            @Schema(description = "학습한 팀(구독) 수", example = "5452") int sampleSize,
+            @Schema(description = "학습한 서버 대수 범위", example = "1") int minServers,
+            @Schema(example = "50") int maxServers,
+            @Schema(description = "검증에 쓴 시험용 팀 수", example = "1118") int testSize,
+            @Schema(description = "기존 방식(서버 대수 구간별 백분위 표)보다 시험용 오차(pinball loss)가 줄어든 비율 (%)", example = "15.3")
+                    BigDecimal improvementPercent,
+            @Schema(description = "예측한 일반 범위(25~75번째)에 시험용 실제 값이 들어온 비율 (%, 잘 맞으면 50 근처)", example = "51.9")
+                    BigDecimal middleHalfCoveragePercent) {
+
+        static SpendModelDto of(BenchmarkReference.SpendModel m) {
+            return new SpendModelDto("QUANTILE_REGRESSION", m.sampleSize(), m.minServers(), m.maxServers(),
+                    m.validation().testSize(), m.validation().improvementPercent(),
+                    m.validation().middleHalfCoveragePercent());
+        }
+    }
+
+    @Schema(description = "같은 규모(우리 서버 대수) 팀의 일반 범위 (가운데 절반 = 25~75번째 백분위). 금액은 모델이 예측한 사용량을 우리 팀의 vCPU-시간당 비용으로 환산한 값")
     public record SpendRangeDto(
             String source,
             String description,
-            @Schema(description = "비교한 서버 대수 구간 키", example = "1-2") String sizeBand,
-            @Schema(example = "서버 1~2대") String sizeBandLabel,
-            @Schema(description = "비교한 팀(구독) 수", example = "1446") int sampleSize,
+            @Schema(description = "비교한 서버 대수 (우리 서버 수)", example = "2") int servers,
+            @Schema(example = "서버 2대") String label,
             @Schema(description = "범위 하한 (currency 기준)") BigDecimal min,
             @Schema(description = "범위 상한 (currency 기준)") BigDecimal max,
-            @Schema(example = "7.31") BigDecimal minUsd,
-            @Schema(example = "37.43") BigDecimal maxUsd,
-            @Schema(description = "범위 하한 사용량 (vCPU-시간)", example = "562.2") BigDecimal minVcpuHours,
-            @Schema(description = "범위 상한 사용량 (vCPU-시간)", example = "2880.0") BigDecimal maxVcpuHours,
-            @Schema(description = "같은 규모 팀 사용량 중앙값 (vCPU-시간)", example = "1440.0") BigDecimal medianVcpuHours) {}
+            @Schema(example = "8.54") BigDecimal minUsd,
+            @Schema(example = "25.36") BigDecimal maxUsd,
+            @Schema(description = "범위 하한 사용량 (vCPU-시간)", example = "1165.8") BigDecimal minVcpuHours,
+            @Schema(description = "범위 상한 사용량 (vCPU-시간)", example = "3463.4") BigDecimal maxVcpuHours,
+            @Schema(description = "같은 규모 팀 사용량 중앙값 (vCPU-시간)", example = "2880.0") BigDecimal medianVcpuHours,
+            SpendModelDto model) {}
 
     public record SpendAfterDto(
             @Schema(description = "적용 후 월 비용 (currency 기준)") BigDecimal monthlyCost,
@@ -208,12 +227,13 @@ public final class BenchmarkDtos {
 
         static SpendDto of(SpendSection s, BenchmarkReference.Spend ref, DisplayCurrency d) {
             SpendRangeDto range = s.range() == null ? null
-                    : new SpendRangeDto(ref.source(), ref.description(), s.band().key(), s.band().label(),
-                            s.band().sampleSize(), d.cost(s.range().minUsd()), d.cost(s.range().maxUsd()),
+                    : new SpendRangeDto(ref.source(), ref.description(), s.usage().servers(),
+                            "서버 " + s.usage().servers() + "대", d.cost(s.range().minUsd()), d.cost(s.range().maxUsd()),
                             usd(s.range().minUsd()), usd(s.range().maxUsd()),
-                            SpendBenchmark.at(s.band().percentiles(), SpendBenchmark.LOW_PERCENTILE),
-                            SpendBenchmark.at(s.band().percentiles(), SpendBenchmark.HIGH_PERCENTILE),
-                            s.band().medianVcpuHours());
+                            SpendBenchmark.at(s.table(), SpendBenchmark.LOW_PERCENTILE),
+                            SpendBenchmark.at(s.table(), SpendBenchmark.HIGH_PERCENTILE),
+                            SpendBenchmark.at(s.table(), SpendBenchmark.MEDIAN_PERCENTILE),
+                            SpendModelDto.of(ref.model()));
             SpendAfterDto after = s.afterUsd() == null ? null
                     : new SpendAfterDto(d.cost(s.afterUsd()), usd(s.afterUsd()), s.afterPosition().name(),
                             SpendBenchmark.barPositionPercent(s.afterUsd(), s.range()));
