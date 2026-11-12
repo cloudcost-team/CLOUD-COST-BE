@@ -196,5 +196,16 @@ UNIQUE `(notification_id, channel_id)`. 인덱스 `(status, next_attempt_at)`(�
 | observed_at | TIMESTAMPTZ | |
 - 연결 삭제 때 `notifications` 다음에 이 두 표를 지운다.
 
+## V12 (2026-11-12) — 알림 숫자 (ADR-019, Discord embed 필드)
+`notifications`에 NULL 허용 컬럼을 더한다. 외부 채널 메시지 필드용이고, 보낼 때 다시 조회하지 않도록 **알림을 만든 시점 값**을 남긴다. 이전 알림은 모두 NULL.
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| threshold_percent | INT NULL | 예산: 넘은 기준 (80·100·120) |
+| budget_usd | NUMERIC(20,6) NULL | 예산: 그달 예산 (USD) |
+| forecast_usd | NUMERIC(20,6) NULL | 예산: 그때의 월말 예상 비용 (USD) |
+| spike_date | DATE NULL | 급증: 급증일 |
+| spike_ratio | NUMERIC(20,1) NULL | 급증: 평소 대비 배수 |
+| spike_cause | VARCHAR(255) NULL | 급증: 원인 서버 Name 태그 (없으면 인스턴스 ID) |
+
 ## 보존 (백로그)
 ec2_usage_hourly는 455일, sync_jobs는 90일, notifications·notification_deliveries는 읽은 지 90일 정도로 정리하는 작업이 필요하다.

@@ -259,9 +259,11 @@ class ApplicationWiring {
     NotificationDispatchService notificationDispatchService(
             NotificationDeliveryRepository deliveries,
             NotificationChannelGateway gateway,
+            CurrencyService currencies,
             Clock clock,
             CloudCostProperties properties) {
-        return new NotificationDispatchService(deliveries, gateway, clock, properties.notification().appUrl());
+        return new NotificationDispatchService(
+                deliveries, gateway, currencies, clock, properties.notification().appUrl());
     }
 
     @Bean

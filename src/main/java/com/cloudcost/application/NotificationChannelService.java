@@ -2,7 +2,9 @@ package com.cloudcost.application;
 
 import com.cloudcost.application.error.NotFoundException;
 import com.cloudcost.application.port.NotificationChannelGateway;
+import com.cloudcost.application.port.NotificationChannelGateway.Message;
 import com.cloudcost.application.port.NotificationChannelGateway.SendResult;
+import com.cloudcost.application.port.NotificationChannelGateway.Tone;
 import com.cloudcost.application.port.NotificationChannelRepository;
 import com.cloudcost.domain.DomainValidationException;
 import com.cloudcost.domain.alert.NotificationChannel;
@@ -13,7 +15,10 @@ import java.util.UUID;
 /** 외부 알림 채널 등록·수정·삭제·테스트 발송 (ADR-019). 모두 내 채널만. */
 public class NotificationChannelService {
 
-    static final String TEST_MESSAGE = "[CloudCost] 테스트 알림이에요. 이 채널로 예산·비용 급증·주간 요약 알림을 보내 드릴게요.";
+    /** 실제 알림과 같은 embed 형식 */
+    static final Message TEST_MESSAGE = new Message("테스트 알림",
+        "CloudCost 알림 채널이 연결됐어요. 켜 둔 알림이 생기면 이 채널로 보내 드려요.", Tone.INFO, List.of(),
+        "CloudCost Insight", null);
 
     private final NotificationChannelRepository channels;
     private final NotificationChannelGateway gateway;
