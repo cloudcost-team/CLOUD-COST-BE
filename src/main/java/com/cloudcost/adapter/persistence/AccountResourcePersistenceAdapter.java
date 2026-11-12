@@ -30,7 +30,7 @@ class AccountResourcePersistenceAdapter implements AccountResourceRepository {
     public Optional<ResourceScan> findScanByOwnerIdAndAccountId(String ownerId, UUID accountId) {
         return scans.findByOwnerIdAndAccountId(ownerId, accountId)
             .map(e -> new ResourceScan(ResourceScan.Status.valueOf(e.status), e.permissionVersion, e.scannedAt,
-                e.message));
+                e.message, e.describeCount, e.cwRequestCount));
     }
 
     @Override
@@ -43,6 +43,8 @@ class AccountResourcePersistenceAdapter implements AccountResourceRepository {
         e.status = scan.status().name();
         e.permissionVersion = scan.permissionVersion();
         e.scannedAt = scan.scannedAt();
+        e.describeCount = scan.describeCount();
+        e.cwRequestCount = scan.cloudWatchCount();
         e.message = scan.message() == null || scan.message().length() <= 500
             ? scan.message() : scan.message().substring(0, 500);
         scans.save(e);

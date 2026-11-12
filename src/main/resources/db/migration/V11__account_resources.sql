@@ -10,6 +10,8 @@ CREATE TABLE account_resource_scans
     permission_version INT                      NOT NULL DEFAULT 1,
     scanned_at         TIMESTAMP WITH TIME ZONE,
     message            VARCHAR(500),
+    describe_count     INT                      NOT NULL DEFAULT 0,
+    cw_request_count   INT                      NOT NULL DEFAULT 0,
     CONSTRAINT ck_account_resource_scans_status
         CHECK (status IN ('NOT_SCANNED', 'OK', 'PERMISSION_UPGRADE_REQUIRED', 'FAILED'))
 );

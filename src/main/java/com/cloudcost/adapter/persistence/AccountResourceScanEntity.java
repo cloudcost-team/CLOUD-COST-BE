@@ -30,6 +30,12 @@ class AccountResourceScanEntity {
     @Column(length = 500)
     String message;
 
+    @Column(name = "describe_count", nullable = false)
+    int describeCount;
+
+    @Column(name = "cw_request_count", nullable = false)
+    int cwRequestCount;
+
     protected AccountResourceScanEntity() {
     }
 }

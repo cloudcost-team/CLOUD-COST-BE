@@ -29,7 +29,7 @@ public final class ResourceDtos {
     @Schema(description = "확장 수집 상태")
     public record ScanDto(
             @Schema(description = "NOT_SCANNED | OK | PERMISSION_UPGRADE_REQUIRED | FAILED") String status,
-            @Schema(description = "1 = 이전 템플릿(EC2·CloudWatch만), 2 = 확장 권한까지 확인됨") int permissionVersion,
+            @Schema(description = "2 = 확장 권한까지 확인됨, 1 = 확인되지 않음(이전 템플릿이거나 거부 정책)") int permissionVersion,
             Instant scannedAt,
             @Schema(description = "실패·권한 부족 사유 (한국어)") String message) {
 
@@ -39,10 +39,17 @@ public final class ResourceDtos {
     }
 
     @Schema(description = "권한 업데이트 방법 (PERMISSION_UPGRADE_REQUIRED일 때만)")
-    public record UpgradeDto(String stackName, String consoleUrl, String templateUrl, List<String> steps) {
+    public record UpgradeDto(
+            @Schema(description = "STACK = 스택 업데이트, MANUAL_ROLE = 직접 만든 Role의 정책 수정") String method,
+            @Schema(description = "STACK일 때만") String stackName,
+            @Schema(description = "스택이 있는 리전(STACK) 또는 IAM Role(MANUAL_ROLE) 콘솔 주소") String consoleUrl,
+            @Schema(description = "STACK일 때만") String templateUrl,
+            @Schema(description = "MANUAL_ROLE일 때 Role에 붙일 권한 정책 JSON") Map<String, Object> permissionPolicy,
+            List<String> steps) {
 
         static UpgradeDto of(Upgrade u) {
-            return u == null ? null : new UpgradeDto(u.stackName(), u.consoleUrl(), u.templateUrl(), u.steps());
+            return u == null ? null : new UpgradeDto(u.method(), u.stackName(), u.consoleUrl(), u.templateUrl(),
+                    u.permissionPolicy(), u.steps());
         }
     }
 
@@ -82,8 +89,9 @@ public final class ResourceDtos {
             String homeRegion,
             ScanDto scan,
             UpgradeDto upgrade,
+            @Schema(description = "백그라운드에서 다시 훑는 중이면 true (이번 응답은 저장된 결과, 잠시 뒤 다시 조회)") boolean refreshing,
             int findingCount,
-            @Schema(description = "모두 정리했을 때 매달 줄어드는 추정 금액") BigDecimal totalMonthlyCost,
+            @Schema(description = "모두 정리했을 때 매달 줄어드는 추정 금액. 단가를 모르는 항목이 있으면 null") BigDecimal totalMonthlyCost,
             @Schema(description = "기본 리전 밖에서 실행 중인 서버 (대시보드 '잊힌 리전' 카드)") List<RegionCountDto> otherRegions,
             List<ResourceItemDto> items,
             List<String> notes) {
@@ -95,10 +103,14 @@ public final class ResourceDtos {
             }
             List<String> notes = new ArrayList<>(List.of(COST_NOTE, READ_ONLY_NOTE));
             if (v.scan().status() == ResourceScan.Status.PERMISSION_UPGRADE_REQUIRED) {
-                notes.addFirst("권한 업데이트 필요: 이전 방식으로 연결해 EC2 사용량만 볼 수 있어요. 스택을 업데이트하면 방치 리소스도 찾아 드려요.");
+                notes.addFirst("권한 업데이트 필요: 지금은 EC2 사용량만 볼 수 있어요. upgrade 안내대로 권한을 늘리면 방치 리소스도 찾아 드려요.");
+            }
+            if (v.totalMonthlyUsd() == null) {
+                notes.add("단가를 모르는 항목이 있어 합계를 내지 않았어요. 항목별 금액을 확인해 주세요.");
             }
             return new ResourceWasteDto(COST_BASIS, d.currency().name(), v.homeRegion(), ScanDto.of(v.scan()),
-                    UpgradeDto.of(v.upgrade()), v.findings().size(), d.cost(v.totalMonthlyUsd()), List.copyOf(regions),
+                    UpgradeDto.of(v.upgrade()), v.refreshing(), v.findings().size(),
+                    v.totalMonthlyUsd() == null ? null : d.cost(v.totalMonthlyUsd()), List.copyOf(regions),
                     v.findings().stream().map(f -> ResourceItemDto.of(f, v.homeRegion(), d)).toList(),
                     List.copyOf(notes));
         }
@@ -121,7 +133,7 @@ public final class ResourceDtos {
                 }
                 notes.addAll(currency.warnings());
                 dto = new ResourceWasteDto(dto.costBasis(), dto.currency(), dto.homeRegion(), dto.scan(), dto.upgrade(),
-                        dto.findingCount(), dto.totalMonthlyCost(), dto.otherRegions(), dto.items(), List.copyOf(notes));
+                        dto.refreshing(), dto.findingCount(), dto.totalMonthlyCost(), dto.otherRegions(), dto.items(), List.copyOf(notes));
             }
             return new ResourceWasteResponse(dataSource, ExchangeRateDto.of(d), v.accountId(), dto);
         }

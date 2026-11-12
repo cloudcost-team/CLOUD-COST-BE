@@ -174,8 +174,9 @@ UNIQUE `(notification_id, channel_id)`. 인덱스 `(status, next_attempt_at)`(�
 
 ## V11 (2026-11-12) — 방치 리소스·잊힌 리전 (ADR-020)
 ### account_resource_scans — 연결별 확장 수집 상태 (PK account_id → aws_accounts)
-`owner_id`, `status`(NOT_SCANNED / OK / PERMISSION_UPGRADE_REQUIRED / FAILED), `permission_version`(1 = 이전 템플릿, 2 = 확장 권한 확인),
-`scanned_at`, `message`(실패·권한 부족 사유). 변경안의 `aws_accounts.permission_version`은 연결 상태와 섞지 않도록 이 표에 둔다.
+`owner_id`, `status`(NOT_SCANNED / OK / PERMISSION_UPGRADE_REQUIRED / FAILED), `permission_version`(2 = 확장 권한 확인, 1 = 확인 안 됨),
+`scanned_at`, `message`(실패·권한 부족 사유), `describe_count`·`cw_request_count`(마지막 수집에서 시도한 Describe·GetMetricStatistics 수,
+실패한 호출 포함 — 확장 수집은 sync_job을 만들지 않으므로 고객 계정 CloudWatch 무료 한도는 `sync_jobs.cw_request_count`와 이 값을 합쳐 본다). 변경안의 `aws_accounts.permission_version`은 연결 상태와 섞지 않도록 이 표에 둔다.
 
 ### account_resources — Describe로 읽은 리소스 (수집마다 연결 단위로 통째로 바꾼다)
 | 컬럼 | 타입 | 설명 |

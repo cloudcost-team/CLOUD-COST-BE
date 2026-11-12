@@ -62,13 +62,16 @@ reviews:
 
     - path: "src/main/java/com/cloudcost/adapter/awscustomer/**"
       instructions: |
-        고객 계정에는 ec2:DescribeInstances, cloudwatch:GetMetricStatistics 두 액션만 호출할 수 있다.
+        고객 계정에는 scripts/customer-role-allowlist.txt의 7개 읽기 액션만 호출할 수 있다 (ADR-020):
+        ec2:DescribeInstances, cloudwatch:GetMetricStatistics, ec2:DescribeRegions, ec2:DescribeVolumes,
+        ec2:DescribeAddresses, ec2:DescribeSnapshots(OwnerIds=self 필수), elasticloadbalancing:DescribeLoadBalancers.
         그 외 호출(특히 create/delete/modify/put/update/stop/terminate/release/detach, GetMetricData, Cost Explorer,
-        Compute Optimizer, ELB, DescribeInstanceTypes)은 반드시 지적한다.
+        Compute Optimizer, DescribeInstanceTypes, ELB 쓰기 API)은 반드시 지적한다.
         클라이언트는 동기 클라이언트만 쓰고 연결마다 만들어 try-with-resources로 닫는지 확인한다.
         임시 자격증명은 StsAssumeRoleCredentialsProvider 안에서만 다뤄야 한다.
         adapter/awsinternal을 import하면 지적한다.
         GetMetricStatistics는 period 3600, 30일 단위 분할, 최대 455일 범위인지 확인한다.
+        예외: 로드밸런서 요청 수(ADR-020)는 period 86400, 최근 14일 1건이다.
 
     - path: "src/main/java/com/cloudcost/adapter/awsinternal/**"
       instructions: |
@@ -93,14 +96,14 @@ reviews:
 
     - path: "src/main/resources/cloudformation/**"
       instructions: |
-        고객 Role 정책은 ec2:DescribeInstances, cloudwatch:GetMetricStatistics만 허용해야 한다.
+        고객 Role 정책은 scripts/customer-role-allowlist.txt의 7개 읽기 액션만 허용해야 한다 (ADR-020).
         Action 와일드카드(ec2:*, Describe*)나 쓰기 권한이 있으면 지적한다.
-        aws:RequestedRegion 조건으로 리전을 제한하는지, Trust Policy가 우리 백엔드 Role만 Principal로 두고
-        sts:ExternalId 조건을 거는지 확인한다. scripts/customer-role-allowlist.txt와 일치해야 한다.
+        잊힌 리전을 찾기 위해 aws:RequestedRegion 조건은 두지 않는다 (ADR-020). Trust Policy가 우리 백엔드 Role만
+        Principal로 두고 sts:ExternalId 조건을 거는지 확인한다.
 
     - path: "src/main/resources/db/migration/**"
       instructions: |
-        Flyway 파일명은 V{n}__설명.sql 형식이어야 한다. 이미 존재하던 마이그레이션 파일을 수정하면 지적한다.
+        Flyway 파일명은 V{n}__설명.sql 형식이어야 한다. 이미 배포된(기준 브랜치에 있는) 마이그레이션 파일을 수정하면 지적한다.
         금액은 NUMERIC, 사용자 데이터 테이블에는 owner_id가 있어야 한다.
         테이블 변경 시 docs/DATA_MODEL.md도 같이 바뀌었는지 확인한다.
 

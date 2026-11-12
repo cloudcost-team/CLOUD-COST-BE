@@ -9,6 +9,7 @@ import com.cloudcost.domain.usage.HourlySample;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -64,6 +65,9 @@ final class AwsCustomerSession implements CustomerAwsSession {
     private final List<SdkAutoCloseable> owned = new ArrayList<>();
     private Ec2Client ec2;
     private CloudWatchClient cloudWatch;
+    /** 확장 수집(enabledRegions·scanRegion)에서 시도한 호출 수. 실패한 호출도 센다 (여러 리전 스레드가 함께 더한다) */
+    private final AtomicInteger scanDescribeCalls = new AtomicInteger();
+    private final AtomicInteger scanCloudWatchCalls = new AtomicInteger();
 
     AwsCustomerSession(
         Region region,
@@ -163,6 +167,7 @@ final class AwsCustomerSession implements CustomerAwsSession {
 
     @Override
     public List<String> enabledRegions() {
+        scanDescribeCalls.incrementAndGet();
         try {
             return ec2().describeRegions(DescribeRegionsRequest.builder().build()).regions().stream()
                 .map(r -> r.regionName())
@@ -176,9 +181,25 @@ final class AwsCustomerSession implements CustomerAwsSession {
     @Override
     public RegionScan scanRegion(String regionName, boolean withInstances, Instant now) {
         Region target = Region.of(regionName);
-        int[] describes = {0};
-        int[] metrics = {0};
+        AtomicInteger describes = new AtomicInteger();
+        AtomicInteger metrics = new AtomicInteger();
         List<AwsResource> found = new ArrayList<>();
+        try {
+            scanRegion(target, regionName, withInstances, now, found, describes, metrics);
+        } finally {
+            scanDescribeCalls.addAndGet(describes.get());
+            scanCloudWatchCalls.addAndGet(metrics.get());
+        }
+        return new RegionScan(List.copyOf(found), describes.get(), metrics.get());
+    }
+
+    @Override
+    public ScanCalls scanCalls() {
+        return new ScanCalls(scanDescribeCalls.get(), scanCloudWatchCalls.get());
+    }
+
+    private void scanRegion(Region target, String regionName, boolean withInstances, Instant now,
+                            List<AwsResource> found, AtomicInteger describes, AtomicInteger metrics) {
         try (Ec2Client regionEc2 = Ec2Client.builder().region(target).credentialsProvider(credentials)
                 .overrideConfiguration(clientConfig).build();
              ElasticLoadBalancingV2Client elb = ElasticLoadBalancingV2Client.builder().region(target)
@@ -192,25 +213,21 @@ final class AwsCustomerSession implements CustomerAwsSession {
                 found.addAll(instances(regionEc2, regionName, describes));
             }
             for (LoadBalancer lb : loadBalancers(elb, describes)) {
-                Long requests = lbRequests(regionCloudWatch, lb, now);
-                if (requests != null) {
-                    metrics[0]++;
-                }
+                Long requests = lbRequests(regionCloudWatch, lb, now, metrics);
                 found.add(new AwsResource(ResourceType.LOAD_BALANCER, lb.loadBalancerName(), lb.loadBalancerName(),
                     regionName, lb.typeAsString(), null, true, lb.createdTime(), requests, null));
             }
         }
-        return new RegionScan(List.copyOf(found), describes[0], metrics[0]);
     }
 
-    private static List<AwsResource> volumes(Ec2Client client, String region, int[] describes) {
+    private static List<AwsResource> volumes(Ec2Client client, String region, AtomicInteger describes) {
         List<AwsResource> result = new ArrayList<>();
         String token = null;
         try {
             do {
+                describes.incrementAndGet();
                 DescribeVolumesResponse page = client.describeVolumes(
                     DescribeVolumesRequest.builder().maxResults(500).nextToken(token).build());
-                describes[0]++;
                 page.volumes().forEach(v -> result.add(new AwsResource(ResourceType.VOLUME, v.volumeId(),
                     nameTag(v.tags()), region, v.volumeTypeAsString(), v.size(), v.state() != VolumeState.AVAILABLE,
                     v.createTime(), null, null)));
@@ -223,10 +240,10 @@ final class AwsCustomerSession implements CustomerAwsSession {
     }
 
     /** 공인 IP 주소는 읽기만 하고 저장하지 않는다 (allocationId로만 가리킨다) */
-    private static List<AwsResource> addresses(Ec2Client client, String region, int[] describes) {
+    private static List<AwsResource> addresses(Ec2Client client, String region, AtomicInteger describes) {
         try {
+            describes.incrementAndGet();
             var response = client.describeAddresses(DescribeAddressesRequest.builder().build());
-            describes[0]++;
             return response.addresses().stream()
                 .filter(a -> a.allocationId() != null)
                 .map(a -> new AwsResource(ResourceType.ADDRESS, a.allocationId(), nameTag(a.tags()), region, null,
@@ -238,14 +255,14 @@ final class AwsCustomerSession implements CustomerAwsSession {
     }
 
     /** 내 계정이 만든 스냅샷만 (OwnerIds=self). 빼면 공개 스냅샷 수십만 건을 읽게 된다 */
-    private static List<AwsResource> snapshots(Ec2Client client, String region, int[] describes) {
+    private static List<AwsResource> snapshots(Ec2Client client, String region, AtomicInteger describes) {
         List<AwsResource> result = new ArrayList<>();
         String token = null;
         try {
             do {
+                describes.incrementAndGet();
                 DescribeSnapshotsResponse page = client.describeSnapshots(DescribeSnapshotsRequest.builder()
                     .ownerIds("self").maxResults(1000).nextToken(token).build());
-                describes[0]++;
                 page.snapshots().forEach(s -> result.add(new AwsResource(ResourceType.SNAPSHOT, s.snapshotId(),
                     nameTag(s.tags()), region, null, s.volumeSize(), true, s.startTime(), null, null)));
                 token = page.nextToken();
@@ -256,14 +273,14 @@ final class AwsCustomerSession implements CustomerAwsSession {
         return result;
     }
 
-    private static List<AwsResource> instances(Ec2Client client, String region, int[] describes) {
+    private static List<AwsResource> instances(Ec2Client client, String region, AtomicInteger describes) {
         List<AwsResource> result = new ArrayList<>();
         String token = null;
         try {
             do {
+                describes.incrementAndGet();
                 DescribeInstancesResponse page = client.describeInstances(
                     DescribeInstancesRequest.builder().maxResults(1000).nextToken(token).build());
-                describes[0]++;
                 page.reservations().forEach(r -> r.instances().forEach(i -> {
                     Ec2Instance info = Ec2InstanceMapper.toDomain(i, region);
                     result.add(new AwsResource(ResourceType.INSTANCE, info.instanceId(), info.name(), region,
@@ -277,14 +294,14 @@ final class AwsCustomerSession implements CustomerAwsSession {
         return result;
     }
 
-    private static List<LoadBalancer> loadBalancers(ElasticLoadBalancingV2Client client, int[] describes) {
+    private static List<LoadBalancer> loadBalancers(ElasticLoadBalancingV2Client client, AtomicInteger describes) {
         List<LoadBalancer> result = new ArrayList<>();
         String marker = null;
         try {
             do {
+                describes.incrementAndGet();
                 DescribeLoadBalancersResponse page = client.describeLoadBalancers(
                     DescribeLoadBalancersRequest.builder().pageSize(400).marker(marker).build());
-                describes[0]++;
                 result.addAll(page.loadBalancers());
                 marker = page.nextMarker();
             } while (marker != null && !marker.isEmpty());
@@ -295,32 +312,39 @@ final class AwsCustomerSession implements CustomerAwsSession {
     }
 
     /**
-     * ALB는 RequestCount, NLB는 NewFlowCount의 최근 14일 합계 (GetMetricStatistics 1건, Period 1일).
+     * 최근 14일(지금까지) 요청 수. ALB는 RequestCount, NLB는 NewFlowCount (GetMetricStatistics, Period 1일, Sum).
+     * ALB RequestCount는 대상을 고르지 못해 거부한 요청(대상이 없을 때의 503 등)을 세지 않으므로, 0이면
+     * HTTPCode_ELB_5XX_Count를 1건 더 읽어 더한다 (거부한 요청이 있으면 쓰이는 LB다).
      * 그 밖의 종류(게이트웨이 LB)는 읽지 않고 null.
      */
-    private static Long lbRequests(CloudWatchClient client, LoadBalancer lb, Instant now) {
-        String namespace;
-        String metric;
-        if ("application".equals(lb.typeAsString())) {
-            namespace = "AWS/ApplicationELB";
-            metric = "RequestCount";
-        } else if ("network".equals(lb.typeAsString())) {
-            namespace = "AWS/NetworkELB";
-            metric = "NewFlowCount";
-        } else {
-            return null;
-        }
+    private static Long lbRequests(CloudWatchClient client, LoadBalancer lb, Instant now, AtomicInteger calls) {
         String arn = lb.loadBalancerArn();
         int idx = arn == null ? -1 : arn.indexOf(":loadbalancer/");
         if (idx < 0) {
             return null;
         }
-        Instant end = now.truncatedTo(java.time.temporal.ChronoUnit.DAYS);
+        String dimension = arn.substring(idx + ":loadbalancer/".length());
+        if ("application".equals(lb.typeAsString())) {
+            long requests = lbMetricSum(client, "AWS/ApplicationELB", "RequestCount", dimension, now, calls);
+            return requests > 0 ? requests
+                : lbMetricSum(client, "AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count", dimension, now, calls);
+        }
+        if ("network".equals(lb.typeAsString())) {
+            return lbMetricSum(client, "AWS/NetworkELB", "NewFlowCount", dimension, now, calls);
+        }
+        return null;
+    }
+
+    /** 지표가 없으면(트래픽이 없던 LB) 0. 조회 구간은 지금 시각까지라 오늘 요청도 들어간다 */
+    private static long lbMetricSum(
+        CloudWatchClient client, String namespace, String metric, String dimension, Instant now, AtomicInteger calls) {
+        Instant end = now.truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+        calls.incrementAndGet();
         try {
             GetMetricStatisticsResponse response = client.getMetricStatistics(GetMetricStatisticsRequest.builder()
                 .namespace(namespace)
                 .metricName(metric)
-                .dimensions(Dimension.builder().name("LoadBalancer").value(arn.substring(idx + ":loadbalancer/".length())).build())
+                .dimensions(Dimension.builder().name("LoadBalancer").value(dimension).build())
                 .startTime(end.minus(LB_WINDOW))
                 .endTime(end)
                 .period(86400)

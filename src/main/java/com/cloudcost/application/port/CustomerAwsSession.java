@@ -45,7 +45,7 @@ public interface CustomerAwsSession extends AutoCloseable {
     /**
      * 리전 1곳의 방치 리소스 후보를 읽는다 (ADR-020). 볼륨·고정 IP·스냅샷(내 것만)·로드밸런서를 모두 읽고,
      * withInstances면 그 리전의 서버도 읽는다 (기본 리전 밖의 잊힌 서버). 로드밸런서마다 최근 14일 요청 수를
-     * CloudWatch(GetMetricStatistics, Period 1일) 1건으로 읽는다.
+     * CloudWatch(GetMetricStatistics, Period 1일)로 읽는다 (ALB는 요청 0이면 거부 요청 지표 1건 더).
      */
     RegionScan scanRegion(String region, boolean withInstances, Instant now);
 
@@ -54,6 +54,11 @@ public interface CustomerAwsSession extends AutoCloseable {
      * @param cloudWatchCount 부른 GetMetricStatistics 수
      */
     record RegionScan(List<AwsResource> resources, int describeCount, int cloudWatchCount) {}
+
+    /** 이 세션에서 확장 수집(enabledRegions·scanRegion)으로 시도한 호출 수. 실패한 호출도 센다 */
+    ScanCalls scanCalls();
+
+    record ScanCalls(int describeCount, int cloudWatchCount) {}
 
     enum NetworkDirection {
         IN("NetworkIn"),

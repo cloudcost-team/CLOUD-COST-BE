@@ -84,7 +84,7 @@ public final class ResourceWasteDetector {
                 "작업 → 볼륨 삭제를 눌러요"),
             List.of("중지한 서버에서 떼어 둔 볼륨일 수 있어요. 담당자에게 먼저 확인해 주세요.",
                 "삭제한 볼륨은 되돌릴 수 없어요."),
-            regionNote(r.region()));
+            monthly == null ? "이 볼륨 종류(" + r.subtype() + ")의 단가를 찾지 못했어요." : regionNote(r.region()));
     }
 
     private static ResourceFinding address(AwsResource r) {

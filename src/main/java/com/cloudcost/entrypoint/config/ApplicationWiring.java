@@ -275,8 +275,19 @@ class ApplicationWiring {
 
     @Bean
     ResourceScanService resourceScanService(
-            AwsAccountRepository accounts, AccountResourceRepository resources, CustomerAwsGateway gateway, Clock clock) {
-        return new ResourceScanService(accounts, resources, gateway, clock);
+            AwsAccountRepository accounts, AccountResourceRepository resources, CustomerAwsGateway gateway, Clock clock,
+            @org.springframework.beans.factory.annotation.Qualifier("resourceScanExecutor")
+            java.util.concurrent.Executor resourceScanExecutor) {
+        return new ResourceScanService(accounts, resources, gateway, clock, resourceScanExecutor);
+    }
+
+    /** 화면 조회가 맡기는 백그라운드 확장 수집 (ADR-020). 동시에 2개 연결까지, 대기 50개를 넘으면 이번 조회는 맡기지 않는다 (다음 조회 때 다시) */
+    @Bean(destroyMethod = "shutdownNow")
+    java.util.concurrent.ExecutorService resourceScanExecutor() {
+        return new java.util.concurrent.ThreadPoolExecutor(
+            2, 2, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, new java.util.concurrent.ArrayBlockingQueue<>(50),
+            Thread.ofPlatform().name("resource-scan-", 0).daemon(true).factory(),
+            new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
     }
 
     @Bean

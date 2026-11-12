@@ -50,6 +50,10 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
     public final Map<String, List<com.cloudcost.domain.resource.AwsResource>> regionResources = new HashMap<>();
     public AwsAccessException resourceError;
     public int regionScans;
+    /** 확장 수집 세션이 돌려줄 GetMetricStatistics 시도 수 */
+    public int lbMetricCalls;
+    /** 리전별로 scanRegion이 던질 오류 */
+    public final Map<String, RuntimeException> regionErrors = new java.util.concurrent.ConcurrentHashMap<>();
 
     public void reset() {
         regions.clear();
@@ -57,6 +61,8 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
         regionResources.clear();
         resourceError = null;
         regionScans = 0;
+        lbMetricCalls = 0;
+        regionErrors.clear();
         instances.clear();
         samples.clear();
         network.clear();
@@ -182,15 +188,26 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
             public RegionScan scanRegion(String region, boolean withInstances, Instant now) {
                 synchronized (FakeCustomerAwsGateway.this) {
                     regionScans++;
+                    scanDescribes += 5;
                 }
                 if (resourceError != null) {
                     throw resourceError;
+                }
+                if (regionErrors.containsKey(region)) {
+                    throw regionErrors.get(region);
                 }
                 List<com.cloudcost.domain.resource.AwsResource> found = regionResources.getOrDefault(region, List.of())
                         .stream()
                         .filter(r -> withInstances || r.type() != com.cloudcost.domain.resource.ResourceType.INSTANCE)
                         .toList();
                 return new RegionScan(found, 5, 0);
+            }
+
+            private int scanDescribes;
+
+            @Override
+            public ScanCalls scanCalls() {
+                return new ScanCalls(scanDescribes, lbMetricCalls);
             }
 
             @Override

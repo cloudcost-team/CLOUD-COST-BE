@@ -357,11 +357,13 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 `GET /aws/accounts/{accountId}/waste` 응답에 `resources`가 붙고, 같은 내용을 `GET /aws/accounts/{accountId}/resources/waste?currency=KRW|USD`로 따로 받을 수 있다
 (응답: `{ dataSource, exchangeRate, accountId, resources }`). 체험 모드 `POST /demo/waste`에도 예시 `resources`가 붙는다.
 켜진 모든 리전을 6시간에 한 번 Describe로 훑는다 (예약 수집 뒤에도). 위 `items`(서버 사양·유휴)와 따로 센다.
+조회는 수집을 기다리지 않는다: 결과가 오래됐으면 백그라운드에서 다시 훑고 저장된 결과를 바로 주며 `refreshing: true`를 붙인다
+(첫 조회는 `scan.status: NOT_SCANNED` + `refreshing: true` → 화면은 "확인 중"을 보이고 잠시 뒤 다시 조회한다).
 ```json
 "resources": {
   "costBasis": "estimated_list_price", "currency": "KRW", "homeRegion": "ap-northeast-2",
   "scan": { "status": "OK", "permissionVersion": 2, "scannedAt": "…", "message": null },
-  "upgrade": null,
+  "upgrade": null, "refreshing": false,
   "findingCount": 5, "totalMonthlyCost": 84000,
   "otherRegions": [ { "region": "us-east-1", "runningServers": 1 } ],
   "items": [ { "recommendationId": "us-east-1:i-0abc:FORGOTTEN_REGION", "kind": "FORGOTTEN_REGION", "kindLabel": "잊힌 리전의 서버",
@@ -376,13 +378,17 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
 | `UNATTACHED_VOLUME` | `VOLUME` | 어떤 서버에도 연결 안 됨 (available) | 크기 × 볼륨 타입 GB-월 정가 |
 | `UNUSED_EIP` | `ADDRESS` | 연결 안 된 고정 IP | $0.005 × 730 |
 | `OLD_SNAPSHOT` | `SNAPSHOT` | 내 스냅샷, 만든 지 90일 초과 | 원본 크기 × $0.05 (최대치) |
-| `IDLE_LB` | `LOAD_BALANCER` | 만든 지 14일 초과, 최근 14일 요청 0 (ALB RequestCount / NLB NewFlowCount) | 시간당 기본 요금 × 730 (LCU 제외) |
+| `IDLE_LB` | `LOAD_BALANCER` | 만든 지 14일 초과, 지금까지 14일 요청 0 (ALB RequestCount + 거부한 요청 HTTPCode_ELB_5XX_Count / NLB NewFlowCount) | 시간당 기본 요금 × 730 (LCU 제외) |
 | `FORGOTTEN_REGION` | `INSTANCE` | 기본 리전 밖에서 실행 중 | 온디맨드 단가 × 730 |
-- 정렬: 월 추정 큰 순. 금액을 모르면 `monthlyCost: null`. 서울·버지니아 밖 리전의 정가는 버지니아 값으로 추정하고 `priceNote`에 적는다.
+- 정렬: 월 추정 큰 순. 금액을 모르면 `monthlyCost: null` + `priceNote`에 사유. 서울·버지니아 밖 리전의 정가는 버지니아 값으로 추정하고 `priceNote`에 적는다.
+- `totalMonthlyCost`: 금액을 모르는 항목이 하나라도 있으면 `null`(부분합을 전체처럼 보이지 않게, `notes`에 안내). 발견 항목이 없으면 0.
 - `scan.status`: `NOT_SCANNED`(수집할 수 없는 연결) · `OK` · `FAILED`(일시 오류, 이전 목록 유지, `message`) ·
-  **`PERMISSION_UPGRADE_REQUIRED`**: 이전 템플릿(v1)으로 연결해 권한이 없다. 오류가 아니라 안내다 — `upgrade`에 방법이 온다:
-  `{ "stackName": "CloudCostInsight-…", "consoleUrl": "https://console.aws.amazon.com/cloudformation/home?region=…", "templateUrl": "https://…/customer-readonly-role.yaml", "steps": [ … ] }`.
-  1시간마다 다시 확인해, 스택을 업데이트했으면 `OK`·`permissionVersion: 2`가 된다. 서버 낭비(`items`)와 연결 상태에는 영향이 없다.
+  **`PERMISSION_UPGRADE_REQUIRED`**: 확장 권한이 거부됐다. 대개 이전 템플릿(v1)이지만 SCP·권한 경계·Deny 정책일 수도 있어 단정하지 않는다
+  (`permissionVersion: 1` = 확인되지 않음, `message`에 거부된 액션과 두 가능성). 오류가 아니라 안내다 — `upgrade`에 방법이 온다:
+  - 빠른 생성 스택으로 연결(`stackId` 있음): `{ "method": "STACK", "stackName": "CloudCostInsight-…", "consoleUrl": "https://console.aws.amazon.com/cloudformation/home?region=<스택이 있는 리전>…", "templateUrl": "https://…/customer-readonly-role.yaml", "permissionPolicy": null, "steps": [ … ] }`
+    (리전·스택 이름은 저장된 스택 ARN에서 읽는다. 수집 리전과 다를 수 있다)
+  - 직접 만든 Role(`PUT …/role`): `{ "method": "MANUAL_ROLE", "stackName": null, "consoleUrl": "https://console.aws.amazon.com/iam/home#/roles/details/<Role 이름>", "templateUrl": null, "permissionPolicy": { …7개 액션 정책 JSON… }, "steps": [ … ] }`
+  1시간마다 다시 확인해, 권한이 생겼으면 `OK`·`permissionVersion: 2`가 된다. 서버 낭비(`items`)와 연결 상태에는 영향이 없다.
 
 ## 4-1. 비용 시뮬레이터 (이슈 #31, ADR-012)
 ### `POST /aws/accounts/{accountId}/simulations?currency=KRW|USD` — S08 · S08-2

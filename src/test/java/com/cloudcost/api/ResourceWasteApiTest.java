@@ -9,19 +9,28 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.cloudcost.IntegrationTestBase;
 import com.cloudcost.application.error.AwsAccessException;
 import com.cloudcost.application.error.AwsAccessException.Category;
+import com.cloudcost.application.port.AccountResourceRepository;
+import com.cloudcost.application.port.AwsAccountRepository;
+import com.cloudcost.domain.account.AwsAccount;
 import com.cloudcost.domain.resource.AwsResource;
+import com.cloudcost.domain.resource.ResourceScan;
 import com.cloudcost.domain.resource.ResourceType;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
 /** 방치 리소스·잊힌 리전 (ADR-020). NOW = 2026-10-08 03:00Z, 연결 리전 ap-northeast-2 */
 class ResourceWasteApiTest extends IntegrationTestBase {
+
+    @Autowired AwsAccountRepository accounts;
+    @Autowired AccountResourceRepository resourceRepository;
 
     private String accountId;
 
@@ -97,16 +106,24 @@ class ResourceWasteApiTest extends IntegrationTestBase {
 
     @Test
     void 이전_템플릿이라_권한이_없으면_오류_대신_스택_업데이트_방법을_준다() throws Exception {
+        // 빠른 생성 스택은 SNS 토픽 리전(여기서는 수집 리전과 다른 us-east-1)에 만들어진다
+        AwsAccount account = accounts.findByOwnerIdAndId(owner, UUID.fromString(accountId)).orElseThrow();
+        account.linkStack("arn:aws:cloudformation:us-east-1:123456789012:stack/CloudCostInsight-abc/1f2e3d4c", NOW);
+        accounts.save(account);
         aws.resourceError = new AwsAccessException(Category.PERMISSION_DENIED, "UnauthorizedOperation",
                 "ec2:DescribeRegions", "권한이 없습니다.");
 
         JsonNode r = resources().at("/resources");
         assertThat(r.at("/scan/status").asText()).isEqualTo("PERMISSION_UPGRADE_REQUIRED");
         assertThat(r.at("/scan/permissionVersion").asInt()).isEqualTo(1);
-        assertThat(r.at("/scan/message").asText()).contains("권한 업데이트");
-        assertThat(r.at("/upgrade/stackName").asText()).startsWith("CloudCost");
+        // v1이라고 단정하지 않고 거부 정책 가능성도 알린다
+        assertThat(r.at("/scan/message").asText()).contains("ec2:DescribeRegions").contains("스택을 업데이트")
+                .contains("SCP");
+        assertThat(r.at("/upgrade/method").asText()).isEqualTo("STACK");
+        assertThat(r.at("/upgrade/stackName").asText()).isEqualTo("CloudCostInsight-abc");
         assertThat(r.at("/upgrade/templateUrl").asText()).endsWith("customer-readonly-role.yaml");
-        assertThat(r.at("/upgrade/consoleUrl").asText()).contains("cloudformation").contains("ap-northeast-2");
+        assertThat(r.at("/upgrade/consoleUrl").asText()).contains("cloudformation").contains("region=us-east-1");
+        assertThat(r.at("/upgrade/permissionPolicy").isNull()).isTrue();
         assertThat(r.at("/items").size()).isZero();
         assertThat(r.at("/notes/0").asText()).startsWith("권한 업데이트 필요");
 
@@ -118,6 +135,65 @@ class ResourceWasteApiTest extends IntegrationTestBase {
         aws.resourceError = null;
         clock.set(NOW.plus(Duration.ofHours(1)));
         assertThat(resources().at("/resources/scan/status").asText()).isEqualTo("OK");
+    }
+
+    @Test
+    void 직접_만든_Role이면_스택_대신_Role_정책_수정_방법을_준다() throws Exception {
+        aws.resourceError = new AwsAccessException(Category.PERMISSION_DENIED, "UnauthorizedOperation",
+                "ec2:DescribeVolumes", "권한이 없습니다.");
+
+        JsonNode u = resources().at("/resources/upgrade");
+        assertThat(u.at("/method").asText()).isEqualTo("MANUAL_ROLE");
+        assertThat(u.at("/stackName").isNull()).isTrue();
+        assertThat(u.at("/consoleUrl").asText()).contains("/iam/");
+        assertThat(u.at("/permissionPolicy/Statement/0/Action").toString())
+                .contains("ec2:DescribeVolumes").contains("elasticloadbalancing:DescribeLoadBalancers");
+    }
+
+    @Test
+    void 전에_확인된_권한이_거부되면_거부_정책을_확인하라고_안내한다() throws Exception {
+        resources();
+        aws.resourceError = new AwsAccessException(Category.PERMISSION_DENIED, "AccessDenied",
+                "ec2:DescribeRegions", "권한이 없습니다.");
+        clock.set(NOW.plus(Duration.ofHours(6)));
+
+        String message = resources().at("/resources/scan/message").asText();
+        assertThat(message).contains("전에는 확인됐던 권한").contains("SCP");
+    }
+
+    @Test
+    void 확장_수집의_호출_수를_실패해도_남긴다() throws Exception {
+        aws.lbMetricCalls = 3;
+        resources();
+        ResourceScan ok = resourceRepository.findScanByOwnerIdAndAccountId(owner, UUID.fromString(accountId))
+                .orElseThrow();
+        assertThat(ok.describeCount()).isEqualTo(10);
+        assertThat(ok.cloudWatchCount()).isEqualTo(3);
+
+        aws.regionErrors.put("us-east-1", new AwsAccessException(Category.THROTTLED, "Throttling",
+                "ec2:DescribeVolumes", "요청이 너무 많아요."));
+        clock.set(NOW.plus(Duration.ofHours(6)));
+        assertThat(resources().at("/resources/scan/status").asText()).isEqualTo("FAILED");
+        ResourceScan failed = resourceRepository.findScanByOwnerIdAndAccountId(owner, UUID.fromString(accountId))
+                .orElseThrow();
+        assertThat(failed.describeCount()).isEqualTo(10);
+        assertThat(failed.cloudWatchCount()).isEqualTo(3);
+    }
+
+    @Test
+    void 단가를_모르는_항목이_있으면_합계를_내지_않는다() throws Exception {
+        aws.regionResources.put("ap-northeast-2", List.of(
+            new AwsResource(ResourceType.VOLUME, "vol-odd", null, "ap-northeast-2", "future-type", 10, false,
+                daysAgo(20), null, null),
+            new AwsResource(ResourceType.ADDRESS, "eipalloc-free", null, "ap-northeast-2", null, null, false, null, null,
+                null)));
+        aws.regionResources.remove("us-east-1");
+
+        JsonNode r = resources().at("/resources");
+        assertThat(r.at("/totalMonthlyCost").isNull()).isTrue();
+        assertThat(r.at("/items/0/monthlyCost").isNull() || r.at("/items/1/monthlyCost").isNull()).isTrue();
+        assertThat(r.at("/items").findValuesAsText("priceNote")).anyMatch(n -> n.contains("future-type"));
+        assertThat(r.at("/notes").toString()).contains("합계를 내지 않았어요");
     }
 
     @Test

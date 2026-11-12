@@ -44,7 +44,7 @@
 
 ## 비용 (고객 계정)
 - STS·Describe 호출: 무료. CloudWatch `GetMetricStatistics`: 월 100만 건 무료(계정 전체 공유), 초과 시 1,000건당 $0.01.
-- 확장 수집(ADR-020)은 6시간에 한 번, 리전마다 Describe 5건 안팎 + LB당 GetMetricStatistics 1건. Describe 호출은 고객 CloudTrail에 남는다 (추가 Trail을 쓰는 고객은 10만 건당 약 $2).
+- 확장 수집(ADR-020)은 6시간에 한 번, 리전마다 Describe 5건 안팎 + LB당 GetMetricStatistics 1건(ALB는 요청 0이면 1건 더). 시도한 호출 수는 `account_resource_scans`에 남긴다. Describe 호출은 고객 CloudTrail에 남는다 (추가 Trail을 쓰는 고객은 10만 건당 약 $2).
 - 계정당 1시간에 1회만 호출하고 호출 수를 `sync_jobs.cw_request_count`에 남긴다 (ADR-002).
 - `GetMetricData`, Cost Explorer는 쓰지 않는다.
 
