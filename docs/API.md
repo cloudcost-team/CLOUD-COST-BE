@@ -440,9 +440,13 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
     "afterSimulation": null },
   "wasteRatio": { "status": "UNAVAILABLE", "reason": "전체 낭비 비율을 구하려면 … 계산하지 않아요.",
                   "referenceSource": "Flexera 2026 State of the Cloud", "referenceDescription": "…", "referenceAverage": 29 },
-  "monthlySpend": { "status": "OK", "monthlyCost": 312000, "monthlyCostUsd": 234.05, "position": "WITHIN", "barPositionPercent": 33.5,
-                    "range": { "source": "SpendArk Cloud Cost Benchmark 2026", "description": "1~10명 팀의 월 클라우드 지출 범위",
-                               "min": 133309, "max": 666545, "minUsd": 100, "maxUsd": 500 },
+  "monthlySpend": { "status": "OK", "monthlyCost": 263824, "monthlyCostUsd": 197.90, "monthlyVcpuHours": 4320.0, "servers": 3,
+                    "teamsUsingLessPercent": 35.0, "position": "WITHIN", "barPositionPercent": 60.9,
+                    "range": { "source": "Azure Public Dataset V2", "description": "…", "servers": 3, "label": "서버 3대",
+                               "min": 144454, "max": 340378, "minUsd": 108.36, "maxUsd": 255.33,
+                               "minVcpuHours": 2365.3, "maxVcpuHours": 5573.6, "medianVcpuHours": 4320.0,
+                               "model": { "method": "QUANTILE_REGRESSION", "sampleSize": 5452, "minServers": 1, "maxServers": 50,
+                                          "testSize": 1118, "improvementPercent": 15.3, "middleHalfCoveragePercent": 51.9 } },
                     "afterSimulation": null },
   "freshness": { … }, "notes": [ … ], "asOf": "…" }
 ```
@@ -460,13 +464,20 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
     `teamsPercent`를 모두 더하면 100이다. 원본이 아니라 **백분위 표로 어림한 값**(`approximate: true`)이라 칸마다 5%p 정도 틀릴 수 있다.
     우리 비율이 드는 칸은 `ours`·`oursBucketIndex`, 추천 적용 후는 `afterSimulation`·`afterSimulationBucketIndex`. 비교 구간이나 백분위 표가 없으면 `null`.
 - **② 전체 낭비 비율**(`wasteRatio`): 미연결 볼륨·스냅샷·고정 IP·로드밸런서를 지금 권한으로 볼 수 없어 항상 `UNAVAILABLE` + 사유. Flexera 평균은 참고값이다.
-- **③ 월 지출**(`monthlySpend`): 월말 예상(§2-1, USD)을 비교 범위($100~$500)와 견줘 `BELOW`(미만)·`WITHIN`·`ABOVE`(초과). 범위는 요청 통화로도 준다.
-  `monthlyCostUsd`는 범위(`minUsd`·`maxUsd`)와 같은 달러 금액, `barPositionPercent`는 범위 막대 위 위치(하한 0 ~ 상한 100, 범위 밖이면 0 또는 100에 붙고 `position`으로 구분).
-  `afterSimulation`에도 `monthlyCostUsd`·`barPositionPercent`가 있다.
-  월말 예상이 없으면 `status: "NO_FORECAST"`, 금액·위치 `null`. 기록이 14일 미만이어도 월말 예상이 있으면 비교한다.
-  월말 예상의 안내(단가를 모르는 서버를 뺐다는 등 §2-1 `notes`)도 이 응답 `notes`에 함께 준다 (같은 문구는 한 번만).
+- **③ 규모 대비 월 지출**(`monthlySpend`): 우리 서버 대수와 같은 규모 팀들과 **한 달 사용량(vCPU-시간 = vCPU × 켜진 시간)**으로 순위를 매긴다 (ADR-013).
+  - 같은 규모 팀의 사용량 분포는 **분위 회귀 모델**이 서버 대수로 예측한다 (`range.model`). Azure 원본 구독 5,452곳(서버 1~50대)으로
+    `scripts/benchmark/AzureSpend.java`가 학습했고, 학습에 쓰지 않은 1,118곳으로 검증해 기존 구간별 백분위 표보다 오차(pinball loss)가 15.3% 작고
+    예측한 25~75번째 범위에 실제 값이 51.9% 들어왔다. 서버 1~50대 밖이면 비교하지 않는다. `sizeBand`는 ①에만 쓰고 월 지출은 우리 서버 대수 그대로다.
+  - 우리 사용량 `monthlyVcpuHours` = Σ 코어 구간 vCPU(2·4·8·24, 24 초과는 32) × 최근 14일 켜진 시간(①과 같은 구간) × 30 ÷ 14. `servers`는 센 서버 수
+    (14일 중 1시간 이상 켜졌고 vCPU를 아는 서버).
+  - `teamsUsingLessPercent`: 같은 규모 팀 중 우리보다 사용량이 **확실히 적은** 팀(%, 5% 단위 하한. 같은 사용량은 넣지 않는다).
+  - `range`: 모델이 예측한 같은 규모 팀의 가운데 절반(25~75번째 백분위) 사용량을 **우리 팀의 vCPU-시간당 비용**(월말 예상 ÷ 우리 사용량)으로 환산한 금액.
+    비교 자료에 가격이 없어 금액이 아니라 사용량으로 순위를 매기므로, 단가 가정이 순위에 영향을 주지 않는다. `position`·`barPositionPercent`는 월말 예상을 이 범위와 견준 값.
+  - `status`: `OK` · `NO_FORECAST`(월말 예상 없음, 금액 `null`) · `INSUFFICIENT_HISTORY`(기록 14일 미만, 금액만 줌) ·
+    `NOT_COMPARABLE`(켜진 서버가 없거나 1~50대 밖, 금액·사용량만 줌). OK가 아니면 `range`·순위·위치는 `null`.
+  월 지출은 EC2 온디맨드 추정이라 EBS·전송 비용이 빠진다는 안내와 월말 예상의 안내(§2-1 `notes`)도 이 응답 `notes`에 함께 준다 (같은 문구는 한 번만).
 - **`recommendationIds`**(쉼표 구분 또는 여러 번)를 주면 `afterSimulation`을 채운다: 과다 사양 추천을 적용한 서버는 적정, 유휴 추천(중지)을 적용한 서버는 판단 대상에서 빠진다고 보고,
-  월 지출은 §4-1 시뮬레이터와 같은 계산(증가율 0)의 적용 후 금액으로 위치를 다시 잡는다. 모르는 id는 400 `UNKNOWN_RECOMMENDATION`.
+  월 지출은 §4-1 시뮬레이터와 같은 계산(증가율 0)의 적용 후 금액을 같은 범위와 견줘 위치를 다시 잡는다. 모르는 id는 400 `UNKNOWN_RECOMMENDATION`.
   `selectedMonthlySavings`는 고른 추천의 월 절감액 합으로 §4-1 응답의 같은 이름 값과 같다 (추천을 주지 않으면 `null`). 절감액 문구를 위해 시뮬레이션을 따로 부르지 않아도 된다.
 - 최상위 `status`: `OK` 또는 `INSUFFICIENT_HISTORY`(+ `availableAt`).
 - 오류: §2와 같다.

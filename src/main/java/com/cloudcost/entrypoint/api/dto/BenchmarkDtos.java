@@ -7,6 +7,7 @@ import com.cloudcost.application.BenchmarkService.SpendSection;
 import com.cloudcost.application.CurrencyService.Resolved;
 import com.cloudcost.domain.benchmark.BenchmarkReference;
 import com.cloudcost.domain.benchmark.BenchmarkReference.SizeBand;
+import com.cloudcost.domain.benchmark.SpendBenchmark;
 import com.cloudcost.domain.benchmark.TeamBenchmark;
 import com.cloudcost.domain.benchmark.TeamBenchmark.DistributionBucket;
 import com.cloudcost.domain.benchmark.TeamBenchmark.Ratio;
@@ -166,13 +167,39 @@ public final class BenchmarkDtos {
             String referenceDescription,
             @Schema(description = "참고 평균 (%)", example = "29") BigDecimal referenceAverage) {}
 
+    @Schema(description = "비교 모델 정보 (학습·검증 결과)")
+    public record SpendModelDto(
+            @Schema(example = "QUANTILE_REGRESSION") String method,
+            @Schema(description = "학습한 팀(구독) 수", example = "5452") int sampleSize,
+            @Schema(description = "학습한 서버 대수 범위", example = "1") int minServers,
+            @Schema(example = "50") int maxServers,
+            @Schema(description = "검증에 쓴 시험용 팀 수", example = "1118") int testSize,
+            @Schema(description = "기존 방식(서버 대수 구간별 백분위 표)보다 시험용 오차(pinball loss)가 줄어든 비율 (%)", example = "15.3")
+                    BigDecimal improvementPercent,
+            @Schema(description = "예측한 일반 범위(25~75번째)에 시험용 실제 값이 들어온 비율 (%, 잘 맞으면 50 근처)", example = "51.9")
+                    BigDecimal middleHalfCoveragePercent) {
+
+        static SpendModelDto of(BenchmarkReference.SpendModel m) {
+            return new SpendModelDto("QUANTILE_REGRESSION", m.sampleSize(), m.minServers(), m.maxServers(),
+                    m.validation().testSize(), m.validation().improvementPercent(),
+                    m.validation().middleHalfCoveragePercent());
+        }
+    }
+
+    @Schema(description = "같은 규모(우리 서버 대수) 팀의 일반 범위 (가운데 절반 = 25~75번째 백분위). 금액은 모델이 예측한 사용량을 우리 팀의 vCPU-시간당 비용으로 환산한 값")
     public record SpendRangeDto(
             String source,
             String description,
+            @Schema(description = "비교한 서버 대수 (우리 서버 수)", example = "2") int servers,
+            @Schema(example = "서버 2대") String label,
             @Schema(description = "범위 하한 (currency 기준)") BigDecimal min,
             @Schema(description = "범위 상한 (currency 기준)") BigDecimal max,
-            @Schema(example = "100") BigDecimal minUsd,
-            @Schema(example = "500") BigDecimal maxUsd) {}
+            @Schema(example = "8.54") BigDecimal minUsd,
+            @Schema(example = "25.36") BigDecimal maxUsd,
+            @Schema(description = "범위 하한 사용량 (vCPU-시간)", example = "1165.8") BigDecimal minVcpuHours,
+            @Schema(description = "범위 상한 사용량 (vCPU-시간)", example = "3463.4") BigDecimal maxVcpuHours,
+            @Schema(description = "같은 규모 팀 사용량 중앙값 (vCPU-시간)", example = "2880.0") BigDecimal medianVcpuHours,
+            SpendModelDto model) {}
 
     public record SpendAfterDto(
             @Schema(description = "적용 후 월 비용 (currency 기준)") BigDecimal monthlyCost,
@@ -181,26 +208,41 @@ public final class BenchmarkDtos {
             @Schema(description = "범위 막대 위 위치 (%, 0=하한 100=상한, 범위 밖이면 0 또는 100)", example = "0.0")
                     BigDecimal barPositionPercent) {}
 
-    @Schema(description = "③ 월 지출 (S09-4)")
+    @Schema(description = "③ 규모 대비 월 지출 (S09-4)")
     public record SpendDto(
-            @Schema(description = "OK | NO_FORECAST") String status,
-            @Schema(description = "월말 예상 (currency 기준)", example = "312000") BigDecimal monthlyCost,
-            @Schema(description = "월말 예상 (USD, 범위 minUsd·maxUsd와 같은 단위)", example = "197.90") BigDecimal monthlyCostUsd,
-            @Schema(description = "BELOW(범위 아래) | WITHIN | ABOVE. NO_FORECAST면 null") String position,
-            @Schema(description = "범위 막대 위 우리 위치 (%, 0=하한 100=상한, 범위 밖이면 0 또는 100). NO_FORECAST면 null",
+            @Schema(description = "OK | NO_FORECAST | INSUFFICIENT_HISTORY(기록 14일 미만) | NOT_COMPARABLE(켜진 서버나 맞는 구간 자료가 없음)")
+                    String status,
+            @Schema(description = "월말 예상 (currency 기준)", example = "52635") BigDecimal monthlyCost,
+            @Schema(description = "월말 예상 (USD, 범위 minUsd·maxUsd와 같은 단위)", example = "36.10") BigDecimal monthlyCostUsd,
+            @Schema(description = "한 달로 환산한 우리 사용량 (vCPU-시간). INSUFFICIENT_HISTORY·NO_FORECAST면 null", example = "2880.0")
+                    BigDecimal monthlyVcpuHours,
+            @Schema(description = "사용량을 센 서버 수", example = "2") Integer servers,
+            @Schema(description = "같은 규모 팀 중 우리보다 확실히 적게 쓰는 팀 (%, 5% 단위 하한). OK가 아니면 null", example = "60.0")
+                    BigDecimal teamsUsingLessPercent,
+            @Schema(description = "BELOW(범위 아래) | WITHIN | ABOVE. OK가 아니면 null") String position,
+            @Schema(description = "범위 막대 위 우리 위치 (%, 0=하한 100=상한, 범위 밖이면 0 또는 100). OK가 아니면 null",
                     example = "24.5") BigDecimal barPositionPercent,
-            SpendRangeDto range,
-            @Schema(description = "추천을 적용한 뒤 (recommendationIds가 없으면 null)") SpendAfterDto afterSimulation) {
+            @Schema(description = "OK가 아니면 null") SpendRangeDto range,
+            @Schema(description = "추천을 적용한 뒤 (recommendationIds가 없거나 OK가 아니면 null)") SpendAfterDto afterSimulation) {
 
         static SpendDto of(SpendSection s, BenchmarkReference.Spend ref, DisplayCurrency d) {
-            SpendRangeDto range = new SpendRangeDto(ref.source(), ref.description(), d.cost(ref.minUsd()),
-                    d.cost(ref.maxUsd()), ref.minUsd(), ref.maxUsd());
+            SpendRangeDto range = s.range() == null ? null
+                    : new SpendRangeDto(ref.source(), ref.description(), s.usage().servers(),
+                            "서버 " + s.usage().servers() + "대", d.cost(s.range().minUsd()), d.cost(s.range().maxUsd()),
+                            usd(s.range().minUsd()), usd(s.range().maxUsd()),
+                            SpendBenchmark.at(s.table(), SpendBenchmark.LOW_PERCENTILE),
+                            SpendBenchmark.at(s.table(), SpendBenchmark.HIGH_PERCENTILE),
+                            SpendBenchmark.at(s.table(), SpendBenchmark.MEDIAN_PERCENTILE),
+                            SpendModelDto.of(ref.model()));
             SpendAfterDto after = s.afterUsd() == null ? null
                     : new SpendAfterDto(d.cost(s.afterUsd()), usd(s.afterUsd()), s.afterPosition().name(),
-                            TeamBenchmark.barPositionPercent(s.afterUsd(), ref));
+                            SpendBenchmark.barPositionPercent(s.afterUsd(), s.range()));
             return new SpendDto(s.status().name(), d.cost(s.monthEndUsd()), usd(s.monthEndUsd()),
+                    s.usage() == null ? null : s.usage().vcpuHours(),
+                    s.usage() == null ? null : s.usage().servers(),
+                    s.teamsUsingLessPercent(),
                     s.position() == null ? null : s.position().name(),
-                    s.monthEndUsd() == null ? null : TeamBenchmark.barPositionPercent(s.monthEndUsd(), ref), range, after);
+                    s.range() == null ? null : SpendBenchmark.barPositionPercent(s.monthEndUsd(), s.range()), range, after);
         }
 
         /** 달러 표시 금액 (센트 단위) */

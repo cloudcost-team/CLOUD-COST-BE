@@ -2,6 +2,7 @@ package com.cloudcost.adapter.benchmark;
 
 import com.cloudcost.application.port.BenchmarkReferenceSource;
 import com.cloudcost.domain.benchmark.BenchmarkReference;
+import com.cloudcost.domain.benchmark.SpendBenchmark;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
@@ -36,11 +37,8 @@ class JsonBenchmarkReferenceSource implements BenchmarkReferenceSource {
             if (ref.oversized() == null || ref.waste() == null || ref.spend() == null) {
                 throw new IllegalStateException("벤치마킹 기준 파일에 oversized·waste·spend가 모두 있어야 합니다: " + resource);
             }
-            BenchmarkReference.Spend spend = ref.spend();
-            if (spend.minUsd() == null || spend.maxUsd() == null || spend.minUsd().compareTo(spend.maxUsd()) > 0) {
-                throw new IllegalStateException("spend에 minUsd·maxUsd가 있어야 하고 minUsd ≤ maxUsd여야 합니다: " + resource);
-            }
             validateBands(ref.oversized().bands(), resource);
+            validateSpendModel(ref.spend().model(), resource);
             return ref;
         } catch (IOException e) {
             throw new UncheckedIOException("벤치마킹 기준 파일을 읽지 못했습니다: " + resource, e);
@@ -82,6 +80,49 @@ class JsonBenchmarkReferenceSource implements BenchmarkReferenceSource {
                 }
             }
             prevBand = band;
+        }
+    }
+
+    /**
+     * spend 모델이 가질 수 있는 가장 큰 서버 대수. reference.json의 학습 범위(1~50대)에 맞춘 값이라 학습 범위를 넓히면 같이 올린다.
+     * 상한이 없으면 아래 검사 루프가 maxServers번 돌아 큰 값이 들어온 파일에서 시작이 끝나지 않는다.
+     */
+    static final int MAX_MODEL_SERVERS = 50;
+
+    /**
+     * spend 모델은 서버 대수 범위(1대 이상, min ≤ max)와 검증 결과가 있고, 백분위별 계수 3개씩이 백분위 오름차순으로 있으며
+     * 일반 범위·중앙값에 쓰는 25·50·75번째를 포함해야 한다. 학습 범위 모든 서버 대수에서 예측값이 유한해야 한다.
+     */
+    private static void validateSpendModel(BenchmarkReference.SpendModel model, Resource resource) {
+        if (model == null || model.minServers() < 1 || model.minServers() > model.maxServers()
+            || model.maxServers() > MAX_MODEL_SERVERS || model.sampleSize() <= 0
+            || model.validation() == null || model.validation().pinballLoss() == null
+            || model.validation().baselinePinballLoss() == null || model.validation().baselinePinballLoss().signum() <= 0
+            || model.validation().middleHalfCoveragePercent() == null) {
+            throw new IllegalStateException("spend.model에 서버 대수 범위(1~" + MAX_MODEL_SERVERS
+                + "대)·sampleSize·검증 결과가 있어야 합니다: " + resource);
+        }
+        List<BenchmarkReference.QuantileCoefficients> qs = model.quantiles();
+        for (int i = 0; i < qs.size(); i++) {
+            BenchmarkReference.QuantileCoefficients q = qs.get(i);
+            if (q == null || q.percentile() == null || q.coefficients().size() != 3
+                || q.coefficients().stream().anyMatch(java.util.Objects::isNull) || !inPercentRange(q.percentile())
+                || (i > 0 && q.percentile().compareTo(qs.get(i - 1).percentile()) <= 0)) {
+                throw new IllegalStateException("spend.model.quantiles는 백분위 0~100 오름차순이고 계수가 3개씩이어야 합니다: " + resource);
+            }
+        }
+        for (BigDecimal needed : List.of(SpendBenchmark.LOW_PERCENTILE, SpendBenchmark.MEDIAN_PERCENTILE,
+            SpendBenchmark.HIGH_PERCENTILE)) {
+            if (qs.stream().noneMatch(q -> q.percentile().compareTo(needed) == 0)) {
+                throw new IllegalStateException("spend.model.quantiles에 25·50·75번째 백분위가 있어야 합니다: " + resource);
+            }
+        }
+        for (int servers = model.minServers(); servers <= model.maxServers(); servers++) {
+            boolean finite = model.table(servers).orElseThrow().stream()
+                .allMatch(p -> p.vcpuHours().signum() > 0);
+            if (!finite) {
+                throw new IllegalStateException("spend.model이 서버 " + servers + "대에서 0 이하를 예측합니다: " + resource);
+            }
         }
     }
 

@@ -79,10 +79,31 @@ class BenchmarkApiTest extends IntegrationTestBase {
         JsonNode spend = body.at("/monthlySpend");
         assertThat(spend.at("/status").asText()).isEqualTo("OK");
         assertThat(spend.at("/monthlyCost").decimalValue()).isEqualByComparingTo("197.90");
-        assertThat(spend.at("/position").asText()).isEqualTo("WITHIN");
         assertThat(spend.at("/monthlyCostUsd").decimalValue()).isEqualByComparingTo("197.90");
-        assertThat(spend.at("/barPositionPercent").decimalValue()).as("(197.904 − 100) ÷ 400").isEqualByComparingTo("24.5");
-        assertThat(spend.at("/range/minUsd").decimalValue()).isEqualByComparingTo("100");
+        assertThat(spend.at("/servers").asInt()).isEqualTo(3);
+        assertThat(spend.at("/monthlyVcpuHours").decimalValue())
+                .as("2vCPU 3대 × 336시간 × 30일 ÷ 14일").isEqualByComparingTo("4320.0");
+        assertThat(spend.at("/teamsUsingLessPercent").decimalValue())
+                .as("모델이 예측한 서버 3대 표에서 4320보다 확실히 적은 가장 큰 백분위는 35% (4203.6). 40%는 4320으로 같아 넣지 않는다")
+                .isEqualByComparingTo("35.0");
+        assertThat(spend.at("/range/source").asText()).isEqualTo("Azure Public Dataset V2");
+        assertThat(spend.at("/range/servers").asInt()).isEqualTo(3);
+        assertThat(spend.at("/range/label").asText()).isEqualTo("서버 3대");
+        assertThat(spend.at("/range/minVcpuHours").decimalValue()).isEqualByComparingTo("2365.3");
+        assertThat(spend.at("/range/medianVcpuHours").decimalValue()).as("2vCPU 3대를 한 달 내내").isEqualByComparingTo("4320.0");
+        assertThat(spend.at("/range/maxVcpuHours").decimalValue()).isEqualByComparingTo("5573.6");
+        assertThat(spend.at("/range/minUsd").decimalValue())
+                .as("2365.3 × (197.904 ÷ 4320) — 우리 vCPU-시간당 비용으로 환산").isEqualByComparingTo("108.36");
+        assertThat(spend.at("/range/maxUsd").decimalValue()).isEqualByComparingTo("255.33");
+        assertThat(spend.at("/position").asText()).isEqualTo("WITHIN");
+        assertThat(spend.at("/barPositionPercent").decimalValue()).isEqualByComparingTo("60.9");
+        JsonNode model = spend.at("/range/model");
+        assertThat(model.at("/method").asText()).isEqualTo("QUANTILE_REGRESSION");
+        assertThat(model.at("/sampleSize").asInt()).isEqualTo(5452);
+        assertThat(model.at("/maxServers").asInt()).isEqualTo(50);
+        assertThat(model.at("/testSize").asInt()).isEqualTo(1118);
+        assertThat(model.at("/improvementPercent").decimalValue()).as("구간별 백분위 표보다 시험용 오차 감소").isEqualByComparingTo("15.3");
+        assertThat(model.at("/middleHalfCoveragePercent").decimalValue()).isEqualByComparingTo("51.9");
         assertThat(body.at("/selectedMonthlySavings").isNull()).as("추천을 고르지 않으면 null").isTrue();
 
         JsonNode distribution = oversized.at("/distribution");
@@ -116,6 +137,19 @@ class BenchmarkApiTest extends IntegrationTestBase {
     }
 
     @Test
+    void 월말_예상이_0원이면_서버_수가_아니라_금액_때문에_비교하지_않았다고_안내한다() throws Exception {
+        // 9/24~9/30에만 켜져 있었다: 최근 14일 사용량은 있지만 이번 달(10월) 비용이 없어 월말 예상이 0원이다
+        aws.instances.add(Fixtures.instance("i-web", "t3.medium", "stopped", Instant.parse("2026-09-01T00:00:00Z")));
+        aws.addCpuHours("i-web", WINDOW_START, 156, 50, 90); // 9/30 24시(KST)까지
+
+        JsonNode body = benchmark("");
+
+        JsonNode spend = body.at("/monthlySpend");
+        assertThat(spend.at("/status").asText()).isEqualTo("NOT_COMPARABLE");
+        assertThat(body.at("/notes").toString()).contains("월말 예상 비용이 0원이라").doesNotContain("팀으로 학습해 서버");
+    }
+
+    @Test
     void 추천을_주면_적용_후_위치도_준다() throws Exception {
         threeServers();
         JsonNode body = benchmark("&recommendationIds=i-batch:IDLE,i-api:OVERSIZED");
@@ -126,7 +160,7 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(after.at("/oversizedCount").asInt()).isZero();
         assertThat(body.at("/monthlySpend/afterSimulation/monthlyCost").decimalValue())
                 .as("197.904 − 118.26").isEqualByComparingTo("79.64");
-        assertThat(body.at("/monthlySpend/afterSimulation/position").asText()).isEqualTo("BELOW");
+        assertThat(body.at("/monthlySpend/afterSimulation/position").asText()).as("범위 하한 $108.36 아래").isEqualTo("BELOW");
         assertThat(body.at("/monthlySpend/afterSimulation/monthlyCostUsd").decimalValue()).isEqualByComparingTo("79.64");
         assertThat(body.at("/monthlySpend/afterSimulation/barPositionPercent").decimalValue()).isEqualByComparingTo("0");
         assertThat(body.at("/oversizedRatio/distribution/afterSimulationBucketIndex").asInt()).as("적용 후 0%").isZero();
@@ -161,6 +195,11 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(oversized.at("/sizeBands/0/matchesOurs").asBoolean()).isTrue();
         assertThat(oversized.at("/sizeBands/1/matchesOurs").asBoolean()).isFalse();
         assertThat(body.at("/monthlySpend/status").asText()).isEqualTo("OK");
+        assertThat(body.at("/monthlySpend/range/label").asText()).isEqualTo("서버 2대");
+        assertThat(body.at("/monthlySpend/monthlyVcpuHours").decimalValue())
+                .as("2vCPU 2대 한 달 내내 = 2880 → 서버 2대 표에서 확실히 적은 가장 큰 백분위 40% (2876.8)").isEqualByComparingTo("2880.0");
+        assertThat(body.at("/monthlySpend/teamsUsingLessPercent").decimalValue()).isEqualByComparingTo("40.0");
+        assertThat(body.at("/monthlySpend/position").asText()).as("25~75번째 1166.3~3462.8 안").isEqualTo("WITHIN");
     }
 
     @Test
@@ -175,6 +214,9 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(oversized.at("/ours/judgedCount").asInt()).isEqualTo(21);
         assertThat(oversized.at("/matchedSizeBand").isNull()).isTrue();
         assertThat(oversized.at("/reference/dataAvailable").asBoolean()).isFalse();
+        JsonNode spend = benchmark("").at("/monthlySpend");
+        assertThat(spend.at("/status").asText()).as("월 지출 모델은 서버 1~50대를 학습해 21대도 비교한다").isEqualTo("OK");
+        assertThat(spend.at("/range/label").asText()).isEqualTo("서버 21대");
     }
 
     @Test
@@ -190,6 +232,7 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(oversized.at("/reference/sizeBand").asText()).isEqualTo("3-20");
         assertThat(oversized.at("/reference/averageRatio").decimalValue()).isEqualByComparingTo("42");
         assertThat(body.at("/notes").toString()).contains("우리는 서버 2대지만 서버 3~20대 팀 자료와 견줬어요");
+        assertThat(body.at("/monthlySpend/range/servers").asInt()).as("월 지출은 구간이 아니라 우리 서버 대수 그대로").isEqualTo(2);
 
         getJson("/api/v1/aws/accounts/" + accountId + "/benchmark?sizeBand=4-9")
                 .andExpect(status().isBadRequest())
@@ -234,6 +277,10 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(shortPeriod.at("/availableAt").asText()).isEqualTo("2026-10-15");
         assertThat(shortPeriod.at("/oversizedRatio/status").asText()).isEqualTo("INSUFFICIENT_HISTORY");
         assertThat(shortPeriod.at("/oversizedRatio/ours").isNull()).isTrue();
-        assertThat(shortPeriod.at("/monthlySpend/status").asText()).as("월 지출은 기록이 짧아도 비교").isEqualTo("OK");
+        assertThat(shortPeriod.at("/monthlySpend/status").asText())
+                .as("사용량을 14일로 재므로 월 지출 순위도 기록 부족").isEqualTo("INSUFFICIENT_HISTORY");
+        assertThat(shortPeriod.at("/monthlySpend/monthlyCost").isNull()).as("금액은 보여 준다").isFalse();
+        assertThat(body.at("/monthlySpend/status").asText()).isEqualTo("OK");
+        assertThat(body.at("/monthlySpend/servers").asInt()).isEqualTo(4);
     }
 }

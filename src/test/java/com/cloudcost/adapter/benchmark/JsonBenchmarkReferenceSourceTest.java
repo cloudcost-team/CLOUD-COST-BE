@@ -15,14 +15,24 @@ class JsonBenchmarkReferenceSourceTest {
     private static final String TEMPLATE = """
         {"oversized":{"source":"x","description":"d","bands":%s},
          "waste":{"source":"w","description":"d","averagePercent":20},
-         "spend":{"source":"s","description":"d","minUsd":50,"maxUsd":300}}
+         "spend":%s}
         """;
+    private static final String SPEND_OK = """
+        {"source":"s","description":"d","model":{"minServers":1,"maxServers":50,"sampleSize":10,
+         "validation":{"trainSize":8,"testSize":2,"pinballLoss":0.3,"baselinePinballLoss":0.4,"baseline":"b","middleHalfCoveragePercent":50},
+         "quantiles":[{"percentile":25,"coefficients":[6,1,0]},{"percentile":50,"coefficients":[7,1,0]},
+                      {"percentile":75,"coefficients":[8,1,0]}]}}""";
     private static final String EMPTY_1_2 =
         "{\"minServers\":1,\"maxServers\":2,\"sampleSize\":0,\"averagePercent\":null,\"medianPercent\":null,\"percentiles\":[]}";
 
     private static BenchmarkReference read(String bands) {
         return JsonBenchmarkReferenceSource.read(
-            new ByteArrayResource(TEMPLATE.formatted(bands).getBytes(StandardCharsets.UTF_8)));
+            new ByteArrayResource(TEMPLATE.formatted(bands, SPEND_OK).getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private static BenchmarkReference readSpend(String spend) {
+        return JsonBenchmarkReferenceSource.read(new ByteArrayResource(
+            TEMPLATE.formatted("[" + EMPTY_1_2 + "]", spend).getBytes(StandardCharsets.UTF_8)));
     }
 
     private static String band(int min, int max, String extra) {
@@ -47,7 +57,15 @@ class JsonBenchmarkReferenceSourceTest {
         assertThat(mid.medianPercent()).isEqualByComparingTo("33");
         assertThat(ref.oversized().bandFor(21)).as("어느 구간에도 안 듦").isEmpty();
         assertThat(ref.waste().averagePercent()).isEqualByComparingTo("29");
-        assertThat(ref.spend().minUsd()).isEqualByComparingTo("100");
+        assertThat(ref.spend().source()).isEqualTo("Azure Public Dataset V2");
+        BenchmarkReference.SpendModel model = ref.spend().model();
+        assertThat(model.sampleSize()).isEqualTo(5452);
+        assertThat(model.quantiles()).hasSize(19);
+        assertThat(model.validation().improvementPercent()).isEqualByComparingTo("15.3");
+        assertThat(model.table(1).orElseThrow()).filteredOn(p -> p.percentile().intValue() == 50)
+            .extracting(BenchmarkReference.UsagePercentile::vcpuHours).as("2vCPU 1대를 한 달 내내")
+            .allSatisfy(v -> assertThat(v).isEqualByComparingTo("1440.0"));
+        assertThat(model.table(51)).as("학습 범위 밖").isEmpty();
     }
 
     @Test
@@ -74,21 +92,22 @@ class JsonBenchmarkReferenceSourceTest {
         assertThatThrownBy(() -> JsonBenchmarkReferenceSource.read(
             new ByteArrayResource("{\"oversized\":{}}".getBytes(StandardCharsets.UTF_8))))
             .isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> JsonBenchmarkReferenceSource.read(new ByteArrayResource(
-            TEMPLATE.formatted("[" + EMPTY_1_2 + "]").replace("\"minUsd\":50,", "").getBytes(StandardCharsets.UTF_8))))
-            .as("spend 범위가 빠지면 조회 때 500이 아니라 시작할 때 실패").isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    void 백분위_표는_0에서_100_사이이고_오름차순이어야_시작한다() {
-        String prefix = ",\"sampleSize\":10,\"averagePercent\":40,\"medianPercent\":30,\"percentiles\":";
-        for (String table : new String[] {
-            "[{\"percentile\":120,\"ratioPercent\":10}]",
-            "[{\"percentile\":50,\"ratioPercent\":-1}]",
-            "[{\"percentile\":75,\"ratioPercent\":10},{\"percentile\":25,\"ratioPercent\":50}]",
-            "[{\"percentile\":25,\"ratioPercent\":50},{\"percentile\":75,\"ratioPercent\":10}]"}) {
-            assertThatThrownBy(() -> read("[" + band(1, 2, prefix + table) + "]"))
-                .as(table).isInstanceOf(IllegalStateException.class);
+    void 월_지출_모델은_25_50_75번째와_계수_3개와_검증_결과가_있어야_시작한다() {
+        assertThat(readSpend(SPEND_OK).spend().model().table(2)).isPresent();
+        String[] bad = {
+            SPEND_OK.replace("{\"percentile\":50,\"coefficients\":[7,1,0]},", ""),
+            SPEND_OK.replace("[7,1,0]", "[7,1]"),
+            SPEND_OK.replace("\"percentile\":75", "\"percentile\":20"),
+            SPEND_OK.replace("\"minServers\":1,\"maxServers\":50", "\"minServers\":5,\"maxServers\":2"),
+            SPEND_OK.replace("\"maxServers\":50", "\"maxServers\":2147483647"),
+            SPEND_OK.replace("\"pinballLoss\":0.3,", ""),
+            "{\"source\":\"s\",\"description\":\"d\",\"minUsd\":100,\"maxUsd\":500}",
+        };
+        for (String b : bad) {
+            assertThatThrownBy(() -> readSpend(b)).as(b).isInstanceOf(IllegalStateException.class);
         }
     }
 }

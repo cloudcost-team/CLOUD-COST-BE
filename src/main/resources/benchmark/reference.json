@@ -1,5 +1,5 @@
 {
-  "_comment": "팀 벤치마킹 비교 기준 (ADR-013). 외부 자료의 숫자라 코드 대신 이 파일로 둔다. 바꾸면 docs/API.md §4-2와 ADR-013도 확인한다. 다른 파일을 쓰려면 CCI_BENCHMARK_REFERENCE(예: file:/opt/cci/reference.json)를 지정한다. oversized는 Azure Public Dataset V2 원본(vmtable, VM 2,695,548대·구독 6,687곳)을 `java scripts/benchmark/AzureOversized.java vmtable.csv.gz`로 계산한 결과다 (2026-11-05). 구간을 바꾸려면 --bands로 다시 계산해 통째로 바꾼다.",
+  "_comment": "팀 벤치마킹 비교 기준 (ADR-013). 외부 자료의 숫자라 코드 대신 이 파일로 둔다. 바꾸면 docs/API.md §4-2와 ADR-013도 확인한다. 다른 파일을 쓰려면 CCI_BENCHMARK_REFERENCE(예: file:/opt/cci/reference.json)를 지정한다. oversized는 Azure Public Dataset V2 원본(vmtable, VM 2,695,548대·구독 6,687곳)을 `java scripts/benchmark/AzureOversized.java vmtable.csv.gz`로 계산한 결과다 (2026-11-05). spend는 같은 원본으로 `java scripts/benchmark/AzureSpend.java vmtable.csv.gz`가 학습한 분위 회귀 모델(서버 대수 → 한 달 사용량 백분위)이다 (2026-11-12). 다시 학습하면 spend를 통째로 바꾼다. oversized 구간을 바꾸려면 AzureOversized.java를 --bands로 다시 계산한다.",
   "oversized": {
     "source": "Azure Public Dataset V2",
     "description": "마이크로소프트 내부 서비스 VM 30일 기록 중 같은 VM 대수 구간 구독들의 과다 사양(5분 최대 CPU의 P95 10% 미만) VM 비율. 측정 방식이 달라 참고용",
@@ -182,9 +182,176 @@
     "averagePercent": 29
   },
   "spend": {
-    "source": "SpendArk Cloud Cost Benchmark 2026",
-    "description": "1~10명 팀의 월 클라우드 지출 범위",
-    "minUsd": 100,
-    "maxUsd": 500
+    "source": "Azure Public Dataset V2",
+    "description": "마이크로소프트 내부 서비스 VM 30일 기록(구독 5452곳)으로 학습한 분위 회귀 모델. 서버 대수로 같은 규모 팀의 한 달 사용량(vCPU × 켜진 시간) 분포를 예측한다. 금액은 우리 팀의 vCPU-시간당 비용으로 환산한다. 대상이 달라 참고용",
+    "model": {
+      "method": "QUANTILE_REGRESSION",
+      "formula": "ln(vcpuHours)의 p번째 백분위 = c0 + c1·ln(servers) + c2·ln(servers)²",
+      "minServers": 1,
+      "maxServers": 50,
+      "sampleSize": 5452,
+      "validation": {
+        "trainSize": 4334,
+        "testSize": 1118,
+        "pinballLoss": 0.347891,
+        "baselinePinballLoss": 0.41067,
+        "baseline": "서버 대수 구간(1-2, 3-20, 21-50)별 백분위 표",
+        "middleHalfCoveragePercent": 51.9
+      },
+      "quantiles": [
+        {
+          "percentile": 5,
+          "coefficients": [
+            1.704746,
+            2.129817,
+            -0.064813
+          ]
+        },
+        {
+          "percentile": 10,
+          "coefficients": [
+            2.512296,
+            3.147093,
+            -0.290157
+          ]
+        },
+        {
+          "percentile": 15,
+          "coefficients": [
+            3.703402,
+            3.04815,
+            -0.322598
+          ]
+        },
+        {
+          "percentile": 20,
+          "coefficients": [
+            4.756284,
+            2.640295,
+            -0.282361
+          ]
+        },
+        {
+          "percentile": 25,
+          "coefficients": [
+            5.700448,
+            2.102397,
+            -0.200088
+          ]
+        },
+        {
+          "percentile": 30,
+          "coefficients": [
+            6.423246,
+            1.656548,
+            -0.1269
+          ]
+        },
+        {
+          "percentile": 35,
+          "coefficients": [
+            7.162912,
+            1.099612,
+            -0.022582
+          ]
+        },
+        {
+          "percentile": 40,
+          "coefficients": [
+            7.272384,
+            1.000014,
+            -3e-06
+          ]
+        },
+        {
+          "percentile": 45,
+          "coefficients": [
+            7.272396,
+            1.000002,
+            -0.0
+          ]
+        },
+        {
+          "percentile": 50,
+          "coefficients": [
+            7.272398,
+            0.999999,
+            1e-06
+          ]
+        },
+        {
+          "percentile": 55,
+          "coefficients": [
+            7.272398,
+            0.995678,
+            0.003934
+          ]
+        },
+        {
+          "percentile": 60,
+          "coefficients": [
+            7.272398,
+            0.995019,
+            0.007185
+          ]
+        },
+        {
+          "percentile": 65,
+          "coefficients": [
+            7.272398,
+            1.068742,
+            -0.012764
+          ]
+        },
+        {
+          "percentile": 70,
+          "coefficients": [
+            7.272399,
+            1.182473,
+            -0.044859
+          ]
+        },
+        {
+          "percentile": 75,
+          "coefficients": [
+            7.272403,
+            1.323949,
+            -0.08378
+          ]
+        },
+        {
+          "percentile": 80,
+          "coefficients": [
+            7.692266,
+            1.157458,
+            -0.067963
+          ]
+        },
+        {
+          "percentile": 85,
+          "coefficients": [
+            7.949687,
+            1.078963,
+            -0.058736
+          ]
+        },
+        {
+          "percentile": 90,
+          "coefficients": [
+            7.965546,
+            1.186523,
+            -0.081006
+          ]
+        },
+        {
+          "percentile": 95,
+          "coefficients": [
+            8.658662,
+            1.091182,
+            -0.08297
+          ]
+        }
+      ]
+    }
   }
 }
