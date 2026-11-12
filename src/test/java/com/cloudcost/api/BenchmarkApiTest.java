@@ -137,6 +137,19 @@ class BenchmarkApiTest extends IntegrationTestBase {
     }
 
     @Test
+    void 월말_예상이_0원이면_서버_수가_아니라_금액_때문에_비교하지_않았다고_안내한다() throws Exception {
+        // 9/24~9/30에만 켜져 있었다: 최근 14일 사용량은 있지만 이번 달(10월) 비용이 없어 월말 예상이 0원이다
+        aws.instances.add(Fixtures.instance("i-web", "t3.medium", "stopped", Instant.parse("2026-09-01T00:00:00Z")));
+        aws.addCpuHours("i-web", WINDOW_START, 156, 50, 90); // 9/30 24시(KST)까지
+
+        JsonNode body = benchmark("");
+
+        JsonNode spend = body.at("/monthlySpend");
+        assertThat(spend.at("/status").asText()).isEqualTo("NOT_COMPARABLE");
+        assertThat(body.at("/notes").toString()).contains("월말 예상 비용이 0원이라").doesNotContain("팀으로 학습해 서버");
+    }
+
+    @Test
     void 추천을_주면_적용_후_위치도_준다() throws Exception {
         threeServers();
         JsonNode body = benchmark("&recommendationIds=i-batch:IDLE,i-api:OVERSIZED");

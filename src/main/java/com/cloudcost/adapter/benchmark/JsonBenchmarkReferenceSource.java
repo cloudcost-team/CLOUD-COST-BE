@@ -84,15 +84,23 @@ class JsonBenchmarkReferenceSource implements BenchmarkReferenceSource {
     }
 
     /**
+     * spend 모델이 가질 수 있는 가장 큰 서버 대수. reference.json의 학습 범위(1~50대)에 맞춘 값이라 학습 범위를 넓히면 같이 올린다.
+     * 상한이 없으면 아래 검사 루프가 maxServers번 돌아 큰 값이 들어온 파일에서 시작이 끝나지 않는다.
+     */
+    static final int MAX_MODEL_SERVERS = 50;
+
+    /**
      * spend 모델은 서버 대수 범위(1대 이상, min ≤ max)와 검증 결과가 있고, 백분위별 계수 3개씩이 백분위 오름차순으로 있으며
      * 일반 범위·중앙값에 쓰는 25·50·75번째를 포함해야 한다. 학습 범위 모든 서버 대수에서 예측값이 유한해야 한다.
      */
     private static void validateSpendModel(BenchmarkReference.SpendModel model, Resource resource) {
-        if (model == null || model.minServers() < 1 || model.minServers() > model.maxServers() || model.sampleSize() <= 0
+        if (model == null || model.minServers() < 1 || model.minServers() > model.maxServers()
+            || model.maxServers() > MAX_MODEL_SERVERS || model.sampleSize() <= 0
             || model.validation() == null || model.validation().pinballLoss() == null
             || model.validation().baselinePinballLoss() == null || model.validation().baselinePinballLoss().signum() <= 0
             || model.validation().middleHalfCoveragePercent() == null) {
-            throw new IllegalStateException("spend.model에 서버 대수 범위·sampleSize·검증 결과가 있어야 합니다: " + resource);
+            throw new IllegalStateException("spend.model에 서버 대수 범위(1~" + MAX_MODEL_SERVERS
+                + "대)·sampleSize·검증 결과가 있어야 합니다: " + resource);
         }
         List<BenchmarkReference.QuantileCoefficients> qs = model.quantiles();
         for (int i = 0; i < qs.size(); i++) {

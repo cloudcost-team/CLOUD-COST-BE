@@ -102,6 +102,7 @@ class JsonBenchmarkReferenceSourceTest {
             SPEND_OK.replace("[7,1,0]", "[7,1]"),
             SPEND_OK.replace("\"percentile\":75", "\"percentile\":20"),
             SPEND_OK.replace("\"minServers\":1,\"maxServers\":50", "\"minServers\":5,\"maxServers\":2"),
+            SPEND_OK.replace("\"maxServers\":50", "\"maxServers\":2147483647"),
             SPEND_OK.replace("\"pinballLoss\":0.3,", ""),
             "{\"source\":\"s\",\"description\":\"d\",\"minUsd\":100,\"maxUsd\":500}",
         };

@@ -230,8 +230,12 @@ public class BenchmarkService {
             notes.add("최근 14일 동안 켜진 서버가 없어 같은 규모 팀과 월 지출을 비교하지 않았어요.");
             return SpendSection.notCompared(Status.NOT_COMPARABLE, monthEnd, usage);
         }
+        if (monthEnd.signum() <= 0) {
+            notes.add("월말 예상 비용이 0원이라 같은 규모 팀과 월 지출을 비교하지 않았어요. 단가를 아는 비용 기록이 쌓이면 비교할 수 있어요.");
+            return SpendSection.notCompared(Status.NOT_COMPARABLE, monthEnd, usage);
+        }
         List<UsagePercentile> table = model.table(usage.servers()).orElse(null);
-        if (table == null || monthEnd.signum() <= 0) {
+        if (table == null) {
             notes.add("비교 모델은 서버 " + model.minServers() + "~" + model.maxServers() + "대 팀으로 학습해 서버 "
                 + usage.servers() + "대는 월 지출을 비교하지 않았어요.");
             return SpendSection.notCompared(Status.NOT_COMPARABLE, monthEnd, usage);
