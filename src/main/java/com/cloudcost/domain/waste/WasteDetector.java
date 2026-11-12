@@ -81,10 +81,32 @@ public final class WasteDetector {
     /**
      * @param judgedIds 판단한 서버 (최근 14일 24시간 이상 켜졌고, 오래 꺼 둔 서버가 아님). 벤치마킹도 같은 대상을 쓴다
      */
-    public record Result(List<WasteFinding> findings, List<Skipped> skipped, Set<String> judgedIds) {
+    /**
+     * @param judgedMonthlyCostUsd 판단한 서버를 지금처럼(최근 14일 사용 시간) 한 달 쓰면 드는 비용 합. 절감액과 같은 기준이라
+     *                             절감 비율의 분모로 쓴다 (단가를 모르는 서버는 빠진다)
+     */
+    public record Result(
+        List<WasteFinding> findings, List<Skipped> skipped, Set<String> judgedIds, BigDecimal judgedMonthlyCostUsd) {
 
         public Result {
             judgedIds = Set.copyOf(judgedIds);
+            judgedMonthlyCostUsd = judgedMonthlyCostUsd == null ? BigDecimal.ZERO : judgedMonthlyCostUsd;
+        }
+
+        public Result(List<WasteFinding> findings, List<Skipped> skipped, Set<String> judgedIds) {
+            this(findings, skipped, judgedIds, BigDecimal.ZERO);
+        }
+
+        /**
+         * 절감 예상 ÷ 판단한 서버의 월 비용 (%, 소수 첫째 자리, 최대 100). 둘 다 "최근 14일처럼 한 달 쓰면" 기준이다.
+         * 이번 달 월말 예상과 나누면 이번 달 중간에 켠 서버에서 100%를 넘으므로 쓰지 않는다. 월 비용이 0이면 null.
+         */
+        public BigDecimal savingsRatePercent() {
+            if (judgedMonthlyCostUsd.signum() <= 0) {
+                return null;
+            }
+            return totalMonthlySavingsUsd().multiply(BigDecimal.valueOf(100))
+                .divide(judgedMonthlyCostUsd, 1, RoundingMode.HALF_UP).min(BigDecimal.valueOf(100).setScale(1));
         }
 
         public int judgedCount() {
@@ -111,6 +133,7 @@ public final class WasteDetector {
         List<WasteFinding> findings = new ArrayList<>();
         List<Skipped> skipped = new ArrayList<>();
         Set<String> judged = new LinkedHashSet<>();
+        BigDecimal judgedMonthlyCost = BigDecimal.ZERO;
         for (Candidate c : candidates) {
             Ec2Instance info = c.instance();
             if (c.stats() == null || c.stats().cpuHours() == 0) {
@@ -139,6 +162,9 @@ public final class WasteDetector {
             }
             judged.add(info.instanceId());
             BigDecimal monthlyHours = monthlyHours(c.usedMinutes());
+            if (c.hourlyUsd() != null) {
+                judgedMonthlyCost = judgedMonthlyCost.add(c.hourlyUsd().multiply(monthlyHours));
+            }
             if (isIdle(c.stats())) {
                 if (c.hourlyUsd() == null) {
                     skipped.add(new Skipped(info.instanceId(), info.name(), "유휴로 보이지만 온디맨드 단가를 몰라 절감액을 계산하지 못했어요."));
@@ -157,7 +183,7 @@ public final class WasteDetector {
         }
         findings.sort(Comparator.comparing(WasteFinding::monthlySavingsUsd).reversed()
             .thenComparing(f -> f.instance().instanceId()));
-        return new Result(List.copyOf(findings), List.copyOf(skipped), judged);
+        return new Result(List.copyOf(findings), List.copyOf(skipped), judged, judgedMonthlyCost);
     }
 
     static final String IDLE_REASON = "최근 14일 CPU 최대 5% 미만이고 네트워크도 하루 5MB 미만이라 쓰지 않는 서버로 보여요.";
