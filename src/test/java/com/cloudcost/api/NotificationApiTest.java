@@ -62,7 +62,7 @@ class NotificationApiTest extends IntegrationTestBase {
         assertThat(page.at("/nextCursor").isNull()).isTrue();
         assertThat(page.at("/items").findValuesAsText("message")).containsExactlyInAnyOrder(
                 NAME + "의 이번 달 예상 비용이 예산의 100%를 넘었어요",
-                "지난주 추정 비용 ₩9,085 · 전주와 비슷해요");
+                "지난주 비용 ₩9,085 · 전주와 비슷해요");
         assertThat(page.at("/items").findValuesAsText("accountName")).containsOnly(NAME);
         assertThat(page.at("/items").findValuesAsText("typeLabel")).containsExactlyInAnyOrder("예산", "주간 요약");
         assertThat(page.at("/notes").toString()).contains("서비스 안 알림창");
@@ -80,7 +80,7 @@ class NotificationApiTest extends IntegrationTestBase {
         clock.set(Instant.parse("2026-10-12T03:00:00Z")); // 10/12(월). 수집 기록은 10/8 12:00까지 → 10/5~10/11은 3.5일치
         assertThat(unread()).isEqualTo(2);
         assertThat(list("").at("/items").findValuesAsText("message"))
-                .contains("지난주 추정 비용 ₩4,543 · 전주보다 50% 줄었어요");
+                .contains("지난주 비용 ₩4,543 · 전주보다 50% 줄었어요");
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.cloudcost.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.cloudcost.domain.alert.AlertFacts;
 import com.cloudcost.domain.alert.AlertRules;
 import com.cloudcost.domain.alert.AlertRules.Candidate;
 import com.cloudcost.domain.alert.AlertSettings;
@@ -25,17 +26,20 @@ class AlertRulesTest {
 
     @Test
     void 예산은_넘은_기준_이하에서_켜_둔_가장_높은_기준으로_연결_월_기준마다_한_번_알린다() {
-        Candidate c = AlertRules.budget(ACCOUNT, "운영 서버", YearMonth.of(2026, 10), 100, ALL).orElseThrow();
+        Candidate c = AlertRules.budget(ACCOUNT, "운영 서버", YearMonth.of(2026, 10), 100, new BigDecimal("30"),
+            new BigDecimal("31.5"), ALL).orElseThrow();
 
         assertThat(c.type()).isEqualTo(NotificationType.BUDGET);
         assertThat(c.message()).isEqualTo("운영 서버의 이번 달 예상 비용이 예산의 100%를 넘었어요");
         assertThat(c.eventKey()).isEqualTo("BUDGET:" + ACCOUNT + ":2026-10:100");
+        assertThat(c.facts()).as("채널 메시지 필드용 숫자")
+            .isEqualTo(AlertFacts.budget(100, new BigDecimal("30"), new BigDecimal("31.5")));
 
         AlertSettings no120 = new AlertSettings(true, true, false, true, true);
-        assertThat(AlertRules.budget(ACCOUNT, "a", YearMonth.of(2026, 10), 120, no120))
+        assertThat(AlertRules.budget(ACCOUNT, "a", YearMonth.of(2026, 10), 120, null, null, no120))
             .get().extracting(Candidate::eventKey).asString().endsWith(":100");
-        assertThat(AlertRules.budget(ACCOUNT, "a", YearMonth.of(2026, 10), null, ALL)).isEmpty();
-        assertThat(AlertRules.budget(ACCOUNT, "a", YearMonth.of(2026, 10), 80,
+        assertThat(AlertRules.budget(ACCOUNT, "a", YearMonth.of(2026, 10), null, null, null, ALL)).isEmpty();
+        assertThat(AlertRules.budget(ACCOUNT, "a", YearMonth.of(2026, 10), 80, null, null,
             new AlertSettings(false, true, true, true, true))).isEmpty();
     }
 
@@ -45,6 +49,9 @@ class AlertRulesTest {
             new BigDecimal("2.4"), "i-0abc", 1440, 480);
 
         Candidate c = AlertRules.spike(ACCOUNT, spike, "web-server-1", ALL).orElseThrow();
+        assertThat(c.facts()).isEqualTo(
+            new AlertFacts(null, null, null, LocalDate.of(2026, 10, 12), new BigDecimal("2.4"), "web-server-1"));
+        assertThat(AlertFacts.spike(spike, null).causeName()).as("이름이 없으면 인스턴스 ID").isEqualTo("i-0abc");
 
         assertThat(c.message()).isEqualTo("10/12 비용 급증 · 평소의 2.4배 (web-server-1)");
         assertThat(c.eventKey()).isEqualTo("SPIKE:" + ACCOUNT + ":2026-10-12");
@@ -61,14 +68,14 @@ class AlertRulesTest {
         LocalDate monday = LocalDate.of(2026, 9, 28);
         Candidate down = AlertRules.weeklySummary(ACCOUNT, monday, new BigDecimal("21.846"), new BigDecimal("22.75"),
             KRW, ALL).orElseThrow();
-        assertThat(down.message()).as("28,400원, 4% 감소").isEqualTo("지난주 추정 비용 ₩28,400 · 전주보다 4% 줄었어요");
+        assertThat(down.message()).as("28,400원, 4% 감소").isEqualTo("지난주 비용 ₩28,400 · 전주보다 4% 줄었어요");
         assertThat(down.eventKey()).isEqualTo("WEEKLY_SUMMARY:" + ACCOUNT + ":2026-09-28");
 
         assertThat(AlertRules.weeklySummary(ACCOUNT, monday, new BigDecimal("12"), new BigDecimal("10"),
             DisplayCurrency.usd(), ALL)).get().extracting(Candidate::message)
-            .isEqualTo("지난주 추정 비용 $12.00 · 전주보다 20% 늘었어요");
+            .isEqualTo("지난주 비용 $12.00 · 전주보다 20% 늘었어요");
         assertThat(AlertRules.weeklySummary(ACCOUNT, monday, new BigDecimal("10"), null, DisplayCurrency.usd(), ALL))
-            .get().extracting(Candidate::message).as("전주 기록이 없으면 비교하지 않음").isEqualTo("지난주 추정 비용 $10.00");
+            .get().extracting(Candidate::message).as("전주 기록이 없으면 비교하지 않음").isEqualTo("지난주 비용 $10.00");
         assertThat(AlertRules.weeklySummary(ACCOUNT, monday, BigDecimal.ZERO, BigDecimal.ZERO, DisplayCurrency.usd(), ALL))
             .as("두 주 모두 0원이면 알리지 않음").isEmpty();
         assertThat(AlertRules.weeklySummary(ACCOUNT, monday, BigDecimal.TEN, BigDecimal.TEN, DisplayCurrency.usd(),
@@ -81,9 +88,9 @@ class AlertRulesTest {
         try {
             java.util.Locale.setDefault(java.util.Locale.GERMANY);
             assertThat(AlertRules.weeklySummary(ACCOUNT, LocalDate.of(2026, 9, 28), new BigDecimal("21.846"), null, KRW,
-                ALL)).get().extracting(Candidate::message).isEqualTo("지난주 추정 비용 ₩28,400");
+                ALL)).get().extracting(Candidate::message).isEqualTo("지난주 비용 ₩28,400");
             assertThat(AlertRules.weeklySummary(ACCOUNT, LocalDate.of(2026, 9, 28), new BigDecimal("1234.5"), null,
-                DisplayCurrency.usd(), ALL)).get().extracting(Candidate::message).isEqualTo("지난주 추정 비용 $1,234.50");
+                DisplayCurrency.usd(), ALL)).get().extracting(Candidate::message).isEqualTo("지난주 비용 $1,234.50");
         } finally {
             java.util.Locale.setDefault(before);
         }

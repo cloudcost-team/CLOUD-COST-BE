@@ -13,7 +13,7 @@ import org.springframework.context.annotation.Configuration;
 class OpenApiConfig {
 
     private static final String DESCRIPTION = """
-            AWS 계정의 EC2 인스턴스·사용 시간·**추정 비용**을 조회하는 API입니다.
+            AWS 계정의 EC2 인스턴스·사용 시간·**비용**(사용 시간 × 온디맨드 단가)을 조회하는 API입니다.
 
             **로그인**
             - [/login.html](/login.html)에서 Google로 로그인 → 화면의 액세스 토큰 복사
@@ -30,7 +30,7 @@ class OpenApiConfig {
             - 인스턴스 정보는 10분, CloudWatch 사용량은 **1시간에 1회**만 AWS에서 다시 가져옵니다.
             - 그 안에 다시 조회하면 DB에 저장된 값으로 응답합니다 (`freshness.usageFromCache=true`).
 
-            **비용은 실제 청구 금액이 아닙니다.** 사용 시간 × 온디맨드 시간당 단가로 계산한 추정치(`estimated_on_demand`)이며
+            **비용은 실제 청구 금액이 아닙니다.** 사용 시간 × 온디맨드 시간당 단가로 계산한 값(`estimated_on_demand`)이며
             RI·Savings Plans·Spot 할인, EBS, 데이터 전송 비용은 포함하지 않습니다.
             """;
 

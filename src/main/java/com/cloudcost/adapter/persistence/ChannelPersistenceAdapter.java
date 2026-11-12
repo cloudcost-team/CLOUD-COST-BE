@@ -168,6 +168,6 @@ class ChannelPersistenceAdapter implements NotificationChannelRepository, Notifi
 
     private static Notification toDomain(NotificationEntity e) {
         return new Notification(e.id, e.ownerId, e.accountId, NotificationType.valueOf(e.type), e.message, e.eventKey,
-            e.createdAt, e.readAt);
+            e.createdAt, e.readAt, e.facts());
     }
 }

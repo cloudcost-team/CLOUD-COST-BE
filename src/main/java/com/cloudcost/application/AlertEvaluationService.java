@@ -86,7 +86,7 @@ public class AlertEvaluationService {
         try {
             for (Candidate c : candidates(ownerId, account, current)) {
                 if (notifications.insertIfAbsent(new Notification(UUID.randomUUID(), ownerId, c.accountId(),
-                    c.type(), c.message(), c.eventKey(), clock.instant(), null))) {
+                    c.type(), c.message(), c.eventKey(), clock.instant(), null, c.facts()))) {
                     created++;
                 }
             }
@@ -106,7 +106,9 @@ public class AlertEvaluationService {
         if (current.budget80() || current.budget100() || current.budget120() || current.spike()) {
             DashboardView dashboard = dashboards.dashboard(ownerId, account.id());
             if (dashboard.budget() != null) {
-                AlertRules.budget(account.id(), name, dashboard.month(), dashboard.budget().thresholdReached(), current)
+                AlertRules.budget(account.id(), name, dashboard.month(), dashboard.budget().thresholdReached(),
+                    dashboard.budget().budgetUsd(),
+                    dashboard.forecast() == null ? null : dashboard.forecast().monthEndUsd(), current)
                     .ifPresent(result::add);
             }
             if (dashboard.latestSpike() != null) {

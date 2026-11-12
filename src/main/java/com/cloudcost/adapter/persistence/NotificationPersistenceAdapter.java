@@ -82,6 +82,7 @@ class NotificationPersistenceAdapter implements NotificationRepository, AlertSet
         e.eventKey = n.eventKey();
         e.createdAt = n.createdAt();
         e.readAt = n.readAt();
+        e.facts(n.facts());
         try {
             // 바로 flush해 UNIQUE 위반이 트랜잭션 안에서 나게 하고, 커밋까지 이 try 안에서 끝낸다
             requiresNew.executeWithoutResult(status -> notifications.saveAndFlush(e));
@@ -143,6 +144,6 @@ class NotificationPersistenceAdapter implements NotificationRepository, AlertSet
 
     private static Notification toDomain(NotificationEntity e) {
         return new Notification(e.id, e.ownerId, e.accountId, NotificationType.valueOf(e.type), e.message, e.eventKey,
-            e.createdAt, e.readAt);
+            e.createdAt, e.readAt, e.facts());
     }
 }

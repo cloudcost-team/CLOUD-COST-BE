@@ -11,7 +11,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.cloudcost.IntegrationTestBase;
 import com.cloudcost.application.NotificationDispatchService;
 import com.cloudcost.application.NotificationDispatchService.Result;
+import com.cloudcost.application.port.NotificationChannelGateway.Field;
+import com.cloudcost.application.port.NotificationChannelGateway.Message;
 import com.cloudcost.application.port.NotificationChannelGateway.SendResult;
+import com.cloudcost.application.port.NotificationChannelGateway.Tone;
 import com.cloudcost.fakes.Fixtures;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigDecimal;
@@ -120,7 +123,9 @@ class NotificationChannelApiTest extends IntegrationTestBase {
         call(post(CHANNELS + "/" + id + "/test")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.ok").value(true));
         assertThat(channelGateway.sent).hasSize(1);
-        assertThat(channelGateway.sent.getFirst().text()).contains("테스트 알림");
+        Message test = channelGateway.sent.getFirst().message();
+        assertThat(test.title()).isEqualTo("테스트 알림");
+        assertThat(test.description()).contains("켜 둔 알림이 생기면 이 채널로 보내 드려요");
 
         channelGateway.next = SendResult.failure("Discord 웹훅을 찾을 수 없어요.", false);
         call(post(CHANNELS + "/" + id + "/test")).andExpect(status().isOk())
@@ -136,10 +141,15 @@ class NotificationChannelApiTest extends IntegrationTestBase {
         Result first = dispatcher.dispatch();
         assertThat(first.queued()).isEqualTo(2);
         assertThat(first.sent()).isEqualTo(2);
-        assertThat(channelGateway.sent).extracting(s -> s.text()).anySatisfy(text -> assertThat(text)
-                .startsWith("[CloudCost] 예산 · 이름 없는 연결\n")
-                .contains("예산의 100%를 넘었어요")
-                .endsWith("https://www.cloud-cost.cloud/notifications"));
+        // 만들 때 저장한 예산·월말 예상이 embed 필드로 나간다
+        Message budget100 = channelGateway.sent.stream().map(s -> s.message())
+                .filter(m -> m.title().equals("예산 100% 넘음")).findFirst().orElseThrow();
+        assertThat(budget100.description()).isEqualTo("이름 없는 연결의 이번 달 월말 예상 비용이 예산의 100%를 넘었어요.");
+        assertThat(budget100.tone()).isEqualTo(Tone.DANGER);
+        assertThat(budget100.fields()).extracting(Field::name).containsExactly("연결", "월말 예상 비용", "예산 금액");
+        assertThat(budget100.fields()).allSatisfy(f -> assertThat(f.value()).isNotBlank());
+        assertThat(budget100.footer()).isEqualTo("사용 시간 × 온디맨드 단가 기준");
+        assertThat(budget100.url()).isEqualTo("https://www.cloud-cost.cloud/dashboard");
 
         Result again = dispatcher.dispatch();
         assertThat(again.queued() + again.sent()).as("이미 보낸 알림은 다시 보내지 않는다").isZero();
