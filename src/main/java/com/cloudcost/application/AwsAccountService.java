@@ -3,6 +3,7 @@ package com.cloudcost.application;
 import com.cloudcost.application.error.AwsAccessException;
 import com.cloudcost.application.error.ConflictException;
 import com.cloudcost.application.error.NotFoundException;
+import com.cloudcost.application.port.AccountResourceRepository;
 import com.cloudcost.application.port.AwsAccountRepository;
 import com.cloudcost.application.port.BudgetRepository;
 import com.cloudcost.application.port.NotificationRepository;
@@ -46,6 +47,7 @@ public class AwsAccountService {
     private final SyncJobRepository syncJobs;
     private final BudgetRepository budgets;
     private final NotificationRepository notifications;
+    private final AccountResourceRepository resources;
     private final CustomerAwsGateway gateway;
     private final UnitOfWork unitOfWork;
     private final Clock clock;
@@ -59,6 +61,7 @@ public class AwsAccountService {
         SyncJobRepository syncJobs,
         BudgetRepository budgets,
         NotificationRepository notifications,
+        AccountResourceRepository resources,
         CustomerAwsGateway gateway,
         UnitOfWork unitOfWork,
         Clock clock,
@@ -70,6 +73,7 @@ public class AwsAccountService {
         this.syncJobs = syncJobs;
         this.budgets = budgets;
         this.notifications = notifications;
+        this.resources = resources;
         this.gateway = gateway;
         this.unitOfWork = unitOfWork;
         this.clock = clock;
@@ -129,7 +133,7 @@ public class AwsAccountService {
     }
 
     /**
-     * 연결과 이 연결로 모은 데이터(인스턴스·시간별 사용량·수집 기록·월 예산·알림)를 모두 지운다. 남의 연결이면 404.
+     * 연결과 이 연결로 모은 데이터(인스턴스·시간별 사용량·수집 기록·월 예산·알림·방치 리소스)를 모두 지운다. 남의 연결이면 404.
      * 고객 계정의 스택(Role)은 건드리지 않는다. 이후 그 스택에서 오는 신호는 연결을 찾지 못해 무시된다
      * ({@link StackCallbackService}).
      */
@@ -141,6 +145,7 @@ public class AwsAccountService {
             syncJobs.deleteAllByOwnerIdAndAccountId(ownerId, accountId);
             budgets.deleteByOwnerIdAndAccountId(ownerId, accountId);
             notifications.deleteByOwnerIdAndAccountId(ownerId, accountId);
+            resources.deleteByOwnerIdAndAccountId(ownerId, accountId);
             if (!accounts.deleteByOwnerIdAndId(ownerId, accountId)) {
                 throw notFound();
             }
@@ -288,7 +293,7 @@ public class AwsAccountService {
             link,
             parameters,
             CustomerRolePolicy.trustPolicy(principal, account.externalId()),
-            CustomerRolePolicy.permissionPolicy(account.region()),
+            CustomerRolePolicy.permissionPolicy(),
             warnings);
     }
 }

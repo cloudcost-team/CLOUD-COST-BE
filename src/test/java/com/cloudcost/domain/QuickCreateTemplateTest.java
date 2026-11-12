@@ -29,12 +29,13 @@ class QuickCreateTemplateTest {
     }
 
     @Test
-    void 템플릿은_허용된_두_액션만_주고_와일드카드가_없다() throws IOException {
+    void 템플릿은_허용된_읽기_액션만_주고_와일드카드와_쓰기_액션이_없다() throws IOException {
         String yaml = template();
         Matcher actions = Pattern.compile("(?m)^\\s+- ([a-z0-9-]+:[A-Za-z*]+)\\s*$").matcher(yaml);
         List<String> found = actions.results().map(r -> r.group(1)).toList();
         assertThat(found).containsExactlyElementsOf(CustomerRolePolicy.ALLOWED_ACTIONS);
         assertThat(yaml).doesNotContain("ec2:*").doesNotContain("Describe*").doesNotContain("Action: \"*\"");
+        assertThat(found).allMatch(a -> a.contains(":Describe") || a.equals("cloudwatch:GetMetricStatistics"));
 
         List<String> allowlist = Files.readAllLines(Path.of("scripts/customer-role-allowlist.txt")).stream()
                 .map(String::trim).filter(l -> !l.isEmpty() && !l.startsWith("#")).toList();

@@ -72,10 +72,13 @@ class ArchitectureTest {
         Set<String> clients = Set.of(
                 "software.amazon.awssdk.services.ec2.Ec2Client",
                 "software.amazon.awssdk.services.cloudwatch.CloudWatchClient",
-                "software.amazon.awssdk.services.sts.StsClient");
-        Set<String> allowed = Set.of("describeInstances", "getMetricStatistics", "builder", "close");
+                "software.amazon.awssdk.services.sts.StsClient",
+                "software.amazon.awssdk.services.elasticloadbalancingv2.ElasticLoadBalancingV2Client");
+        // 허용 목록(scripts/customer-role-allowlist.txt)의 읽기 API만 (ADR-020)
+        Set<String> allowed = Set.of("describeInstances", "getMetricStatistics", "describeRegions", "describeVolumes",
+                "describeAddresses", "describeSnapshots", "describeLoadBalancers", "builder", "close");
         DescribedPredicate<JavaMethodCall> forbiddenCall = new DescribedPredicate<>(
-                "a customer AWS API other than ec2:DescribeInstances / cloudwatch:GetMetricStatistics") {
+                "a customer AWS API outside the read-only allowlist") {
             @Override
             public boolean test(JavaMethodCall call) {
                 return clients.contains(call.getTargetOwner().getName()) && !allowed.contains(call.getName());
@@ -88,7 +91,6 @@ class ArchitectureTest {
                 .should().dependOnClassesThat().resideInAnyPackage(
                         "software.amazon.awssdk.services.costexplorer..",
                         "software.amazon.awssdk.services.computeoptimizer..",
-                        "software.amazon.awssdk.services.elasticloadbalancingv2..",
                         "software.amazon.awssdk.services.pricing..")
                 .check(classes);
     }

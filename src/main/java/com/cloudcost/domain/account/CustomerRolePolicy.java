@@ -7,26 +7,30 @@ import java.util.Map;
 /**
  * 고객이 자기 계정에 만들 Read Only Role의 정책 문서.
  *
- * <p>허용 액션은 아래 2개뿐이다. 바꾸려면 사람 승인 + ADR이 먼저다 (docs/SECURITY.md).
- * 두 액션은 리소스 단위 권한을 지원하지 않아 Resource는 "*"이고, 대신 aws:RequestedRegion으로 리전을 제한한다.
+ * <p>허용 액션은 아래 7개(모두 읽기)뿐이다. 바꾸려면 사람 승인 + ADR이 먼저다 (docs/SECURITY.md, ADR-020).
+ * Describe·GetMetricStatistics는 리소스 단위 권한을 지원하지 않아 Resource는 "*"다.
+ * 잊힌 리전의 서버·리소스를 찾기 위해 리전 조건(aws:RequestedRegion)은 두지 않는다 (ADR-020).
  */
 public final class CustomerRolePolicy {
 
-    public static final List<String> ALLOWED_ACTIONS =
-        List.of("ec2:DescribeInstances", "cloudwatch:GetMetricStatistics");
+    public static final List<String> ALLOWED_ACTIONS = List.of(
+        "ec2:DescribeInstances",
+        "cloudwatch:GetMetricStatistics",
+        "ec2:DescribeRegions",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeSnapshots",
+        "elasticloadbalancing:DescribeLoadBalancers");
 
     private CustomerRolePolicy() {
     }
 
-    public static Map<String, Object> permissionPolicy(AwsRegion region) {
+    public static Map<String, Object> permissionPolicy() {
         Map<String, Object> statement = new LinkedHashMap<>();
-        statement.put("Sid", "CloudCostInsightReadEc2Usage");
+        statement.put("Sid", "CloudCostInsightReadOnly");
         statement.put("Effect", "Allow");
         statement.put("Action", ALLOWED_ACTIONS);
         statement.put("Resource", "*");
-        statement.put(
-            "Condition",
-            Map.of("StringEquals", Map.of("aws:RequestedRegion", List.of(region.value()))));
         return document(statement);
     }
 

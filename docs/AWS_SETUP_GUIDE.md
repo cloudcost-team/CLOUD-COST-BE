@@ -39,6 +39,8 @@
    ```
 5. 객체 URL 복사 → `CCI_TEMPLATE_URL` (예: `https://cci-templates-<A>.s3.ap-northeast-2.amazonaws.com/customer-readonly-role.yaml`)
 6. 템플릿을 고치면 다시 업로드한다 (원본: `src/main/resources/cloudformation/customer-readonly-role.yaml`)
+7. **v2 템플릿(ADR-020)**: 권한 5개가 추가되고 리전 조건이 빠졌다. 같은 이름으로 다시 업로드하면 새 연결은 바로 v2다.
+   기존 연결은 화면의 "권한 업데이트 필요" 안내대로 고객이 스택 업데이트(기존 템플릿 대체 → 이 URL)를 하면 된다.
 
 ### 2.2 SQS: 서버가 신호를 꺼내 가는 우편함
 1. SQS → 대기열 생성 → 표준, 이름 `cloudcost-insight-connections`

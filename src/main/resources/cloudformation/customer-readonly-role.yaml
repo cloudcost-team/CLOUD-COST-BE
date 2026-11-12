@@ -1,12 +1,14 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  CloudCost Insight read-only role. Allows only ec2:DescribeInstances and cloudwatch:GetMetricStatistics.
-  CloudCost Insight never creates, modifies, or deletes resources in this account.
+  CloudCost Insight read-only role (v2). Allows only read actions: ec2:DescribeInstances, cloudwatch:GetMetricStatistics,
+  ec2:DescribeRegions, ec2:DescribeVolumes, ec2:DescribeAddresses, ec2:DescribeSnapshots,
+  elasticloadbalancing:DescribeLoadBalancers. CloudCost Insight never creates, modifies, or deletes resources in this account.
   Delete this stack to revoke access.
 
 # 이 파일이 고객용 템플릿의 원본이다. 관리자가 S3에 한 번 올리고, 빠른 생성 링크가 이 파일을 가리킨다.
 # 허용 액션은 scripts/customer-role-allowlist.txt, CustomerRolePolicy.ALLOWED_ACTIONS와 같아야 한다 (테스트로 확인).
 # 파라미터 값은 CloudCost Insight가 링크에 넣어 준다. 사용자는 고치지 않는다.
+# v2 (ADR-020): 방치 리소스·잊힌 리전을 찾는 Describe 5개를 더하고 리전 조건을 뺐다. 이전(v1) 스택은 이 템플릿으로 "스택 업데이트"하면 된다.
 
 Parameters:
   ExternalId:
@@ -28,7 +30,7 @@ Parameters:
   MonitoredRegion:
     Type: String
     Default: ap-northeast-2
-    Description: EC2·CloudWatch를 조회할 리전
+    Description: 사용량(CloudWatch)을 수집할 기본 리전. 방치 리소스는 모든 리전에서 찾는다
   RoleName:
     Type: String
     Default: CloudCostReadOnlyRole
@@ -40,7 +42,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Ref RoleName
-      Description: CloudCost Insight read-only access (EC2 usage)
+      Description: CloudCost Insight read-only access (EC2 usage, idle resources)
       MaxSessionDuration: 3600
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -53,19 +55,21 @@ Resources:
               StringEquals:
                 sts:ExternalId: !Ref ExternalId
       Policies:
-        - PolicyName: CloudCostInsightReadEc2Usage
+        - PolicyName: CloudCostInsightReadOnly
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Sid: CloudCostInsightReadEc2Usage
+              - Sid: CloudCostInsightReadOnly
                 Effect: Allow
                 Action:
                   - ec2:DescribeInstances
                   - cloudwatch:GetMetricStatistics
+                  - ec2:DescribeRegions
+                  - ec2:DescribeVolumes
+                  - ec2:DescribeAddresses
+                  - ec2:DescribeSnapshots
+                  - elasticloadbalancing:DescribeLoadBalancers
                 Resource: "*"
-                Condition:
-                  StringEquals:
-                    aws:RequestedRegion: !Ref MonitoredRegion
 
   # Role이 만들어지거나 지워지면 CloudCost Insight의 SNS 토픽에 알린다 (Lambda 없음).
   # CloudCost Insight는 이 신호를 받은 뒤 실제 AssumeRole로 검증하고 결과를 CloudFormation에 돌려준다.

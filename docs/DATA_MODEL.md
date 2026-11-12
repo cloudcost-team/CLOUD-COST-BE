@@ -172,5 +172,29 @@ UNIQUE `(notification_id, channel_id)`. 인덱스 `(status, next_attempt_at)`(�
 | created_at | TIMESTAMPTZ | |
 - 연결 삭제 때는 `notifications`보다 먼저 그 알림의 발송 기록을 지운다. 채널 삭제 때도 그 채널의 발송 기록을 먼저 지운다.
 
+## V11 (2026-11-12) — 방치 리소스·잊힌 리전 (ADR-020)
+### account_resource_scans — 연결별 확장 수집 상태 (PK account_id → aws_accounts)
+`owner_id`, `status`(NOT_SCANNED / OK / PERMISSION_UPGRADE_REQUIRED / FAILED), `permission_version`(2 = 확장 권한 확인, 1 = 확인 안 됨),
+`scanned_at`, `message`(실패·권한 부족 사유), `describe_count`·`cw_request_count`(**마지막 수집 1회**에서 시도한 Describe·GetMetricStatistics 수,
+실패한 호출 포함. 수집마다 덮어쓰므로 누적·월간 사용량이 아니다. 확장 수집은 6시간에 한 번이라 월 호출 수는 대략 이 값 × 120으로 가늠한다). 변경안의 `aws_accounts.permission_version`은 연결 상태와 섞지 않도록 이 표에 둔다.
+
+### account_resources — Describe로 읽은 리소스 (수집마다 연결 단위로 통째로 바꾼다)
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| id | UUID PK | |
+| owner_id / account_id | VARCHAR(64) / UUID FK aws_accounts | 인덱스 `(owner_id, account_id)` |
+| type | VARCHAR(20) | INSTANCE(다른 리전 서버) / VOLUME / ADDRESS / SNAPSHOT / LOAD_BALANCER |
+| resource_id | VARCHAR(255) | vol-… / eipalloc-… / snap-… / LB 이름 / i-… (공인 IP 주소는 저장하지 않는다) |
+| name | VARCHAR(255) NULL | Name 태그 |
+| region | VARCHAR(32) | |
+| subtype | VARCHAR(64) NULL | 볼륨 타입 / LB 종류 / 인스턴스 타입 |
+| size_gb | INT NULL | 볼륨·스냅샷 크기 |
+| in_use | BOOLEAN | 볼륨·고정 IP 연결 여부, 서버 실행 여부 |
+| created_at | TIMESTAMPTZ NULL | 리소스 생성 시각 (서버는 LaunchTime) |
+| request_count | BIGINT NULL | LB 최근 14일 요청 수 |
+| platform | VARCHAR(100) NULL | 서버 platformDetails (단가 조회용) |
+| observed_at | TIMESTAMPTZ | |
+- 연결 삭제 때 `notifications` 다음에 이 두 표를 지운다.
+
 ## 보존 (백로그)
 ec2_usage_hourly는 455일, sync_jobs는 90일, notifications·notification_deliveries는 읽은 지 90일 정도로 정리하는 작업이 필요하다.

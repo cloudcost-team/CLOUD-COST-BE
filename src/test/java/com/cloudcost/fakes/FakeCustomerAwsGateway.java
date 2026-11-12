@@ -45,8 +45,24 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
     public ExternalId lastExternalId;
     public RoleArn lastRoleArn;
     public int openSessions;
+    /** 확장 수집 (ADR-020): 켜진 리전과 리전별 리소스 */
+    public final List<String> regions = new ArrayList<>();
+    public final Map<String, List<com.cloudcost.domain.resource.AwsResource>> regionResources = new HashMap<>();
+    public RuntimeException resourceError;
+    public int regionScans;
+    /** 확장 수집 세션이 돌려줄 GetMetricStatistics 시도 수 */
+    public int lbMetricCalls;
+    /** 리전별로 scanRegion이 던질 오류 */
+    public final Map<String, RuntimeException> regionErrors = new java.util.concurrent.ConcurrentHashMap<>();
 
     public void reset() {
+        regions.clear();
+        regions.addAll(List.of("ap-northeast-2", "us-east-1"));
+        regionResources.clear();
+        resourceError = null;
+        regionScans = 0;
+        lbMetricCalls = 0;
+        regionErrors.clear();
         instances.clear();
         samples.clear();
         network.clear();
@@ -158,6 +174,40 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
                                 ? new HourlyNetwork(instanceId, n.hourStart(), n.inBytes(), null)
                                 : new HourlyNetwork(instanceId, n.hourStart(), null, n.outBytes()))
                         .toList();
+            }
+
+            @Override
+            public List<String> enabledRegions() {
+                if (resourceError != null) {
+                    throw resourceError;
+                }
+                return List.copyOf(regions);
+            }
+
+            @Override
+            public RegionScan scanRegion(String region, boolean withInstances, Instant now) {
+                synchronized (FakeCustomerAwsGateway.this) {
+                    regionScans++;
+                    scanDescribes += 5;
+                }
+                if (resourceError != null) {
+                    throw resourceError;
+                }
+                if (regionErrors.containsKey(region)) {
+                    throw regionErrors.get(region);
+                }
+                List<com.cloudcost.domain.resource.AwsResource> found = regionResources.getOrDefault(region, List.of())
+                        .stream()
+                        .filter(r -> withInstances || r.type() != com.cloudcost.domain.resource.ResourceType.INSTANCE)
+                        .toList();
+                return new RegionScan(found, 5, 0);
+            }
+
+            private int scanDescribes;
+
+            @Override
+            public ScanCalls scanCalls() {
+                return new ScanCalls(scanDescribes, lbMetricCalls);
             }
 
             @Override

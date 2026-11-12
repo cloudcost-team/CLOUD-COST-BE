@@ -25,7 +25,9 @@ class AwsConnectionTest extends IntegrationTestBase {
         assertThat(externalId).matches("^cci-[0-9a-f]{24}$");
         assertThat(body.at("/account/region").asText()).isEqualTo("ap-northeast-2");
         assertThat(body.at("/roleSetup/requiredActions").toString())
-                .isEqualTo("[\"ec2:DescribeInstances\",\"cloudwatch:GetMetricStatistics\"]");
+                .isEqualTo("[\"ec2:DescribeInstances\",\"cloudwatch:GetMetricStatistics\",\"ec2:DescribeRegions\","
+                        + "\"ec2:DescribeVolumes\",\"ec2:DescribeAddresses\",\"ec2:DescribeSnapshots\","
+                        + "\"elasticloadbalancing:DescribeLoadBalancers\"]");
         assertThat(body.at("/roleSetup/trustPolicy/Statement/0/Condition/StringEquals/sts:ExternalId").asText())
                 .isEqualTo(externalId);
         assertThat(body.at("/roleSetup/trustPolicy/Statement/0/Principal/AWS").asText())

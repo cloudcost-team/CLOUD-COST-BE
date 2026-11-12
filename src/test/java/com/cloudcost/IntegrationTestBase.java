@@ -107,6 +107,14 @@ public abstract class IntegrationTestBase {
         RecordingPauser recordingPauser() {
             return new RecordingPauser();
         }
+
+        /** 방치 리소스 백그라운드 수집을 테스트에서는 그 자리에서 바로 실행한다 (결과를 같은 요청에서 확인) */
+        @Bean
+        @Primary
+        @org.springframework.beans.factory.annotation.Qualifier("resourceScanExecutor")
+        java.util.concurrent.Executor directResourceScanExecutor() {
+            return Runnable::run;
+        }
     }
 
     @BeforeEach

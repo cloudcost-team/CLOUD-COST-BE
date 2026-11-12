@@ -128,8 +128,14 @@ class DemoController {
             @Parameter(description = "종류 필터: OVERSIZED · IDLE")
                     @RequestParam(required = false) com.cloudcost.domain.waste.WasteKind type) {
         var domain = setup.toDomain();
-        return WasteResponse.of(demo.waste(domain), dashboards.demoDashboard(domain, null).forecast(),
-                currencies.resolve(currency), UsageDtos.DATA_SOURCE_DEMO, sort, type);
+        CurrencyService.Resolved resolved = currencies.resolve(currency);
+        WasteResponse response = WasteResponse.of(demo.waste(domain), dashboards.demoDashboard(domain, null).forecast(),
+                resolved, UsageDtos.DATA_SOURCE_DEMO, sort, type);
+        // 체험 모드 방치 리소스 예시 (ADR-020)
+        return response.withResources(com.cloudcost.entrypoint.api.dto.ResourceDtos.ResourceWasteDto.of(
+                com.cloudcost.application.ResourceWasteService.demo(
+                        response.asOf() == null ? java.time.Instant.now() : response.asOf()),
+                resolved.display()));
     }
 
     @PostMapping("/dashboard")

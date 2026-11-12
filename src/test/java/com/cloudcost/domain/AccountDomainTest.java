@@ -62,13 +62,16 @@ class AccountDomainTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void customerPolicyAllowsOnlyTwoReadActionsWithoutWildcards() {
-        Map<String, Object> policy = CustomerRolePolicy.permissionPolicy(new AwsRegion("ap-northeast-2"));
+    void customerPolicyAllowsOnlyReadActionsWithoutWildcards() {
+        Map<String, Object> policy = CustomerRolePolicy.permissionPolicy();
         Map<String, Object> statement = ((List<Map<String, Object>>) policy.get("Statement")).getFirst();
         assertThat((List<String>) statement.get("Action"))
-                .containsExactly("ec2:DescribeInstances", "cloudwatch:GetMetricStatistics")
-                .noneMatch(a -> a.contains("*"));
-        assertThat(statement.get("Condition").toString()).contains("aws:RequestedRegion").contains("ap-northeast-2");
+                .containsExactly("ec2:DescribeInstances", "cloudwatch:GetMetricStatistics", "ec2:DescribeRegions",
+                        "ec2:DescribeVolumes", "ec2:DescribeAddresses", "ec2:DescribeSnapshots",
+                        "elasticloadbalancing:DescribeLoadBalancers")
+                .noneMatch(a -> a.contains("*"))
+                .allMatch(a -> a.contains(":Describe") || a.equals("cloudwatch:GetMetricStatistics"));
+        assertThat(statement).as("잊힌 리전을 찾기 위해 리전 조건을 두지 않는다 (ADR-020)").doesNotContainKey("Condition");
     }
 
     @Test

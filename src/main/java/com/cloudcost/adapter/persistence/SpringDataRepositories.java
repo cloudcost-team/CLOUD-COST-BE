@@ -187,6 +187,27 @@ final class SpringDataRepositories {
         int deleteByOwnerIdAndAccountId(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);
     }
 
+    interface AccountResourceJpa extends Repository<AccountResourceEntity, UUID> {
+        AccountResourceEntity save(AccountResourceEntity entity);
+
+        List<AccountResourceEntity> findByOwnerIdAndAccountIdOrderByRegionAscTypeAscResourceIdAsc(
+            String ownerId, UUID accountId);
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("delete from AccountResourceEntity r where r.ownerId = :ownerId and r.accountId = :accountId")
+        int deleteByOwnerIdAndAccountId(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);
+    }
+
+    interface AccountResourceScanJpa extends Repository<AccountResourceScanEntity, UUID> {
+        AccountResourceScanEntity save(AccountResourceScanEntity entity);
+
+        Optional<AccountResourceScanEntity> findByOwnerIdAndAccountId(String ownerId, UUID accountId);
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("delete from AccountResourceScanEntity s where s.ownerId = :ownerId and s.accountId = :accountId")
+        int deleteByOwnerIdAndAccountId(@Param("ownerId") String ownerId, @Param("accountId") UUID accountId);
+    }
+
     /** 리프레시 토큰: 조회는 토큰 해시(추측 불가)로만 한다 */
     interface RefreshTokenJpa extends Repository<RefreshTokenEntity, UUID> {
         RefreshTokenEntity save(RefreshTokenEntity entity);

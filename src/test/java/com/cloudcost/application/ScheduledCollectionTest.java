@@ -86,4 +86,13 @@ class ScheduledCollectionTest extends IntegrationTestBase {
         assertThat(jdbc.queryForObject("SELECT status FROM aws_accounts WHERE id = ?", String.class, accountId))
                 .isEqualTo("ERROR");
     }
+
+    @Test
+    void 방치_리소스_수집이_예상_밖으로_실패해도_알림은_먼저_평가하고_다시_시도하게_던진다() {
+        aws.resourceError = new IllegalStateException("예상 밖 오류");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.collect(owner, accountId))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(notifications.countUnread(owner)).as("예산 100% + 주간 요약").isEqualTo(2);
+    }
 }

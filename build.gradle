@@ -38,6 +38,8 @@ dependencies {
     implementation 'software.amazon.awssdk:sts'
     implementation 'software.amazon.awssdk:ec2'
     implementation 'software.amazon.awssdk:cloudwatch'
+    // 고객 계정 로드밸런서 조회 (DescribeLoadBalancers만, ADR-020)
+    implementation 'software.amazon.awssdk:elasticloadbalancingv2'
     implementation 'software.amazon.awssdk:pricing'
     implementation 'software.amazon.awssdk:sqs'
 
@@ -58,6 +60,8 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 tasks.named('test') {
+    // Spring 테스트 컨텍스트 여러 개 + ArchUnit 클래스 분석이 기본 힙(512MB)을 넘는다
+    maxHeapSize = '1g'
     useJUnitPlatform {
         // 실제 AWS를 호출하는 테스트는 기본 실행에서 제외한다: ./gradlew awsTest
         excludeTags 'aws'

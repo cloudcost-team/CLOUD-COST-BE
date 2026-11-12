@@ -14,6 +14,8 @@ application
    │     └─ Ec2DataRefresher  캐시 확인 → 필요할 때만 AWS 호출 → DB 저장 (계정 단위 잠금)
    ├─ DashboardService       대시보드 요약(월말 예상·전월 같은 기간 대비·최근 급증)·연결별 월 예산
    ├─ WasteService           낭비 리소스 (최근 14일 사용률 + 단가 → WasteDetector, ADR-010)
+   ├─ ResourceScanService    확장 수집: 켜진 모든 리전의 볼륨·고정 IP·스냅샷·LB·다른 리전 서버 (6시간 캐시, ADR-020)
+   ├─ ResourceWasteService   방치 리소스·잊힌 리전 (ResourceWasteDetector + 공개 정가, 권한 부족 시 스택 업데이트 안내)
    ├─ SimulationService      비용 시뮬레이터 (낭비 추천 + 월말 예상·예산 → CostSimulation, ADR-012)
    ├─ NotificationService    서비스 안 알림 목록·설정 (조회할 때도 AlertEvaluationService로 평가, ADR-014)
    ├─ AlertEvaluationService 예산·급증·주간 요약 조건 평가 → AlertRules, 발생 키로 한 번만 (조회 시점 + 예약 수집 뒤)
@@ -25,7 +27,8 @@ application
    ├─ PriceService           온디맨드 단가 (DB 캐시 7일)
    └─ CurrencyService        원화 환산 환율 (Frankfurter, DB 캐시 6시간, ADR-005)
    ▼ ports
-adapter/awscustomer  ── STS AssumeRole → EC2 DescribeInstances, CloudWatch GetMetricStatistics  [고객 계정]
+adapter/awscustomer  ── STS AssumeRole → EC2 DescribeInstances·Regions·Volumes·Addresses·Snapshots, ELB DescribeLoadBalancers,
+                        CloudWatch GetMetricStatistics  [고객 계정, 읽기만]
 adapter/awsinternal  ── Price List GetProducts (us-east-1), SQS 신호 수신, SQS 수집 큐, CloudFormation 응답 PUT  [우리 계정]
 adapter/notify       ── Discord 웹훅 POST (discord.com/api/webhooks/만, 리다이렉트 안 따라감)
 entrypoint/worker    ── StackCallbackPoller: SQS long polling (CCI_CALLBACK_QUEUE_URL 있을 때만)
