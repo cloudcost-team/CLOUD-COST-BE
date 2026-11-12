@@ -213,9 +213,10 @@ class ApplicationWiring {
             WasteService waste,
             DashboardService dashboards,
             DemoUsageService demo,
+            ResourceWasteService resources,
             BenchmarkReferenceSource references,
             Clock clock) {
-        return new BenchmarkService(waste, dashboards, demo, references, clock);
+        return new BenchmarkService(waste, dashboards, demo, resources, references, clock);
     }
 
     @Bean

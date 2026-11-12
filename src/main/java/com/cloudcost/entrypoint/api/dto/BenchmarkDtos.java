@@ -4,6 +4,7 @@ import com.cloudcost.application.BenchmarkService;
 import com.cloudcost.application.BenchmarkService.BenchmarkView;
 import com.cloudcost.application.BenchmarkService.OversizedSection;
 import com.cloudcost.application.BenchmarkService.SpendSection;
+import com.cloudcost.application.BenchmarkService.WasteSection;
 import com.cloudcost.application.CurrencyService.Resolved;
 import com.cloudcost.domain.benchmark.BenchmarkReference;
 import com.cloudcost.domain.benchmark.BenchmarkReference.SizeBand;
@@ -12,6 +13,7 @@ import com.cloudcost.domain.benchmark.TeamBenchmark;
 import com.cloudcost.domain.benchmark.TeamBenchmark.DistributionBucket;
 import com.cloudcost.domain.benchmark.TeamBenchmark.Ratio;
 import com.cloudcost.domain.benchmark.TeamBenchmark.ServerVerdict;
+import com.cloudcost.domain.benchmark.WasteRatio;
 import com.cloudcost.domain.cost.CostNotes;
 import com.cloudcost.domain.cost.DisplayCurrency;
 import com.cloudcost.domain.demo.DemoFleet;
@@ -159,13 +161,44 @@ public final class BenchmarkDtos {
         }
     }
 
-    @Schema(description = "② 전체 낭비 비율. 지금 권한으로는 계산할 수 없어 참고값만 준다")
+    @Schema(description = "② 전체 낭비 비율 금액 (currency 기준과 USD)")
+    public record WasteAmountsDto(
+            @Schema(description = "서버 낭비(과다 사양·유휴 추천)의 월 절감액 합") BigDecimal serverWaste,
+            @Schema(description = "방치 리소스(볼륨·고정 IP·스냅샷·LB·잊힌 리전 서버) 월 비용 합") BigDecimal resourceWaste,
+            @Schema(description = "낭비 금액 = serverWaste + resourceWaste") BigDecimal waste,
+            @Schema(description = "전체 월 비용 = 월말 예상 + resourceWaste (비율의 분모)") BigDecimal total,
+            @Schema(example = "24.10") BigDecimal wasteUsd,
+            @Schema(example = "80.25") BigDecimal totalUsd) {
+
+        static WasteAmountsDto of(WasteRatio r, DisplayCurrency d) {
+            return new WasteAmountsDto(d.cost(r.serverWasteUsd()), d.cost(r.resourceWasteUsd()), d.cost(r.wasteUsd()),
+                    d.cost(r.totalUsd()), usd(r.wasteUsd()), usd(r.totalUsd()));
+        }
+    }
+
+    @Schema(description = "② 전체 낭비 비율 (S09). 방치 리소스 비용을 모르면 UNAVAILABLE + 사유")
     public record WasteRatioDto(
-            @Schema(example = "UNAVAILABLE") String status,
-            String reason,
+            @Schema(description = "OK | UNAVAILABLE(권한 부족·확인 중·실패·단가 모름) | INSUFFICIENT_HISTORY | NO_FORECAST",
+                    example = "OK") String status,
+            @Schema(description = "OK가 아닐 때 사유 (한국어), OK면 null") String reason,
+            @Schema(description = "전체 낭비 비율 (%). OK가 아니면 null", example = "30.0") BigDecimal ratioPercent,
+            @Schema(description = "참고 평균 대비: BELOW | SAME | ABOVE. OK가 아니면 null") String comparison,
+            @Schema(description = "OK가 아니면 null") WasteAmountsDto amounts,
+            @Schema(description = "추천 적용 후 비율 (%). recommendationIds가 없거나 OK가 아니면 null (방치 리소스는 그대로라고 본다)",
+                    example = "12.4") BigDecimal afterSimulationRatioPercent,
             @Schema(description = "참고값 출처", example = "Flexera 2026 State of the Cloud") String referenceSource,
             String referenceDescription,
-            @Schema(description = "참고 평균 (%)", example = "29") BigDecimal referenceAverage) {}
+            @Schema(description = "참고 평균 (%)", example = "29") BigDecimal referenceAverage) {
+
+        static WasteRatioDto of(WasteSection s, BenchmarkReference.Waste ref, DisplayCurrency d) {
+            WasteRatio r = s.ratio();
+            WasteRatio.Comparison c = r == null ? null : r.compareTo(ref.averagePercent());
+            return new WasteRatioDto(s.status().name(), s.reason(), r == null ? null : r.ratioPercent(),
+                    c == null ? null : c.name(), r == null ? null : WasteAmountsDto.of(r, d),
+                    s.after() == null ? null : s.after().ratioPercent(), ref.source(), ref.description(),
+                    ref.averagePercent());
+        }
+    }
 
     @Schema(description = "비교 모델 정보 (학습·검증 결과)")
     public record SpendModelDto(
@@ -245,10 +278,11 @@ public final class BenchmarkDtos {
                     s.range() == null ? null : SpendBenchmark.barPositionPercent(s.monthEndUsd(), s.range()), range, after);
         }
 
-        /** 달러 표시 금액 (센트 단위) */
-        private static BigDecimal usd(BigDecimal value) {
-            return value == null ? null : value.setScale(2, java.math.RoundingMode.HALF_UP);
-        }
+    }
+
+    /** 달러 표시 금액 (센트 단위) */
+    private static BigDecimal usd(BigDecimal value) {
+        return value == null ? null : value.setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
     public record BenchmarkResponse(
@@ -292,9 +326,7 @@ public final class BenchmarkDtos {
                     v.applied().isEmpty() ? null : d.cost(v.applied().stream().map(WasteFinding::monthlySavingsUsd)
                             .reduce(BigDecimal.ZERO, BigDecimal::add)),
                     OversizedDto.of(v.oversized(), ref.oversized()),
-                    new WasteRatioDto(v.wasteStatus().name(),
-                            BenchmarkService.WASTE_UNAVAILABLE_REASON, ref.waste().source(),
-                            ref.waste().description(), ref.waste().averagePercent()),
+                    WasteRatioDto.of(v.waste(), ref.waste(), d),
                     SpendDto.of(v.spend(), ref.spend(), d), FreshnessDto.of(v.freshness()), List.copyOf(notes),
                     v.asOf());
         }

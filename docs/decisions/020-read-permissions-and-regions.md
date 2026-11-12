@@ -29,4 +29,4 @@
 ## 결과
 - 낭비 목록(`GET /waste`)에 `resources`가 붙고, `GET /resources/waste`로 따로도 본다. 체험 모드에도 예시가 있다.
 - 고객 CloudTrail에 Describe 호출이 리전 수만큼 기록된다 (추가 Trail을 쓰면 10만 건당 $2 정도가 들 수 있어 화면에 안내).
-- EC2 사용량 추정 비용(`estimated_on_demand`)에는 여전히 EBS·고정 IP가 들어가지 않는다. 벤치마크 "전체 낭비 비율"은 후속 작업.
+- EC2 사용량 추정 비용(`estimated_on_demand`)에는 여전히 EBS·고정 IP가 들어가지 않는다. 벤치마크 "전체 낭비 비율"은 서버 낭비 + 방치 리소스 비용을 (월말 예상 + 방치 리소스 비용)과 견줘 계산한다 (방치 리소스 비용을 모르면 `UNAVAILABLE` + 사유).
