@@ -38,7 +38,9 @@
 ```
 - 예약 수집 큐(ADR-019) 메시지에는 owner·연결 id만 넣는다 (자격증명·External ID·Role ARN 없음).
 - 사용자가 등록한 Discord 웹훅 주소는 비밀 값이다: `discord.com/api/webhooks/` 형식만 받고(SSRF 방지), API 응답에는 가린 주소만,
-  로그에는 토큰을 가린다 (`MaskingMessageConverter`).
+  로그에는 토큰을 가린다 (`MaskingMessageConverter`). DB에는 AES-256-GCM으로 암호화해 저장한다 (`SecretCipher`, 키 `CCI_SECRET_KEY`는
+  환경변수로만, AUTH_MODE=google이면 없을 때 시작하지 않는다). 키를 잃거나 값이 손상되면 그 채널만 주소를 못 푼다: 목록·등록·다른 채널 발송은 그대로 되고, 그 채널은 가린 주소(••••)로 보이며
+  보내면 재시도 없이 실패로 남는다(로그에는 채널 id만). 사용자가 그 채널의 주소를 다시 입력하면 고쳐지고, 지울 수도 있다.
 - 고객 Role 이름은 `CloudCost`로 시작해야 한다 (예: `CloudCostReadOnlyRole`). 연결 안내(`roleSetup.steps`)에 적혀 있다.
 - 백엔드는 이 이름 범위 밖의 Role을 맡을 수 없어, 실수나 악용으로 다른 Role을 맡는 범위를 줄인다.
 

@@ -70,7 +70,10 @@ public class NotificationDispatchService {
         // 금액은 보낼 때의 환율로 원화 환산한다 (환율을 못 받으면 USD). 한 번 돌 때 한 번만 구한다
         DisplayCurrency display = due.isEmpty() ? null : currencies.resolve(Currency.KRW).display();
         for (Due d : due) {
-            SendResult result = gateway.send(d.channel(), message(d.notification(), d.accountName(), display));
+            // 저장된 주소를 풀지 못한 채널(키 교체·손상)은 보내지 않고 재시도 없이 실패로 끝낸다. 다른 채널 발송은 계속한다
+            SendResult result = d.channel().webhookUrl() == null
+                ? NotificationChannelService.UNREADABLE_URL
+                : gateway.send(d.channel(), message(d.notification(), d.accountName(), display));
             Instant at = clock.instant();
             if (result.ok()) {
                 deliveries.save(d.delivery().sent(at));

@@ -58,6 +58,7 @@ AUTH_MODE=google
 GOOGLE_CLIENT_ID=<Google 클라이언트 ID>
 GOOGLE_CLIENT_SECRET=<같은 클라이언트의 시크릿>
 JWT_SECRET=$(openssl rand -base64 48)
+CCI_SECRET_KEY=$(openssl rand -base64 32)
 DB_PASSWORD=$(openssl rand -hex 24)
 CCI_BACKEND_ROLE_ARN=arn:aws:iam::<계정ID>:role/CloudCostInsightBackendRole
 EOF
@@ -221,7 +222,7 @@ AWS 권한은 GitHub OIDC로 받는다 (GitHub에 AWS 액세스 키를 저장하
 ## 11. 보안 체크
 - [ ] 루트 사용자 액세스 키 비활성화 (IAM 대시보드 경고)
 - [ ] 보안 그룹 22번은 내 IP만
-- [ ] `.env`는 서버에만 (`chmod 600`), JWT_SECRET·DB_PASSWORD는 서버에서 생성
+- [ ] `.env`는 서버에만 (`chmod 600`), JWT_SECRET·CCI_SECRET_KEY·DB_PASSWORD는 서버에서 생성 (CCI_SECRET_KEY가 없으면 AUTH_MODE=google 서버가 시작하지 않는다)
 - [ ] DB 포트(5432)는 서버 내부(127.0.0.1)에만 열림, 보안 그룹에 5432 없음
 - [ ] Actuator 포트(8081)도 127.0.0.1에만 열림, Caddy는 8080만 프록시
 - [ ] Grafana Cloud 토큰은 서버 `.env`에만, 권한은 metrics write만
