@@ -102,8 +102,15 @@ public final class ResourceDtos {
                 regions.add(new RegionCountDto(e.getKey(), e.getValue()));
             }
             List<String> notes = new ArrayList<>(List.of(COST_NOTE, READ_ONLY_NOTE));
+            boolean lastScanFailed = v.scan().status() == ResourceScan.Status.PERMISSION_UPGRADE_REQUIRED
+                    || v.scan().status() == ResourceScan.Status.FAILED;
+            if (lastScanFailed && !v.findings().isEmpty()) {
+                notes.addFirst("아래 항목은 마지막으로 성공한 수집 결과예요. 이번 확인은 실패해서 지금 상태와 다를 수 있어요.");
+            }
             if (v.scan().status() == ResourceScan.Status.PERMISSION_UPGRADE_REQUIRED) {
-                notes.addFirst("권한 업데이트 필요: 지금은 EC2 사용량만 볼 수 있어요. upgrade 안내대로 권한을 늘리면 방치 리소스도 찾아 드려요.");
+                notes.addFirst(v.findings().isEmpty()
+                        ? "권한 업데이트 필요: 지금은 EC2 사용량만 볼 수 있어요. upgrade 안내대로 권한을 늘리면 방치 리소스도 찾아 드려요."
+                        : "권한 업데이트 필요: 방치 리소스를 새로 확인할 권한이 없어요. upgrade 안내를 확인해 주세요.");
             }
             if (v.totalMonthlyUsd() == null) {
                 notes.add("단가를 모르는 항목이 있어 합계를 내지 않았어요. 항목별 금액을 확인해 주세요.");

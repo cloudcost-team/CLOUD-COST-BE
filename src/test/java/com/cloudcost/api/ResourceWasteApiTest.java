@@ -157,8 +157,11 @@ class ResourceWasteApiTest extends IntegrationTestBase {
                 "ec2:DescribeRegions", "권한이 없습니다.");
         clock.set(NOW.plus(Duration.ofHours(6)));
 
-        String message = resources().at("/resources/scan/message").asText();
-        assertThat(message).contains("전에는 확인됐던 권한").contains("SCP");
+        JsonNode r = resources().at("/resources");
+        assertThat(r.at("/scan/message").asText()).contains("전에는 확인됐던 권한").contains("SCP");
+        // 이전 수집 결과는 남아 있지만 최신이 아니라고 알린다
+        assertThat(r.at("/findingCount").asInt()).isEqualTo(5);
+        assertThat(r.at("/notes").toString()).contains("마지막으로 성공한 수집 결과").doesNotContain("EC2 사용량만");
     }
 
     @Test

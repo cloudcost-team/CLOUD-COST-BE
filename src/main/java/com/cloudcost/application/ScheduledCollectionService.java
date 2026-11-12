@@ -58,10 +58,19 @@ public class ScheduledCollectionService {
         } catch (AwsAccessException e) {
             return Outcome.DONE;
         }
-        // 방치 리소스도 미리 훑어 둔다 (6시간 캐시, 권한이 없으면 상태만 남긴다 — ADR-020)
-        resourceScans.refreshIfStale(ownerId, accountId);
+        // 방치 리소스도 미리 훑어 둔다 (6시간 캐시, 권한이 없으면 상태만 남긴다 — ADR-020).
+        // 여기서 예상 밖 오류가 나도 알림 평가는 먼저 하고, 그다음 던져 큐가 다시 시도하게 한다.
+        RuntimeException resourceFailure = null;
+        try {
+            resourceScans.refreshIfStale(ownerId, accountId);
+        } catch (RuntimeException e) {
+            resourceFailure = e;
+        }
         // 수집 뒤 상태(ERROR 복구·전환)를 반영해 다시 읽는다
         accounts.findByOwnerIdAndId(ownerId, accountId).ifPresent(a -> alerts.evaluate(ownerId, a));
+        if (resourceFailure != null) {
+            throw resourceFailure;
+        }
         return Outcome.DONE;
     }
 }

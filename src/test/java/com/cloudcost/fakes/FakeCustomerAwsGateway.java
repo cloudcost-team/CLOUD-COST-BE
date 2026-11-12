@@ -48,7 +48,7 @@ public class FakeCustomerAwsGateway implements CustomerAwsGateway {
     /** 확장 수집 (ADR-020): 켜진 리전과 리전별 리소스 */
     public final List<String> regions = new ArrayList<>();
     public final Map<String, List<com.cloudcost.domain.resource.AwsResource>> regionResources = new HashMap<>();
-    public AwsAccessException resourceError;
+    public RuntimeException resourceError;
     public int regionScans;
     /** 확장 수집 세션이 돌려줄 GetMetricStatistics 시도 수 */
     public int lbMetricCalls;

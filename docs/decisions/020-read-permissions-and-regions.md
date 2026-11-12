@@ -11,11 +11,11 @@
 - **권한 5개 추가 (모두 읽기, 와일드카드 없음)**: `ec2:DescribeRegions`, `ec2:DescribeVolumes`, `ec2:DescribeAddresses`,
   `ec2:DescribeSnapshots`(항상 `OwnerIds=self`), `elasticloadbalancing:DescribeLoadBalancers`. 쓰기 권한은 여전히 없다.
 - **리전 조건 제거**: 잊힌 리전을 찾으려면 모든 리전을 읽어야 한다. 사용량(CloudWatch 시간별)은 여전히 연결한 기본 리전만 수집하고,
-  다른 리전에서는 Describe와 LB 요청 수(LB당 GetMetricStatistics 1건, 1일 단위 14개)만 부른다.
+  다른 리전에서는 Describe와 LB 요청 수(LB당 GetMetricStatistics 1건, ALB는 요청이 0이면 거부 요청 지표까지 최대 2건, 1일 단위 14개)만 부른다.
 - **허용 목록 3곳 동시 수정**: `scripts/customer-role-allowlist.txt`, `CustomerRolePolicy.ALLOWED_ACTIONS`, ArchUnit 허용 메서드 + 템플릿 테스트.
 - **확장 수집**: `ResourceScanService`가 켜진 리전을 6곳씩 동시에 훑어 `account_resources`에 통째로 바꿔 저장한다(6시간 캐시).
   예약 수집(ADR-019) 뒤에도 돈다. 화면 조회는 수집을 기다리지 않고 백그라운드(2개 연결 동시)에 맡긴 뒤 저장된 결과를 준다(`refreshing`).
-  시도한 Describe·GetMetricStatistics 수(실패 포함)를 `account_resource_scans`에 남긴다. 공인 IP 주소·태그 전체는 저장하지 않는다(고정 IP는 allocation id만).
+  마지막 수집 1회에서 시도한 Describe·GetMetricStatistics 수(실패 포함)를 `account_resource_scans`에 남긴다(누적 아님). 공인 IP 주소·태그 전체는 저장하지 않는다(고정 IP는 allocation id만).
 - **기존 연결(v1 템플릿)**: 새 액션이 AccessDenied면 연결 오류로 만들지 않고 `account_resource_scans.status = PERMISSION_UPGRADE_REQUIRED`,
   `permission_version = 1`(확인 안 됨)로 남긴다. 거부만으로는 v1인지 SCP·권한 경계인지 알 수 없어 안내문에 둘 다 적는다.
   스택 연결이면 저장된 스택 ARN의 리전·이름으로 스택 업데이트 방법을, 직접 만든 Role이면 IAM 콘솔 링크와 정책 JSON을 준다. 1시간마다 다시 확인.

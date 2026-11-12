@@ -200,12 +200,15 @@ final class AwsCustomerSession implements CustomerAwsSession {
 
     private void scanRegion(Region target, String regionName, boolean withInstances, Instant now,
                             List<AwsResource> found, AtomicInteger describes, AtomicInteger metrics) {
-        try (Ec2Client regionEc2 = Ec2Client.builder().region(target).credentialsProvider(credentials)
+        // 리전 클라이언트를 닫을 때 공유 자격증명 공급자(StsAssumeRoleCredentialsProvider)까지 닫히지 않도록
+        // AutoCloseable이 아닌 위임 공급자로 넘긴다. 공급자는 세션 close()에서 한 번만 닫힌다.
+        AwsCredentialsProvider shared = credentials::resolveCredentials;
+        try (Ec2Client regionEc2 = Ec2Client.builder().region(target).credentialsProvider(shared)
                 .overrideConfiguration(clientConfig).build();
              ElasticLoadBalancingV2Client elb = ElasticLoadBalancingV2Client.builder().region(target)
-                 .credentialsProvider(credentials).overrideConfiguration(clientConfig).build();
+                 .credentialsProvider(shared).overrideConfiguration(clientConfig).build();
              CloudWatchClient regionCloudWatch = CloudWatchClient.builder().region(target)
-                 .credentialsProvider(credentials).overrideConfiguration(clientConfig).build()) {
+                 .credentialsProvider(shared).overrideConfiguration(clientConfig).build()) {
             found.addAll(volumes(regionEc2, regionName, describes));
             found.addAll(addresses(regionEc2, regionName, describes));
             found.addAll(snapshots(regionEc2, regionName, describes));
