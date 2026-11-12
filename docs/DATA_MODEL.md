@@ -209,7 +209,8 @@ UNIQUE `(notification_id, channel_id)`. 인덱스 `(status, next_attempt_at)`(�
 
 ## V13 (2026-11-12) — 웹훅 주소 암호화 저장
 `notification_channels.webhook_url`을 VARCHAR(600)으로 늘린다. 앱(`SecretCipher`)이 AES-256-GCM으로 암호화해 `v1:` + base64(IV 12바이트 + 암호문 + 태그)로 저장한다.
-키(`CCI_SECRET_KEY`)는 DB에 없어 DB만 유출돼서는 풀 수 없다. `v1:`이 없는 이전 평문 값은 그대로 읽히고 다음 저장 때 암호화된다.
+키(`CCI_SECRET_KEY`)는 DB에 없어 DB만 유출돼서는 풀 수 없다. `v1:`이 없는 이전 평문 값은 앱이 시작할 때 일괄 암호화한다(`PlaintextWebhookEncryptor`, 여러 번 돌아도 같다). 그 전까지도 그대로 읽힌다.
+키가 바뀌어 못 푸는 행은 그 채널만 주소 없음(null)으로 읽혀 발송이 실패로 끝나고, 다른 채널·목록·등록은 막지 않는다.
 
 ## 보존 (백로그)
 ec2_usage_hourly는 455일, sync_jobs는 90일, notifications·notification_deliveries는 읽은 지 90일 정도로 정리하는 작업이 필요하다.

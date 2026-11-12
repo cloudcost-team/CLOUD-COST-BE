@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
  *   <li>키: {@code CCI_SECRET_KEY} (base64, 32바이트). DB에 두지 않으므로 DB만 유출돼서는 풀 수 없다
  *   <li>저장 형식: {@code v1:} + base64(IV 12바이트 + 암호문 + 인증 태그 16바이트). 값마다 무작위 IV라 같은 주소도 매번 다르게 저장된다
  *   <li>GCM 인증 태그로 위변조·다른 키를 감지한다 (복호화가 실패한다)
- *   <li>{@code v1:}이 없는 값은 암호화 전에 저장한 평문으로 보고 그대로 읽는다 (다음 저장 때 암호화된다)
+ *   <li>{@code v1:}이 없는 값은 암호화 전에 저장한 평문으로 보고 그대로 읽는다 (시작할 때 PlaintextWebhookEncryptor가 암호화한다)
  *   <li>AUTH_MODE=google(배포)에서 키가 없으면 시작하지 않는다. 로컬(dev)은 임시 키를 쓴다 (재시작하면 저장한 웹훅을 못 읽는다)
  * </ul>
  * 키·평문·암호문은 로그와 예외 메시지에 넣지 않는다.

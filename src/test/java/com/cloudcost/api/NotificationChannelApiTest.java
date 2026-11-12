@@ -36,6 +36,7 @@ class NotificationChannelApiTest extends IntegrationTestBase {
 
     @Autowired NotificationDispatchService dispatcher;
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired com.cloudcost.adapter.persistence.PlaintextWebhookEncryptor plaintextEncryptor;
 
     private String accountId;
 
@@ -242,5 +243,68 @@ class NotificationChannelApiTest extends IntegrationTestBase {
         clock.set(NOW.plusSeconds(1));
         call(delete("/api/v1/aws/accounts/" + accountId)).andExpect(status().isOk());
         assertThat(body(getJson("/api/v1/notifications")).at("/items").size()).isZero();
+    }
+
+    /** 다른 키로 암호화한 값 = CCI_SECRET_KEY가 바뀐 뒤의 행 */
+    private java.util.UUID unreadableChannel() {
+        java.util.UUID id = java.util.UUID.randomUUID();
+        String foreign = com.cloudcost.adapter.persistence.SecretCipher
+                .of("ZmVkY2JhOTg3NjU0MzIxMGZlZGNiYTk4NzY1NDMyMTA=").encrypt(URL);
+        jdbc.update("INSERT INTO notification_channels (id, owner_id, type, webhook_url, enabled, created_at, updated_at) "
+                + "VALUES (?, ?, 'DISCORD', ?, TRUE, ?, ?)", id, owner, foreign,
+                java.sql.Timestamp.from(NOW.minusSeconds(1)), java.sql.Timestamp.from(NOW.minusSeconds(1)));
+        return id;
+    }
+
+    @Test
+    void 주소를_못_푸는_채널이_있어도_다른_채널로는_보내고_그_채널만_실패로_끝낸다() throws Exception {
+        java.util.UUID broken = unreadableChannel();
+        createChannel(URL);
+        budgetAlerts();
+
+        Result r = dispatcher.dispatch();
+        assertThat(r.sent()).as("정상 채널은 보낸다").isEqualTo(2);
+        assertThat(r.failed()).as("못 푸는 채널은 재시도 없이 실패").isEqualTo(2);
+        assertThat(channelGateway.sent).allMatch(s -> URL.equals(s.channel().webhookUrl()));
+        Integer pending = jdbc.queryForObject("SELECT COUNT(*) FROM notification_deliveries WHERE channel_id = ? "
+                + "AND status = 'PENDING'", Integer.class, broken);
+        assertThat(pending).as("다음 실행에서 같은 행에 다시 걸리지 않는다").isZero();
+    }
+
+    @Test
+    void 주소를_못_푸는_채널이_있어도_목록_등록은_되고_주소를_다시_넣으면_고쳐진다() throws Exception {
+        java.util.UUID broken = unreadableChannel();
+
+        JsonNode list = body(getJson(CHANNELS).andExpect(status().isOk()));
+        assertThat(list.at("/items").size()).isEqualTo(1);
+        createChannel(URL);
+        assertThat(body(call(post(CHANNELS + "/" + broken + "/test")).andExpect(status().isOk())).toString())
+                .contains("다시 입력");
+
+        // 켜기·끄기만 바꿔도 저장된 암호문은 그대로 (null로 덮지 않는다)
+        call(put(CHANNELS + "/" + broken).contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":false}"))
+                .andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("SELECT webhook_url FROM notification_channels WHERE id = ?", String.class, broken))
+                .startsWith("v1:");
+
+        call(put(CHANNELS + "/" + broken).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"webhookUrl\":\"" + URL + "\",\"enabled\":true}")).andExpect(status().isOk());
+        call(post(CHANNELS + "/" + broken + "/test")).andExpect(status().isOk());
+        assertThat(channelGateway.sent.getLast().channel().webhookUrl()).isEqualTo(URL);
+    }
+
+    @Test
+    void 시작할_때_평문으로_남은_주소를_암호화한다() throws Exception {
+        java.util.UUID id = java.util.UUID.randomUUID();
+        jdbc.update("INSERT INTO notification_channels (id, owner_id, type, webhook_url, enabled, created_at, updated_at) "
+                + "VALUES (?, ?, 'DISCORD', ?, TRUE, ?, ?)", id, owner, URL,
+                java.sql.Timestamp.from(NOW), java.sql.Timestamp.from(NOW));
+
+        assertThat(plaintextEncryptor.encryptPlaintext()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT webhook_url FROM notification_channels WHERE id = ?", String.class, id))
+                .startsWith("v1:").doesNotContain(TOKEN);
+        assertThat(plaintextEncryptor.encryptPlaintext()).as("이미 암호화된 행은 그대로").isZero();
+        call(post(CHANNELS + "/" + id + "/test")).andExpect(status().isOk());
+        assertThat(channelGateway.sent.getLast().channel().webhookUrl()).isEqualTo(URL);
     }
 }

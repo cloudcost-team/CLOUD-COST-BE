@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Component;
@@ -29,6 +31,7 @@ class ChannelPersistenceAdapter implements NotificationChannelRepository, Notifi
 
     /** V10의 UNIQUE (notification_id, channel_id) 제약 이름 */
     static final String DELIVERY_CONSTRAINT = "uq_notification_deliveries";
+    private static final Logger log = LoggerFactory.getLogger(ChannelPersistenceAdapter.class);
 
     private final NotificationChannelJpa channels;
     private final NotificationDeliveryJpa deliveries;
@@ -54,7 +57,10 @@ class ChannelPersistenceAdapter implements NotificationChannelRepository, Notifi
         e.id = c.id();
         e.ownerId = c.ownerId();
         e.type = c.type().name();
-        e.webhookUrl = cipher.encrypt(c.webhookUrl());
+        // 주소를 못 푼 채널(webhookUrl null)을 켜기·끄기만 바꾸면 저장된 암호문을 그대로 둔다
+        if (c.webhookUrl() != null || e.webhookUrl == null) {
+            e.webhookUrl = cipher.encrypt(c.webhookUrl());
+        }
         e.enabled = c.enabled();
         e.createdAt = c.createdAt();
         e.updatedAt = c.updatedAt();
@@ -164,8 +170,19 @@ class ChannelPersistenceAdapter implements NotificationChannelRepository, Notifi
             e.attempts, e.lastError, e.nextAttemptAt, e.sentAt, e.createdAt);
     }
 
+    /**
+     * 주소를 풀지 못하면(키 교체·손상) 그 채널만 webhookUrl=null로 돌려준다. 예외를 던지면 목록·등록·발송 전체가 멈추기 때문이다.
+     * null 주소는 API에서 가린 값(••••)으로 보이고, 보내면 재시도 없이 실패(FAILED)로 끝나며, 사용자가 주소를 다시 입력해 고치거나 지울 수 있다.
+     */
     private NotificationChannel channel(NotificationChannelEntity e) {
-        return new NotificationChannel(e.id, e.ownerId, ChannelType.valueOf(e.type), cipher.decrypt(e.webhookUrl), e.enabled,
+        String url;
+        try {
+            url = cipher.decrypt(e.webhookUrl);
+        } catch (IllegalStateException ex) {
+            log.warn("Webhook URL decrypt failed: channel={}", e.id);
+            url = null;
+        }
+        return new NotificationChannel(e.id, e.ownerId, ChannelType.valueOf(e.type), url, e.enabled,
             e.createdAt, e.updatedAt);
     }
 

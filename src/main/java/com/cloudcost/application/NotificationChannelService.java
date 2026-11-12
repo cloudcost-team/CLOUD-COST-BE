@@ -20,6 +20,10 @@ public class NotificationChannelService {
         "CloudCost 알림 채널이 연결됐어요. 켜 둔 알림이 생기면 이 채널로 보내 드려요.", Tone.INFO, List.of(),
         "CloudCost Insight", null);
 
+    /** 저장된 주소를 풀지 못한 채널(webhookUrl null)로 보내려 할 때. 주소를 다시 입력하면 고쳐진다 */
+    static final SendResult UNREADABLE_URL = SendResult.failure(
+        "저장된 웹훅 주소를 읽지 못했어요. 주소를 다시 입력해 주세요.", false);
+
     private final NotificationChannelRepository channels;
     private final NotificationChannelGateway gateway;
     private final Clock clock;
@@ -56,7 +60,8 @@ public class NotificationChannelService {
 
     /** 꺼져 있어도 보낸다 (켜기 전에 확인하는 용도). 결과는 저장하지 않는다. */
     public SendResult test(String ownerId, UUID id) {
-        return gateway.send(get(ownerId, id), TEST_MESSAGE);
+        NotificationChannel channel = get(ownerId, id);
+        return channel.webhookUrl() == null ? UNREADABLE_URL : gateway.send(channel, TEST_MESSAGE);
     }
 
     private NotificationChannel get(String ownerId, UUID id) {
