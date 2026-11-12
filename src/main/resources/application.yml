@@ -93,6 +93,10 @@ cci:
     dispatch-enabled: ${CCI_NOTIFY_DISPATCH_ENABLED:true}
     dispatch-interval: 60s
     app-url: ${CCI_APP_URL:https://www.cloud-cost.cloud}
+  # DB에 저장하는 사용자 비밀값(Discord 웹훅 주소) 암호화 키. base64 32바이트 (openssl rand -base64 32).
+  # 비밀 값 — 환경변수로만 넣는다. AUTH_MODE=google이면 필수, 로컬은 비우면 임시 키
+  security:
+    secret-key: ${CCI_SECRET_KEY:}
   usage:
     instance-ttl: ${CCI_INSTANCE_TTL:10m}
     usage-ttl: ${CCI_USAGE_TTL:1h}

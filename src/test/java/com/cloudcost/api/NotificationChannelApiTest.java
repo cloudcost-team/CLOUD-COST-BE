@@ -35,6 +35,7 @@ class NotificationChannelApiTest extends IntegrationTestBase {
     static final String CHANNELS = "/api/v1/settings/alerts/channels";
 
     @Autowired NotificationDispatchService dispatcher;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private String accountId;
 
@@ -83,6 +84,34 @@ class NotificationChannelApiTest extends IntegrationTestBase {
 
         call(delete(CHANNELS + "/" + id)).andExpect(status().isNoContent());
         assertThat(body(getJson(CHANNELS)).at("/items").size()).isZero();
+    }
+
+    @Test
+    void 웹훅_주소는_DB에_암호화해_저장하고_보낼_때만_푼다() throws Exception {
+        String id = createChannel(URL);
+
+        String stored = jdbc.queryForObject("SELECT webhook_url FROM notification_channels WHERE id = ?", String.class,
+                java.util.UUID.fromString(id));
+        assertThat(stored).startsWith("v1:").doesNotContain(TOKEN).doesNotContain("discord.com");
+        String again = createChannel(URL);
+        assertThat(jdbc.queryForObject("SELECT webhook_url FROM notification_channels WHERE id = ?", String.class,
+                java.util.UUID.fromString(again))).as("같은 주소도 매번 다르게 저장된다 (무작위 IV)").isNotEqualTo(stored);
+
+        call(post(CHANNELS + "/" + id + "/test")).andExpect(status().isOk());
+        assertThat(channelGateway.sent.getLast().channel().webhookUrl()).as("보낼 때는 원래 주소").isEqualTo(URL);
+    }
+
+    @Test
+    void 암호화_전에_저장한_평문_주소도_그대로_읽힌다() throws Exception {
+        java.util.UUID id = java.util.UUID.randomUUID();
+        jdbc.update("INSERT INTO notification_channels (id, owner_id, type, webhook_url, enabled, created_at, updated_at) "
+                + "VALUES (?, ?, 'DISCORD', ?, TRUE, ?, ?)", id, owner, URL,
+                java.sql.Timestamp.from(NOW), java.sql.Timestamp.from(NOW));
+
+        JsonNode list = body(getJson(CHANNELS).andExpect(status().isOk()));
+        assertThat(list.toString()).contains("webhooks/…5678/").doesNotContain(TOKEN);
+        call(post(CHANNELS + "/" + id + "/test")).andExpect(status().isOk());
+        assertThat(channelGateway.sent.getLast().channel().webhookUrl()).isEqualTo(URL);
     }
 
     @Test

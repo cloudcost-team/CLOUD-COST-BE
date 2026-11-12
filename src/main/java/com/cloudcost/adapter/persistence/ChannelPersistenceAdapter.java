@@ -33,12 +33,15 @@ class ChannelPersistenceAdapter implements NotificationChannelRepository, Notifi
     private final NotificationChannelJpa channels;
     private final NotificationDeliveryJpa deliveries;
     private final TransactionTemplate requiresNew;
+    /** 웹훅 주소는 암호화해 저장하고 읽을 때 푼다 (DB에는 평문이 없다) */
+    private final SecretCipher cipher;
 
     ChannelPersistenceAdapter(
         NotificationChannelJpa channels, NotificationDeliveryJpa deliveries,
-        PlatformTransactionManager transactionManager) {
+        PlatformTransactionManager transactionManager, SecretCipher cipher) {
         this.channels = channels;
         this.deliveries = deliveries;
+        this.cipher = cipher;
         this.requiresNew = new TransactionTemplate(transactionManager);
         this.requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -51,24 +54,24 @@ class ChannelPersistenceAdapter implements NotificationChannelRepository, Notifi
         e.id = c.id();
         e.ownerId = c.ownerId();
         e.type = c.type().name();
-        e.webhookUrl = c.webhookUrl();
+        e.webhookUrl = cipher.encrypt(c.webhookUrl());
         e.enabled = c.enabled();
         e.createdAt = c.createdAt();
         e.updatedAt = c.updatedAt();
-        return toDomain(channels.save(e));
+        return channel(channels.save(e));
     }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<NotificationChannel> findByOwnerIdAndId(String ownerId, UUID id) {
-        return channels.findByOwnerIdAndId(ownerId, id).map(ChannelPersistenceAdapter::toDomain);
+        return channels.findByOwnerIdAndId(ownerId, id).map(this::channel);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<NotificationChannel> findAllByOwnerId(String ownerId) {
         return channels.findByOwnerIdOrderByCreatedAtAsc(ownerId).stream()
-            .map(ChannelPersistenceAdapter::toDomain)
+            .map(this::channel)
             .toList();
     }
 
@@ -115,7 +118,7 @@ class ChannelPersistenceAdapter implements NotificationChannelRepository, Notifi
             .map(row -> new Due(
                 toDomain((NotificationDeliveryEntity) row[0]),
                 toDomain((NotificationEntity) row[1]),
-                toDomain((NotificationChannelEntity) row[2]),
+                channel((NotificationChannelEntity) row[2]),
                 row[3] == null || ((String) row[3]).isBlank() ? null : (String) row[3]))
             .toList();
     }
@@ -161,8 +164,8 @@ class ChannelPersistenceAdapter implements NotificationChannelRepository, Notifi
             e.attempts, e.lastError, e.nextAttemptAt, e.sentAt, e.createdAt);
     }
 
-    private static NotificationChannel toDomain(NotificationChannelEntity e) {
-        return new NotificationChannel(e.id, e.ownerId, ChannelType.valueOf(e.type), e.webhookUrl, e.enabled,
+    private NotificationChannel channel(NotificationChannelEntity e) {
+        return new NotificationChannel(e.id, e.ownerId, ChannelType.valueOf(e.type), cipher.decrypt(e.webhookUrl), e.enabled,
             e.createdAt, e.updatedAt);
     }
 

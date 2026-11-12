@@ -152,7 +152,7 @@ UNIQUE `(owner_id, event_key)` — 같은 일은 한 번만 만든다. 인덱스
 | id | UUID PK | |
 | owner_id | VARCHAR(64) | 조회·수정은 항상 owner 조건. 인덱스 `(owner_id, created_at)` |
 | type | VARCHAR(20) | `DISCORD` |
-| webhook_url | VARCHAR(300) | 비밀 값. API에는 가린 주소만, 로그에는 토큰을 가린다 |
+| webhook_url | VARCHAR(600) | 비밀 값. **앱에서 AES-256-GCM으로 암호화해 저장**(`v1:` + base64, 키 `CCI_SECRET_KEY`, V13). API에는 가린 주소만, 로그에는 토큰을 가린다 |
 | enabled | BOOLEAN | |
 | created_at / updated_at | TIMESTAMPTZ | 이 시각 뒤에 생긴 알림만 보낸다 |
 
@@ -206,6 +206,10 @@ UNIQUE `(notification_id, channel_id)`. 인덱스 `(status, next_attempt_at)`(�
 | spike_date | DATE NULL | 급증: 급증일 |
 | spike_ratio | NUMERIC(20,1) NULL | 급증: 평소 대비 배수 |
 | spike_cause | VARCHAR(255) NULL | 급증: 원인 서버 Name 태그 (없으면 인스턴스 ID) |
+
+## V13 (2026-11-12) — 웹훅 주소 암호화 저장
+`notification_channels.webhook_url`을 VARCHAR(600)으로 늘린다. 앱(`SecretCipher`)이 AES-256-GCM으로 암호화해 `v1:` + base64(IV 12바이트 + 암호문 + 태그)로 저장한다.
+키(`CCI_SECRET_KEY`)는 DB에 없어 DB만 유출돼서는 풀 수 없다. `v1:`이 없는 이전 평문 값은 그대로 읽히고 다음 저장 때 암호화된다.
 
 ## 보존 (백로그)
 ec2_usage_hourly는 455일, sync_jobs는 90일, notifications·notification_deliveries는 읽은 지 90일 정도로 정리하는 작업이 필요하다.

@@ -20,7 +20,7 @@ class NotificationChannelEntity {
     @Column(nullable = false, length = 20)
     String type;
 
-    @Column(name = "webhook_url", nullable = false, length = 300)
+    @Column(name = "webhook_url", nullable = false, length = 600)
     String webhookUrl;
 
     @Column(nullable = false)
