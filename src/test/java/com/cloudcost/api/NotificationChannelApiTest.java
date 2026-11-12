@@ -281,11 +281,13 @@ class NotificationChannelApiTest extends IntegrationTestBase {
         assertThat(body(call(post(CHANNELS + "/" + broken + "/test")).andExpect(status().isOk())).toString())
                 .contains("다시 입력");
 
-        // 켜기·끄기만 바꿔도 저장된 암호문은 그대로 (null로 덮지 않는다)
+        // 켜기·끄기만 바꿔도 저장된 암호문은 그대로 (null로 덮거나 다시 암호화하지 않는다)
+        String before = jdbc.queryForObject("SELECT webhook_url FROM notification_channels WHERE id = ?", String.class,
+                broken);
         call(put(CHANNELS + "/" + broken).contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":false}"))
                 .andExpect(status().isOk());
         assertThat(jdbc.queryForObject("SELECT webhook_url FROM notification_channels WHERE id = ?", String.class, broken))
-                .startsWith("v1:");
+                .isEqualTo(before);
 
         call(put(CHANNELS + "/" + broken).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"webhookUrl\":\"" + URL + "\",\"enabled\":true}")).andExpect(status().isOk());
