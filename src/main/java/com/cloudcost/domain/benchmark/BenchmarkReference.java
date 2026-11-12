@@ -9,7 +9,7 @@ import java.util.Optional;
  *
  * @param oversized 과다 사양 서버 비율 기준 (서버 대수 구간별)
  * @param waste     전체 낭비 비율 참고값 (지금 권한으로는 우리 값을 계산할 수 없다)
- * @param spend     월 지출 범위
+ * @param spend     규모(서버 대수)별 한 달 사용량 분포
  */
 public record BenchmarkReference(Oversized oversized, Waste waste, Spend spend) {
 
@@ -77,7 +77,63 @@ public record BenchmarkReference(Oversized oversized, Waste waste, Spend spend) 
     public record Waste(String source, String description, BigDecimal averagePercent) {
     }
 
-    /** 비슷한 팀의 월 지출 범위 (USD) */
-    public record Spend(String source, String description, BigDecimal minUsd, BigDecimal maxUsd) {
+    /**
+     * 같은 서버 대수 구간 팀들의 한 달 사용량(vCPU-시간 = vCPU × 켜진 시간) 분포. 금액이 아니라 사용량으로 두는 이유는
+     * 원본에 가격이 없어서다. 우리 팀도 같은 단위로 재서 순위를 매기고, 금액 범위는 우리 팀의 vCPU-시간당 비용으로 환산한다.
+     *
+     * @param bands 서버 대수 구간별 분포. 구간은 겹치지 않고 작은 순서다 (oversized와 같은 구간 키를 쓴다)
+     */
+    public record Spend(String source, String description, List<SpendBand> bands) {
+
+        public Spend {
+            bands = bands == null ? List.of() : List.copyOf(bands);
+        }
+
+        /** 서버 n대가 속한 구간. 어느 구간에도 안 들면 empty */
+        public Optional<SpendBand> bandFor(int servers) {
+            return bands.stream().filter(b -> b.contains(servers)).findFirst();
+        }
+
+        /** "1-2" 같은 구간 키로 찾는다 */
+        public Optional<SpendBand> band(String key) {
+            return bands.stream().filter(b -> b.key().equals(key)).findFirst();
+        }
+    }
+
+    /**
+     * 서버 대수 구간 하나의 한 달 사용량 분포.
+     *
+     * @param percentiles "팀의 p%가 이 사용량 이하" 표 (p 오름차순, 25·75 포함). 없으면 이 구간은 비교하지 않는다
+     */
+    public record SpendBand(
+        int minServers,
+        int maxServers,
+        int sampleSize,
+        BigDecimal medianVcpuHours,
+        List<UsagePercentile> percentiles) {
+
+        public SpendBand {
+            percentiles = percentiles == null ? List.of() : List.copyOf(percentiles);
+        }
+
+        public String key() {
+            return minServers + "-" + maxServers;
+        }
+
+        public String label() {
+            return minServers == maxServers ? "서버 " + minServers + "대" : "서버 " + minServers + "~" + maxServers + "대";
+        }
+
+        public boolean contains(int servers) {
+            return servers >= minServers && servers <= maxServers;
+        }
+
+        public boolean hasData() {
+            return sampleSize > 0 && medianVcpuHours != null && !percentiles.isEmpty();
+        }
+    }
+
+    /** 팀의 percentile%가 한 달 사용량 vcpuHours 이하 */
+    public record UsagePercentile(BigDecimal percentile, BigDecimal vcpuHours) {
     }
 }

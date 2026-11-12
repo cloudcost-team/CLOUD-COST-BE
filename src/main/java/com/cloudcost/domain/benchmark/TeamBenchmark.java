@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
  *
  * <ul>
  *   <li>과다 사양 비율 = CPU P95 &lt; 10% 서버 수 ÷ 판단한 서버 수 (최근 14일 중 24시간 이상 켜진 서버)
- *   <li>월 지출 위치 = 월말 예상이 비교 범위보다 아래·안·위
+ *   <li>월 지출 비교는 {@link SpendBenchmark}
  * </ul>
  */
 public final class TeamBenchmark {
@@ -173,27 +173,6 @@ public final class TeamBenchmark {
             }
         }
         return DISTRIBUTION_EDGES.size() - 2;
-    }
-
-    /**
-     * 월 지출 범위 막대 위의 위치 (%). 하한 = 0, 상한 = 100이고 범위 밖이면 0 또는 100으로 맞춘다 (BELOW·ABOVE는 position으로 구분).
-     */
-    public static BigDecimal barPositionPercent(BigDecimal monthlyUsd, BenchmarkReference.Spend spend) {
-        BigDecimal width = spend.maxUsd().subtract(spend.minUsd());
-        if (width.signum() <= 0) {
-            return monthlyUsd.compareTo(spend.minUsd()) < 0 ? BigDecimal.ZERO.setScale(1) : BigDecimal.valueOf(100).setScale(1);
-        }
-        BigDecimal raw = monthlyUsd.subtract(spend.minUsd()).multiply(BigDecimal.valueOf(100))
-            .divide(width, 1, RoundingMode.HALF_UP);
-        return raw.max(BigDecimal.ZERO.setScale(1)).min(BigDecimal.valueOf(100).setScale(1));
-    }
-
-    /** 월 지출이 범위 아래(min 미만)·안(min~max)·위(max 초과) */
-    public static Position position(BigDecimal monthlyUsd, BenchmarkReference.Spend spend) {
-        if (monthlyUsd.compareTo(spend.minUsd()) < 0) {
-            return Position.BELOW;
-        }
-        return monthlyUsd.compareTo(spend.maxUsd()) > 0 ? Position.ABOVE : Position.WITHIN;
     }
 
     private static Set<String> ids(List<WasteFinding> applied, WasteKind kind) {

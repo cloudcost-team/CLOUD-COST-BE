@@ -6,6 +6,8 @@ import com.cloudcost.application.port.BenchmarkReferenceSource;
 import com.cloudcost.domain.DomainValidationException;
 import com.cloudcost.domain.benchmark.BenchmarkReference;
 import com.cloudcost.domain.benchmark.BenchmarkReference.SizeBand;
+import com.cloudcost.domain.benchmark.BenchmarkReference.SpendBand;
+import com.cloudcost.domain.benchmark.SpendBenchmark;
 import com.cloudcost.domain.benchmark.TeamBenchmark;
 import com.cloudcost.domain.benchmark.TeamBenchmark.Position;
 import com.cloudcost.domain.benchmark.TeamBenchmark.Ratio;
@@ -56,11 +58,25 @@ public class BenchmarkService {
     }
 
     /**
-     * @param monthEndUsd 월말 예상 (NO_FORECAST면 null)
-     * @param afterUsd    추천 적용 후 월 비용 (추천 id를 주지 않았거나 NO_FORECAST면 null)
+     * ③ 규모 대비 월 지출. OK가 아니면 usage·band·range·순위·위치 중 일부가 null이다.
+     *
+     * @param status                OK · NO_FORECAST(월말 예상 없음) · INSUFFICIENT_HISTORY(기록 14일 미만이라 사용량을 못 잼)
+     *                              · NOT_COMPARABLE(켜진 서버가 없거나 맞는 구간·자료가 없음)
+     * @param monthEndUsd           월말 예상 (NO_FORECAST면 null)
+     * @param usage                 우리 한 달 사용량 (INSUFFICIENT_HISTORY·NO_FORECAST면 null)
+     * @param band                  비교에 쓴 서버 대수 구간
+     * @param teamsUsingLessPercent 같은 규모 팀 중 우리보다 확실히 적게 쓰는 팀 (%)
+     * @param range                 같은 규모 팀의 일반 범위(25~75번째 백분위)를 우리 vCPU-시간당 비용으로 환산한 금액
+     * @param afterUsd              추천 적용 후 월 비용 (추천 id를 주지 않았거나 OK가 아니면 null)
      */
     public record SpendSection(
-        Status status, BigDecimal monthEndUsd, Position position, BigDecimal afterUsd, Position afterPosition) {
+        Status status, BigDecimal monthEndUsd, SpendBenchmark.Usage usage, SpendBand band,
+        BigDecimal teamsUsingLessPercent, SpendBenchmark.UsdRange range, Position position, BigDecimal afterUsd,
+        Position afterPosition) {
+
+        static SpendSection notCompared(Status status, BigDecimal monthEndUsd, SpendBenchmark.Usage usage, SpendBand band) {
+            return new SpendSection(status, monthEndUsd, usage, band, null, null, null, null, null);
+        }
     }
 
     /**
@@ -144,7 +160,7 @@ public class BenchmarkService {
         if (simulate) {
             notes.add("적용 후: 과다 사양 추천을 적용한 서버는 적정, 유휴 추천(중지)을 적용한 서버는 판단 대상에서 빠진다고 봤어요.");
         }
-        SpendSection spend = spend(dashboard, simulate, applied, reference, notes);
+        SpendSection spend = spend(dashboard, wasteView, insufficient, simulate, applied, sizeBand, reference, notes);
         notes.add(WASTE_UNAVAILABLE_REASON);
         return new BenchmarkView(accountId, insufficient ? Status.INSUFFICIENT_HISTORY : Status.OK,
             wasteView.availableAt(), wasteView.windowStart(), wasteView.windowEnd(), applied, oversized,
@@ -190,21 +206,44 @@ public class BenchmarkService {
     }
 
     private static SpendSection spend(
-        DashboardView dashboard, boolean simulate, List<WasteFinding> applied, BenchmarkReference reference,
-        List<String> notes) {
+        DashboardView dashboard, WasteView wasteView, boolean insufficient, boolean simulate, List<WasteFinding> applied,
+        String sizeBand, BenchmarkReference reference, List<String> notes) {
         if (dashboard.forecast() == null) {
             notes.add("월말 예상 비용이 아직 없어 월 지출은 비교하지 않았어요.");
-            return new SpendSection(Status.NO_FORECAST, null, null, null, null);
+            return SpendSection.notCompared(Status.NO_FORECAST, null, null, null);
         }
         BigDecimal monthEnd = dashboard.forecast().monthEndUsd();
-        BenchmarkReference.Spend range = reference.spend();
         notes.add("월 지출은 EC2 온디맨드 추정 비용(월말 예상)이라 EBS·데이터 전송 등이 빠져 실제 청구액보다 작아요.");
+        if (insufficient) {
+            notes.add("기록이 14일 미만이라 " + wasteView.availableAt() + "부터 같은 규모 팀과 월 지출을 비교할 수 있어요.");
+            return SpendSection.notCompared(Status.INSUFFICIENT_HISTORY, monthEnd, null, null);
+        }
+        BenchmarkReference.Spend ref = reference.spend();
+        SpendBenchmark.Usage usage = SpendBenchmark.monthlyUsage(wasteView.instances(), wasteView.stats());
+        if (!usage.unknownTypes().isEmpty()) {
+            notes.add("vCPU를 모르는 타입(" + String.join(", ", usage.unknownTypes()) + ")은 월 지출 순위의 사용량에서 뺐어요.");
+        }
+        SpendBand band = sizeBand != null ? ref.band(sizeBand).orElse(null)
+            : usage.servers() == 0 ? null : ref.bandFor(usage.servers()).orElse(null);
+        if (usage.servers() == 0 || usage.vcpuHours().signum() <= 0) {
+            notes.add("최근 14일 동안 켜진 서버가 없어 같은 규모 팀과 월 지출을 비교하지 않았어요.");
+            return SpendSection.notCompared(Status.NOT_COMPARABLE, monthEnd, usage, band);
+        }
+        if (band == null || !band.hasData() || monthEnd.signum() <= 0) {
+            notes.add("서버 " + usage.servers() + "대에 맞는 비교 자료가 없어 월 지출은 비교하지 않았어요.");
+            return SpendSection.notCompared(Status.NOT_COMPARABLE, monthEnd, usage, band);
+        }
+        notes.add("월 지출 순위 = 최근 14일 켜진 시간 × vCPU를 한 달로 환산한 사용량을 " + band.label()
+            + " 팀들(Azure Public Dataset)과 비교한 결과예요. 일반 범위는 그 팀들의 가운데 절반을 우리 팀의 단가로 환산한 금액이에요.");
+        SpendBenchmark.UsdRange range = SpendBenchmark.typicalRange(band, monthEnd, usage.vcpuHours()).orElseThrow();
+        BigDecimal less = SpendBenchmark.teamsUsingLessPercent(usage.vcpuHours(), band.percentiles());
         BigDecimal afterUsd = null;
         Position afterPosition = null;
         if (simulate) {
             afterUsd = CostSimulation.of(monthEnd, applied, 0, null).afterUsd();
-            afterPosition = TeamBenchmark.position(afterUsd, range);
+            afterPosition = SpendBenchmark.position(afterUsd, range);
         }
-        return new SpendSection(Status.OK, monthEnd, TeamBenchmark.position(monthEnd, range), afterUsd, afterPosition);
+        return new SpendSection(Status.OK, monthEnd, usage, band, less, range, SpendBenchmark.position(monthEnd, range),
+            afterUsd, afterPosition);
     }
 }

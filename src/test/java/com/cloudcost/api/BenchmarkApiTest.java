@@ -79,10 +79,23 @@ class BenchmarkApiTest extends IntegrationTestBase {
         JsonNode spend = body.at("/monthlySpend");
         assertThat(spend.at("/status").asText()).isEqualTo("OK");
         assertThat(spend.at("/monthlyCost").decimalValue()).isEqualByComparingTo("197.90");
-        assertThat(spend.at("/position").asText()).isEqualTo("WITHIN");
         assertThat(spend.at("/monthlyCostUsd").decimalValue()).isEqualByComparingTo("197.90");
-        assertThat(spend.at("/barPositionPercent").decimalValue()).as("(197.904 − 100) ÷ 400").isEqualByComparingTo("24.5");
-        assertThat(spend.at("/range/minUsd").decimalValue()).isEqualByComparingTo("100");
+        assertThat(spend.at("/servers").asInt()).isEqualTo(3);
+        assertThat(spend.at("/monthlyVcpuHours").decimalValue())
+                .as("2vCPU 3대 × 336시간 × 30일 ÷ 14일").isEqualByComparingTo("4320.0");
+        assertThat(spend.at("/teamsUsingLessPercent").decimalValue())
+                .as("3~20대 표에서 4320보다 확실히 적은 가장 큰 백분위는 15% (3126.5). 20%는 4320으로 같아 넣지 않는다").isEqualByComparingTo("15.0");
+        assertThat(spend.at("/range/source").asText()).isEqualTo("Azure Public Dataset V2");
+        assertThat(spend.at("/range/sizeBand").asText()).isEqualTo("3-20");
+        assertThat(spend.at("/range/sizeBandLabel").asText()).isEqualTo("서버 3~20대");
+        assertThat(spend.at("/range/sampleSize").asInt()).isEqualTo(2673);
+        assertThat(spend.at("/range/minVcpuHours").decimalValue()).isEqualByComparingTo("5758.0");
+        assertThat(spend.at("/range/maxVcpuHours").decimalValue()).isEqualByComparingTo("23039.0");
+        assertThat(spend.at("/range/minUsd").decimalValue())
+                .as("5758.0 × (197.904 ÷ 4320) — 우리 vCPU-시간당 비용으로 환산").isEqualByComparingTo("263.78");
+        assertThat(spend.at("/range/maxUsd").decimalValue()).isEqualByComparingTo("1055.44");
+        assertThat(spend.at("/position").asText()).as("같은 규모 팀 가운데 절반보다 적게 씀").isEqualTo("BELOW");
+        assertThat(spend.at("/barPositionPercent").decimalValue()).isEqualByComparingTo("0");
         assertThat(body.at("/selectedMonthlySavings").isNull()).as("추천을 고르지 않으면 null").isTrue();
 
         JsonNode distribution = oversized.at("/distribution");
@@ -126,7 +139,7 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(after.at("/oversizedCount").asInt()).isZero();
         assertThat(body.at("/monthlySpend/afterSimulation/monthlyCost").decimalValue())
                 .as("197.904 − 118.26").isEqualByComparingTo("79.64");
-        assertThat(body.at("/monthlySpend/afterSimulation/position").asText()).isEqualTo("BELOW");
+        assertThat(body.at("/monthlySpend/afterSimulation/position").asText()).as("범위 하한 $263.78 아래").isEqualTo("BELOW");
         assertThat(body.at("/monthlySpend/afterSimulation/monthlyCostUsd").decimalValue()).isEqualByComparingTo("79.64");
         assertThat(body.at("/monthlySpend/afterSimulation/barPositionPercent").decimalValue()).isEqualByComparingTo("0");
         assertThat(body.at("/oversizedRatio/distribution/afterSimulationBucketIndex").asInt()).as("적용 후 0%").isZero();
@@ -161,6 +174,11 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(oversized.at("/sizeBands/0/matchesOurs").asBoolean()).isTrue();
         assertThat(oversized.at("/sizeBands/1/matchesOurs").asBoolean()).isFalse();
         assertThat(body.at("/monthlySpend/status").asText()).isEqualTo("OK");
+        assertThat(body.at("/monthlySpend/range/sizeBand").asText()).isEqualTo("1-2");
+        assertThat(body.at("/monthlySpend/monthlyVcpuHours").decimalValue())
+                .as("2vCPU 2대 한 달 내내 = 2880 → 1~2대 표에서 확실히 적은 가장 큰 백분위 60% (1773.0)").isEqualByComparingTo("2880.0");
+        assertThat(body.at("/monthlySpend/teamsUsingLessPercent").decimalValue()).isEqualByComparingTo("60.0");
+        assertThat(body.at("/monthlySpend/position").asText()).as("75번째 백분위가 2880으로 같아 범위 안 (상한)").isEqualTo("WITHIN");
     }
 
     @Test
@@ -175,6 +193,11 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(oversized.at("/ours/judgedCount").asInt()).isEqualTo(21);
         assertThat(oversized.at("/matchedSizeBand").isNull()).isTrue();
         assertThat(oversized.at("/reference/dataAvailable").asBoolean()).isFalse();
+        JsonNode spend = benchmark("").at("/monthlySpend");
+        assertThat(spend.at("/status").asText()).isEqualTo("NOT_COMPARABLE");
+        assertThat(spend.at("/servers").asInt()).isEqualTo(21);
+        assertThat(spend.at("/range").isNull()).isTrue();
+        assertThat(spend.at("/monthlyCostUsd").isNull()).as("금액은 그대로 준다").isFalse();
     }
 
     @Test
@@ -190,6 +213,7 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(oversized.at("/reference/sizeBand").asText()).isEqualTo("3-20");
         assertThat(oversized.at("/reference/averageRatio").decimalValue()).isEqualByComparingTo("42");
         assertThat(body.at("/notes").toString()).contains("우리는 서버 2대지만 서버 3~20대 팀 자료와 견줬어요");
+        assertThat(body.at("/monthlySpend/range/sizeBand").asText()).as("월 지출도 고른 구간과 견준다").isEqualTo("3-20");
 
         getJson("/api/v1/aws/accounts/" + accountId + "/benchmark?sizeBand=4-9")
                 .andExpect(status().isBadRequest())
@@ -234,6 +258,10 @@ class BenchmarkApiTest extends IntegrationTestBase {
         assertThat(shortPeriod.at("/availableAt").asText()).isEqualTo("2026-10-15");
         assertThat(shortPeriod.at("/oversizedRatio/status").asText()).isEqualTo("INSUFFICIENT_HISTORY");
         assertThat(shortPeriod.at("/oversizedRatio/ours").isNull()).isTrue();
-        assertThat(shortPeriod.at("/monthlySpend/status").asText()).as("월 지출은 기록이 짧아도 비교").isEqualTo("OK");
+        assertThat(shortPeriod.at("/monthlySpend/status").asText())
+                .as("사용량을 14일로 재므로 월 지출 순위도 기록 부족").isEqualTo("INSUFFICIENT_HISTORY");
+        assertThat(shortPeriod.at("/monthlySpend/monthlyCost").isNull()).as("금액은 보여 준다").isFalse();
+        assertThat(body.at("/monthlySpend/status").asText()).isEqualTo("OK");
+        assertThat(body.at("/monthlySpend/servers").asInt()).isEqualTo(4);
     }
 }

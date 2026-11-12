@@ -2,10 +2,8 @@ package com.cloudcost.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.cloudcost.domain.benchmark.BenchmarkReference;
 import com.cloudcost.domain.benchmark.BenchmarkReference.Percentile;
 import com.cloudcost.domain.benchmark.TeamBenchmark;
-import com.cloudcost.domain.benchmark.TeamBenchmark.Position;
 import com.cloudcost.domain.benchmark.TeamBenchmark.Ratio;
 import com.cloudcost.domain.benchmark.TeamBenchmark.ServerVerdict;
 import com.cloudcost.domain.ec2.Ec2Instance;
@@ -128,25 +126,5 @@ class TeamBenchmarkTest {
         assertThat(TeamBenchmark.bucketIndex(BigDecimal.valueOf(20))).isEqualTo(1);
         assertThat(TeamBenchmark.bucketIndex(new BigDecimal("66.7"))).isEqualTo(3);
         assertThat(TeamBenchmark.bucketIndex(BigDecimal.valueOf(100))).isEqualTo(4);
-    }
-
-    @Test
-    void 범위_막대_위치는_하한_0_상한_100이고_밖이면_끝에_붙는다() {
-        BenchmarkReference.Spend spend = new BenchmarkReference.Spend("s", "d", BigDecimal.valueOf(100), BigDecimal.valueOf(500));
-
-        assertThat(TeamBenchmark.barPositionPercent(new BigDecimal("197.904"), spend)).isEqualByComparingTo("24.5");
-        assertThat(TeamBenchmark.barPositionPercent(BigDecimal.valueOf(50), spend)).isEqualByComparingTo("0");
-        assertThat(TeamBenchmark.barPositionPercent(BigDecimal.valueOf(900), spend)).isEqualByComparingTo("100");
-    }
-
-    @Test
-    void 월_지출은_범위_아래_안_위로_나눈다() {
-        BenchmarkReference.Spend range =
-            new BenchmarkReference.Spend("s", "d", BigDecimal.valueOf(100), BigDecimal.valueOf(500));
-
-        assertThat(TeamBenchmark.position(new BigDecimal("99.99"), range)).isEqualTo(Position.BELOW);
-        assertThat(TeamBenchmark.position(new BigDecimal("100"), range)).isEqualTo(Position.WITHIN);
-        assertThat(TeamBenchmark.position(new BigDecimal("500"), range)).isEqualTo(Position.WITHIN);
-        assertThat(TeamBenchmark.position(new BigDecimal("500.01"), range)).isEqualTo(Position.ABOVE);
     }
 }

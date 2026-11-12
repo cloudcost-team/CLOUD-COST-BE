@@ -1,5 +1,5 @@
 {
-  "_comment": "팀 벤치마킹 비교 기준 (ADR-013). 외부 자료의 숫자라 코드 대신 이 파일로 둔다. 바꾸면 docs/API.md §4-2와 ADR-013도 확인한다. 다른 파일을 쓰려면 CCI_BENCHMARK_REFERENCE(예: file:/opt/cci/reference.json)를 지정한다. oversized는 Azure Public Dataset V2 원본(vmtable, VM 2,695,548대·구독 6,687곳)을 `java scripts/benchmark/AzureOversized.java vmtable.csv.gz`로 계산한 결과다 (2026-11-05). 구간을 바꾸려면 --bands로 다시 계산해 통째로 바꾼다.",
+  "_comment": "팀 벤치마킹 비교 기준 (ADR-013). 외부 자료의 숫자라 코드 대신 이 파일로 둔다. 바꾸면 docs/API.md §4-2와 ADR-013도 확인한다. 다른 파일을 쓰려면 CCI_BENCHMARK_REFERENCE(예: file:/opt/cci/reference.json)를 지정한다. oversized는 Azure Public Dataset V2 원본(vmtable, VM 2,695,548대·구독 6,687곳)을 `java scripts/benchmark/AzureOversized.java vmtable.csv.gz`로 계산한 결과다 (2026-11-05). spend는 같은 원본을 `java scripts/benchmark/AzureSpend.java vmtable.csv.gz`로 계산한 서버 대수 구간별 한 달 사용량(vCPU-시간) 분포다 (2026-11-12). 구간을 바꾸려면 두 스크립트 모두 --bands로 다시 계산해 통째로 바꾼다.",
   "oversized": {
     "source": "Azure Public Dataset V2",
     "description": "마이크로소프트 내부 서비스 VM 30일 기록 중 같은 VM 대수 구간 구독들의 과다 사양(5분 최대 CPU의 P95 10% 미만) VM 비율. 측정 방식이 달라 참고용",
@@ -182,9 +182,177 @@
     "averagePercent": 29
   },
   "spend": {
-    "source": "SpendArk Cloud Cost Benchmark 2026",
-    "description": "1~10명 팀의 월 클라우드 지출 범위",
-    "minUsd": 100,
-    "maxUsd": 500
+    "source": "Azure Public Dataset V2",
+    "description": "마이크로소프트 내부 서비스 VM 30일 기록 중 같은 서버 대수 구간 구독들의 한 달 사용량(vCPU × 켜진 시간). 금액은 우리 팀의 vCPU-시간당 비용으로 환산한다. 대상이 달라 참고용",
+    "bands": [
+      {
+        "minServers": 1,
+        "maxServers": 2,
+        "sampleSize": 1446,
+        "medianVcpuHours": 1440.0,
+        "percentiles": [
+          {
+            "percentile": 5,
+            "vcpuHours": 8.3
+          },
+          {
+            "percentile": 10,
+            "vcpuHours": 27.7
+          },
+          {
+            "percentile": 15,
+            "vcpuHours": 94.2
+          },
+          {
+            "percentile": 20,
+            "vcpuHours": 262.8
+          },
+          {
+            "percentile": 25,
+            "vcpuHours": 562.2
+          },
+          {
+            "percentile": 30,
+            "vcpuHours": 1230.5
+          },
+          {
+            "percentile": 35,
+            "vcpuHours": 1440.0
+          },
+          {
+            "percentile": 40,
+            "vcpuHours": 1440.0
+          },
+          {
+            "percentile": 45,
+            "vcpuHours": 1440.0
+          },
+          {
+            "percentile": 50,
+            "vcpuHours": 1440.0
+          },
+          {
+            "percentile": 55,
+            "vcpuHours": 1440.0
+          },
+          {
+            "percentile": 60,
+            "vcpuHours": 1773.0
+          },
+          {
+            "percentile": 65,
+            "vcpuHours": 2880.0
+          },
+          {
+            "percentile": 70,
+            "vcpuHours": 2880.0
+          },
+          {
+            "percentile": 75,
+            "vcpuHours": 2880.0
+          },
+          {
+            "percentile": 80,
+            "vcpuHours": 2880.0
+          },
+          {
+            "percentile": 85,
+            "vcpuHours": 4275.5
+          },
+          {
+            "percentile": 90,
+            "vcpuHours": 5760.0
+          },
+          {
+            "percentile": 95,
+            "vcpuHours": 5760.0
+          }
+        ]
+      },
+      {
+        "minServers": 3,
+        "maxServers": 20,
+        "sampleSize": 2673,
+        "medianVcpuHours": 11520.0,
+        "percentiles": [
+          {
+            "percentile": 5,
+            "vcpuHours": 176.2
+          },
+          {
+            "percentile": 10,
+            "vcpuHours": 969.5
+          },
+          {
+            "percentile": 15,
+            "vcpuHours": 3126.5
+          },
+          {
+            "percentile": 20,
+            "vcpuHours": 4320.0
+          },
+          {
+            "percentile": 25,
+            "vcpuHours": 5758.0
+          },
+          {
+            "percentile": 30,
+            "vcpuHours": 5760.0
+          },
+          {
+            "percentile": 35,
+            "vcpuHours": 7200.0
+          },
+          {
+            "percentile": 40,
+            "vcpuHours": 8640.0
+          },
+          {
+            "percentile": 45,
+            "vcpuHours": 8640.0
+          },
+          {
+            "percentile": 50,
+            "vcpuHours": 11520.0
+          },
+          {
+            "percentile": 55,
+            "vcpuHours": 12960.0
+          },
+          {
+            "percentile": 60,
+            "vcpuHours": 15088.0
+          },
+          {
+            "percentile": 65,
+            "vcpuHours": 17285.7
+          },
+          {
+            "percentile": 70,
+            "vcpuHours": 20160.0
+          },
+          {
+            "percentile": 75,
+            "vcpuHours": 23039.0
+          },
+          {
+            "percentile": 80,
+            "vcpuHours": 24792.3
+          },
+          {
+            "percentile": 85,
+            "vcpuHours": 27554.0
+          },
+          {
+            "percentile": 90,
+            "vcpuHours": 31676.0
+          },
+          {
+            "percentile": 95,
+            "vcpuHours": 40328.7
+          }
+        ]
+      }
+    ]
   }
 }
