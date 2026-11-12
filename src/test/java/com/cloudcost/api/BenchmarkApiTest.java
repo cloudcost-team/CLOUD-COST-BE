@@ -144,6 +144,10 @@ class BenchmarkApiTest extends IntegrationTestBase {
         java.util.List<String> notes = new java.util.ArrayList<>();
         body.at("/notes").forEach(n -> notes.add(n.asText()));
         assertThat(notes).as("겹치는 문구는 한 번만").doesNotHaveDuplicates();
+        assertThat(body.at("/wasteRatio/status").asText())
+                .as("월말 예상이 일부 서버만의 합이면 분모가 작아 비율이 높게 나온다").isEqualTo("UNAVAILABLE");
+        assertThat(body.at("/wasteRatio/reason").asText()).contains("단가를 모르는 서버");
+        assertThat(body.at("/wasteRatio/ratioPercent").isNull()).isTrue();
     }
 
     @Test
@@ -157,6 +161,8 @@ class BenchmarkApiTest extends IntegrationTestBase {
         JsonNode spend = body.at("/monthlySpend");
         assertThat(spend.at("/status").asText()).isEqualTo("NOT_COMPARABLE");
         assertThat(body.at("/notes").toString()).contains("월말 예상 비용이 0원이라").doesNotContain("팀으로 학습해 서버");
+        assertThat(body.at("/wasteRatio/status").asText()).isEqualTo("NOT_COMPARABLE");
+        assertThat(body.at("/wasteRatio/reason").asText()).contains("모두 0원");
     }
 
     @Test

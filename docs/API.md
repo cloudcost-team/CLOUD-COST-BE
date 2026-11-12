@@ -439,7 +439,7 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
                    "oversized": true, "verdict": "과다 사양 (P95 10% 미만)" } ],
     "afterSimulation": null },
   "wasteRatio": { "status": "OK", "reason": null, "ratioPercent": 60.5, "comparison": "ABOVE",
-                  "amounts": { "serverWaste": 158000, "resourceWaste": 4900, "waste": 162900, "total": 269000, "wasteUsd": 121.91, "totalUsd": 201.55 },
+                  "amounts": { "serverWaste": 157652, "resourceWaste": 4866, "waste": 162518, "total": 268690, "wasteUsd": 121.91, "totalUsd": 201.55 },
                   "afterSimulationRatioPercent": null,
                   "referenceSource": "Flexera 2026 State of the Cloud", "referenceDescription": "…", "referenceAverage": 29 },
   "monthlySpend": { "status": "OK", "monthlyCost": 263824, "monthlyCostUsd": 197.90, "monthlyVcpuHours": 4320.0, "servers": 3,
@@ -471,8 +471,9 @@ S07 목록과 S07-2 추천 상세는 이 응답 하나로 그린다 (상세 API 
   - `comparison`: Flexera 업계 평균(`referenceAverage`)보다 `BELOW`·`SAME`·`ABOVE`. `amounts`: 금액(currency 기준) + `wasteUsd`·`totalUsd`.
   - `afterSimulationRatioPercent`: `recommendationIds`를 주면 서버 낭비에서 고른 추천 절감액을 빼고 월말 예상도 시뮬레이터 적용 후 금액으로 바꿔 다시 잰다 (방치 리소스는 그대로).
   - `status`가 `OK`가 아니면 `ratioPercent`·`comparison`·`amounts`는 `null`이고 `reason`에 사유가 있다:
-    `UNAVAILABLE` — 권한 업데이트 필요(`PERMISSION_UPGRADE_REQUIRED`) · 방치 리소스 확인 중/확인 전 · 확인 실패 · 단가를 모르는 방치 리소스가 있음 (일부만 더해 낮게 보이지 않도록) /
-    `INSUFFICIENT_HISTORY` — 기록 14일 미만 / `NO_FORECAST` — 월말 예상 없음.
+    `UNAVAILABLE` — 권한 업데이트 필요(`PERMISSION_UPGRADE_REQUIRED`) · 방치 리소스 확인 중/확인 전 · 확인 실패 · 단가를 모르는 방치 리소스가 있음 ·
+    단가를 모르는 서버가 있어 월말 예상이 일부 서버만의 합임 (부분합으로 비율이 틀리게 보이지 않도록) /
+    `INSUFFICIENT_HISTORY` — 기록 14일 미만 / `NO_FORECAST` — 월말 예상 없음 / `NOT_COMPARABLE` — 월말 예상과 방치 리소스 비용이 모두 0원.
   - 방치 리소스는 저장된 결과를 쓰고 기다리지 않는다 (§4-0 `refreshing`). 체험 모드는 §4-0 예시 리소스를 더한다.
 - **③ 규모 대비 월 지출**(`monthlySpend`): 우리 서버 대수와 같은 규모 팀들과 **한 달 사용량(vCPU-시간 = vCPU × 켜진 시간)**으로 순위를 매긴다 (ADR-013).
   - 같은 규모 팀의 사용량 분포는 **분위 회귀 모델**이 서버 대수로 예측한다 (`range.model`). Azure 원본 구독 5,452곳(서버 1~50대)으로

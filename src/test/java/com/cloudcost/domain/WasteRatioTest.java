@@ -24,6 +24,13 @@ class WasteRatioTest {
         WasteRatio empty = WasteRatio.of(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         assertThat(empty.ratioPercent()).isNull();
         assertThat(empty.compareTo(new BigDecimal("29"))).isNull();
-        assertThat(WasteRatio.of(new BigDecimal("-5"), null, new BigDecimal("10")).ratioPercent()).isEqualByComparingTo("0");
+        assertThat(WasteRatio.of(new BigDecimal("-5"), BigDecimal.ZERO, new BigDecimal("10")).ratioPercent())
+                .isEqualByComparingTo("0");
+    }
+
+    @Test
+    void 모르는_금액을_0으로_바꿔_계산하지_않는다() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> WasteRatio.of(BigDecimal.ONE, null, BigDecimal.TEN)).isInstanceOf(IllegalArgumentException.class);
     }
 }

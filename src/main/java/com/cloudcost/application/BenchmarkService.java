@@ -57,6 +57,9 @@ public class BenchmarkService {
         "단가를 모르는 방치 리소스가 있어 전체 낭비 비율을 계산하지 않았어요 (일부만 더하면 실제보다 낮게 보여요).";
     static final String WASTE_INSUFFICIENT_REASON = "기록이 14일 미만이라 서버 낭비를 아직 판단하지 못해 전체 낭비 비율을 계산하지 않았어요.";
     static final String WASTE_NO_FORECAST_REASON = "월말 예상 비용이 아직 없어 전체 낭비 비율을 계산하지 않았어요.";
+    static final String WASTE_PARTIAL_FORECAST_REASON =
+        "단가를 모르는 서버가 있어 월말 예상이 일부 서버만의 합이라 전체 낭비 비율을 계산하지 않았어요 (실제보다 높게 보여요).";
+    static final String WASTE_ZERO_TOTAL_REASON = "월말 예상과 방치 리소스 비용이 모두 0원이라 전체 낭비 비율을 계산하지 않았어요.";
     static final String WASTE_BASIS =
         "전체 낭비 비율 = (서버 낭비 월 절감액 + 방치 리소스 월 비용) ÷ (월말 예상 + 방치 리소스 월 비용). "
             + "사용 중인 볼륨·로드밸런서 비용은 분모에 없어 실제보다 조금 높게 나올 수 있어요. 비교값은 Flexera 업계 평균이에요.";
@@ -98,7 +101,8 @@ public class BenchmarkService {
     /**
      * ② 전체 낭비 비율. OK가 아니면 ratio·after는 null이고 reason에 사유가 있다.
      *
-     * @param status OK · UNAVAILABLE(방치 리소스 비용을 모름) · INSUFFICIENT_HISTORY · NO_FORECAST
+     * @param status OK · UNAVAILABLE(방치 리소스 비용·서버 단가를 모름) · INSUFFICIENT_HISTORY · NO_FORECAST
+     *               · NOT_COMPARABLE(월말 예상과 방치 리소스 비용이 모두 0원)
      * @param after  추천을 적용한 뒤 (추천 id를 주지 않았거나 OK가 아니면 null). 방치 리소스는 그대로라고 본다
      */
     public record WasteSection(Status status, String reason, WasteRatio ratio, WasteRatio after) {
@@ -232,10 +236,16 @@ public class BenchmarkService {
         if (dashboard.forecast() == null) {
             return WasteSection.unavailable(Status.NO_FORECAST, WASTE_NO_FORECAST_REASON);
         }
+        if (dashboard.forecastPartial()) {
+            return WasteSection.unavailable(Status.UNAVAILABLE, WASTE_PARTIAL_FORECAST_REASON);
+        }
         BigDecimal monthEnd = dashboard.forecast().monthEndUsd();
         BigDecimal serverWaste = wasteView.result().totalMonthlySavingsUsd();
         BigDecimal resourceWaste = resourceView.totalMonthlyUsd();
         WasteRatio ratio = WasteRatio.of(serverWaste, resourceWaste, monthEnd);
+        if (ratio.ratioPercent() == null) {
+            return WasteSection.unavailable(Status.NOT_COMPARABLE, WASTE_ZERO_TOTAL_REASON);
+        }
         WasteRatio after = null;
         if (simulate) {
             BigDecimal appliedSavings = applied.stream().map(WasteFinding::monthlySavingsUsd)

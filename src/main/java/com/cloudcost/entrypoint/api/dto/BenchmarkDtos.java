@@ -178,7 +178,7 @@ public final class BenchmarkDtos {
 
     @Schema(description = "② 전체 낭비 비율 (S09). 방치 리소스 비용을 모르면 UNAVAILABLE + 사유")
     public record WasteRatioDto(
-            @Schema(description = "OK | UNAVAILABLE(권한 부족·확인 중·실패·단가 모름) | INSUFFICIENT_HISTORY | NO_FORECAST",
+            @Schema(description = "OK | UNAVAILABLE(권한 부족·확인 중·실패·방치 리소스나 서버 단가 모름) | INSUFFICIENT_HISTORY | NO_FORECAST | NOT_COMPARABLE(합계 0원)",
                     example = "OK") String status,
             @Schema(description = "OK가 아닐 때 사유 (한국어), OK면 null") String reason,
             @Schema(description = "전체 낭비 비율 (%). OK가 아니면 null", example = "30.0") BigDecimal ratioPercent,

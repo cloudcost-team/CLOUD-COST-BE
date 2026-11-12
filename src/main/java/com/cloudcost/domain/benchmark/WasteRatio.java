@@ -31,10 +31,14 @@ public record WasteRatio(
         ABOVE
     }
 
+    /**
+     * 금액을 모르면(null) 0으로 바꾸지 않고 거부한다. 단가를 모르는 경우는 호출자가 계산 불가와 사유로 처리한다.
+     * 음수(적용 후 절감액이 더 큰 경우 등)는 0으로 본다.
+     */
     public static WasteRatio of(BigDecimal serverWasteUsd, BigDecimal resourceWasteUsd, BigDecimal monthEndUsd) {
-        BigDecimal server = nonNegative(serverWasteUsd);
-        BigDecimal resource = nonNegative(resourceWasteUsd);
-        BigDecimal monthEnd = nonNegative(monthEndUsd);
+        BigDecimal server = nonNegative(requireKnown(serverWasteUsd, "serverWasteUsd"));
+        BigDecimal resource = nonNegative(requireKnown(resourceWasteUsd, "resourceWasteUsd"));
+        BigDecimal monthEnd = nonNegative(requireKnown(monthEndUsd, "monthEndUsd"));
         BigDecimal total = monthEnd.add(resource);
         BigDecimal ratio = null;
         if (total.signum() > 0) {
@@ -60,7 +64,14 @@ public record WasteRatio(
         return c < 0 ? Comparison.BELOW : c == 0 ? Comparison.SAME : Comparison.ABOVE;
     }
 
+    private static BigDecimal requireKnown(BigDecimal v, String name) {
+        if (v == null) {
+            throw new IllegalArgumentException(name + "을(를) 모르면 전체 낭비 비율을 계산하지 않는다");
+        }
+        return v;
+    }
+
     private static BigDecimal nonNegative(BigDecimal v) {
-        return v == null || v.signum() < 0 ? BigDecimal.ZERO : v;
+        return v.signum() < 0 ? BigDecimal.ZERO : v;
     }
 }
