@@ -93,10 +93,6 @@ public final class WasteDetector {
             judgedMonthlyCostUsd = judgedMonthlyCostUsd == null ? BigDecimal.ZERO : judgedMonthlyCostUsd;
         }
 
-        public Result(List<WasteFinding> findings, List<Skipped> skipped, Set<String> judgedIds) {
-            this(findings, skipped, judgedIds, BigDecimal.ZERO);
-        }
-
         /**
          * 절감 예상 ÷ 판단한 서버의 월 비용 (%, 소수 첫째 자리, 최대 100). 둘 다 "최근 14일처럼 한 달 쓰면" 기준이다.
          * 이번 달 월말 예상과 나누면 이번 달 중간에 켠 서버에서 100%를 넘으므로 쓰지 않는다. 월 비용이 0이면 null.
