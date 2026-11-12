@@ -73,4 +73,37 @@ class DiscordWebhookGatewayTest {
         assertThat(embed.containsKey("url")).isFalse();
         assertThat(embed.containsKey("footer")).isFalse();
     }
+
+    @Test
+    void embed_전체_글자_수를_6000자_안에_맞춘다() {
+        String longText = "가".repeat(5000);
+        List<Field> manyFields = java.util.stream.IntStream.range(0, 30)
+            .mapToObj(i -> new Field("필드" + i, longText)).toList();
+        Message huge = new Message("제".repeat(300), longText, Tone.INFO, manyFields, "f".repeat(3000), null);
+
+        JsonNode embed = new ObjectMapper().valueToTree(DiscordWebhookGateway.payload(huge)).at("/embeds/0");
+
+        int total = embed.at("/title").asText().length() + embed.at("/description").asText().length()
+            + embed.at("/footer/text").asText().length();
+        for (JsonNode f : embed.at("/fields")) {
+            total += f.at("/name").asText().length() + f.at("/value").asText().length();
+            assertThat(f.at("/name").asText()).isNotEmpty();
+            assertThat(f.at("/value").asText()).isNotEmpty();
+        }
+        assertThat(total).isLessThanOrEqualTo(DiscordWebhookGateway.MAX_EMBED_TOTAL);
+        assertThat(embed.at("/title").asText()).hasSize(DiscordWebhookGateway.MAX_TITLE);
+        assertThat(embed.at("/footer/text").asText()).as("청구서가 아니라는 footer는 남긴다")
+            .hasSize(DiscordWebhookGateway.MAX_FOOTER);
+        assertThat(embed.at("/description").asText()).endsWith("…");
+    }
+
+    @Test
+    void 합계가_6000자_이하면_자르지_않는다() {
+        // 제목 256 + footer 2048 + 설명 3696 = 6000
+        Message exact = new Message("제".repeat(256), "가".repeat(3696), Tone.INFO, List.of(), "f".repeat(2048), null);
+
+        JsonNode embed = new ObjectMapper().valueToTree(DiscordWebhookGateway.payload(exact)).at("/embeds/0");
+
+        assertThat(embed.at("/description").asText()).isEqualTo("가".repeat(3696));
+    }
 }

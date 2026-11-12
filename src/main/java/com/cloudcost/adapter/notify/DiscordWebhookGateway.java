@@ -11,6 +11,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +36,8 @@ class DiscordWebhookGateway implements NotificationChannelGateway {
     static final int MAX_FIELD_NAME = 256;
     static final int MAX_FIELD_VALUE = 1024;
     static final int MAX_FOOTER = 2048;
+    /** 제목·설명·필드 이름과 값·footer 글자 수 합계 */
+    static final int MAX_EMBED_TOTAL = 6000;
 
     static final int RED = 0xED4245;
     static final int ORANGE = 0xF0A030;
@@ -86,33 +89,68 @@ class DiscordWebhookGateway implements NotificationChannelGateway {
         }
     }
 
-    /** {"embeds":[{title, description, color, url?, fields, footer?}], "allowed_mentions":{"parse":[]}} */
+    /**
+     * {"embeds":[{title, description, color, url?, fields, footer?}], "allowed_mentions":{"parse":[]}}.
+     * 항목별 상한과 함께 embed 전체 글자 수(제목·설명·필드 이름과 값·footer 합계)를 {@link #MAX_EMBED_TOTAL} 안에 맞춘다.
+     * 넘으면 Discord가 400으로 거부하고 다시 보내지 않으므로, 제목 → footer → 설명 → 필드 순으로 남은 글자 수만큼 자른다.
+     */
     static Map<String, Object> payload(Message message) {
+        Budget budget = new Budget(MAX_EMBED_TOTAL);
         Map<String, Object> embed = new LinkedHashMap<>();
-        embed.put("title", cut(message.title(), MAX_TITLE));
-        if (message.description() != null && !message.description().isBlank()) {
-            embed.put("description", cut(message.description(), MAX_DESCRIPTION));
+        embed.put("title", budget.take(message.title(), MAX_TITLE));
+        String footer = present(message.footer()) ? budget.take(message.footer(), MAX_FOOTER) : null;
+        if (present(message.description()) && budget.left() > 0) {
+            embed.put("description", budget.take(message.description(), MAX_DESCRIPTION));
         }
         embed.put("color", color(message.tone()));
-        if (message.url() != null && !message.url().isBlank()) {
+        if (present(message.url())) {
             embed.put("url", message.url());
         }
-        List<Map<String, Object>> fields = message.fields().stream()
-            .filter(f -> f.value() != null && !f.value().isBlank())
-            .limit(MAX_FIELDS)
-            .map(f -> Map.<String, Object>of(
-                "name", cut(f.name(), MAX_FIELD_NAME), "value", cut(f.value(), MAX_FIELD_VALUE), "inline", true))
-            .toList();
+        List<Map<String, Object>> fields = new ArrayList<>();
+        for (NotificationChannelGateway.Field f : message.fields()) {
+            if (fields.size() == MAX_FIELDS || budget.left() < 2) {
+                break;
+            }
+            if (!present(f.name()) || !present(f.value())) {
+                continue;
+            }
+            String name = budget.take(f.name(), Math.min(MAX_FIELD_NAME, budget.left() - 1));
+            fields.add(Map.of("name", name, "value", budget.take(f.value(), MAX_FIELD_VALUE), "inline", true));
+        }
         if (!fields.isEmpty()) {
             embed.put("fields", fields);
         }
-        if (message.footer() != null && !message.footer().isBlank()) {
-            embed.put("footer", Map.of("text", cut(message.footer(), MAX_FOOTER)));
+        if (footer != null) {
+            embed.put("footer", Map.of("text", footer));
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("embeds", List.of(embed));
         body.put("allowed_mentions", Map.of("parse", List.of()));
         return body;
+    }
+
+    /** embed 전체 글자 수 중 남은 몫 */
+    private static final class Budget {
+        private int left;
+
+        Budget(int total) {
+            this.left = total;
+        }
+
+        int left() {
+            return left;
+        }
+
+        /** 항목 상한과 남은 몫 중 작은 쪽에 맞춰 자르고 그만큼 쓴다 */
+        String take(String s, int max) {
+            String result = cut(s, Math.min(max, left));
+            left -= result.length();
+            return result;
+        }
+    }
+
+    private static boolean present(String s) {
+        return s != null && !s.isBlank();
     }
 
     static int color(NotificationChannelGateway.Tone tone) {
@@ -124,7 +162,10 @@ class DiscordWebhookGateway implements NotificationChannelGateway {
     }
 
     private static String cut(String s, int max) {
-        return s.length() <= max ? s : s.substring(0, max - 1) + "…";
+        if (s.length() <= max) {
+            return s;
+        }
+        return max <= 0 ? "" : s.substring(0, max - 1) + "…";
     }
 
     static SendResult result(int status) {

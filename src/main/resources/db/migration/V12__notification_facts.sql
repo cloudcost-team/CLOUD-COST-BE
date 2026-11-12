@@ -4,5 +4,5 @@ ALTER TABLE notifications ADD COLUMN threshold_percent INTEGER;
 ALTER TABLE notifications ADD COLUMN budget_usd NUMERIC(20, 6);
 ALTER TABLE notifications ADD COLUMN forecast_usd NUMERIC(20, 6);
 ALTER TABLE notifications ADD COLUMN spike_date DATE;
-ALTER TABLE notifications ADD COLUMN spike_ratio NUMERIC(8, 1);
+ALTER TABLE notifications ADD COLUMN spike_ratio NUMERIC(20, 1);
 ALTER TABLE notifications ADD COLUMN spike_cause VARCHAR(255);

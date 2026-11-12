@@ -50,7 +50,7 @@ class NotificationEntity {
     @Column(name = "spike_date")
     LocalDate spikeDate;
 
-    @Column(name = "spike_ratio", precision = 8, scale = 1)
+    @Column(name = "spike_ratio", precision = 20, scale = 1)
     BigDecimal spikeRatio;
 
     @Column(name = "spike_cause", length = 255)

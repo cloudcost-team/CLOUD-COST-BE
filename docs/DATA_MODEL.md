@@ -204,7 +204,7 @@ UNIQUE `(notification_id, channel_id)`. 인덱스 `(status, next_attempt_at)`(�
 | budget_usd | NUMERIC(20,6) NULL | 예산: 그달 예산 (USD) |
 | forecast_usd | NUMERIC(20,6) NULL | 예산: 그때의 월말 예상 비용 (USD) |
 | spike_date | DATE NULL | 급증: 급증일 |
-| spike_ratio | NUMERIC(8,1) NULL | 급증: 평소 대비 배수 |
+| spike_ratio | NUMERIC(20,1) NULL | 급증: 평소 대비 배수 |
 | spike_cause | VARCHAR(255) NULL | 급증: 원인 서버 Name 태그 (없으면 인스턴스 ID) |
 
 ## 보존 (백로그)
