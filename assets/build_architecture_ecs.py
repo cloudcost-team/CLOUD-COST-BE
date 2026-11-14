@@ -116,6 +116,8 @@ one('<path d="M915,990 L950,990 L950,1064"', '<path d="M915,990 L950,990 L950,10
 
 # ---------- Sentinel 제거 (ECS에는 호스트가 없다. 장애 알림은 Grafana Cloud가 맡는다) ----------
 cut('<rect x="643" y="690"', '<path d="M640,791', '')
+# Alloy(사이드카)는 앱 지표만 모은다 → Monitoring에서 RDS로 가는 'DB 지표' 화살표 제거
+cut('<path d="M1187,698', '<rect x="1590.0" y="410.0"', '')
 
 # ---------- 백엔드 이동, 프론트 축소 ----------
 one('<g transform="translate(420,0)">', f'<g transform="translate({BE_X},0)">')
