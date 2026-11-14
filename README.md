@@ -6,7 +6,7 @@
 
 ## Architecture
 
-![CloudCost 아키텍처](assets/architecture.png)
+![CloudCost 아키텍처](assets/architecture-ecs.png)
 
 
 ## Key Features
@@ -147,12 +147,15 @@
 
 | 기술 | 활용 |
 |---|---|
-| EC2 | 백엔드 애플리케이션 운영 |
-| Docker Compose | 애플리케이션 및 PostgreSQL 컨테이너 관리 |
-| Caddy | HTTPS 인증서 자동 발급 및 리버스 프록시 |
+| VPC | ALB·ECS는 Public 서브넷, RDS는 Private 서브넷 (가용 영역 2개) |
+| ALB + ACM | HTTPS 인증서 자동 발급, 컨테이너로 요청 분배, 헬스체크 |
+| ECS (EC2) | Spring Boot 컨테이너 2개 운영, 장애 시 자동 재시작, 무중단 롤링 배포 |
+| ECR | 컨테이너 이미지 저장소 |
+| RDS PostgreSQL | 관리형 데이터베이스 (자동 백업) |
+| Terraform | 인프라 코드 관리 (`infra/ecs`) |
 | GitHub Actions | CI 테스트 및 CD 자동 배포 |
 | AWS OIDC | 배포 파이프라인의 AWS 인증 |
-| Grafana Cloud + Alloy | VM, PostgreSQL, 애플리케이션 메트릭 수집 및 모니터링 |
+| Grafana Cloud + Alloy | 애플리케이션 메트릭 수집 및 모니터링 (태스크 사이드카) |
 
 ### Collaboration & Development
 
@@ -294,12 +297,13 @@ GitHub Actions를 통해 테스트와 배포를 자동화합니다.
 | Workflow | Trigger | Process |
 |---|---|---|
 | `ci.yaml` | `dev`, `main` 대상 PR 및 `main` Push | JDK 21 설정 → 테스트 실행 → 실패 시 테스트 리포트 업로드 |
-| `cd.yaml` | `dev` Push (문서 파일만 변경된 경우 제외) | CI 통과 → JAR 빌드 → AWS OIDC 인증 → SSH 임시 허용 → 서버 배포 → 기동 확인 → SSH 허용 해제 |
+| `cd.yaml` | `dev` Push (문서 파일만 변경된 경우 제외) | CI 통과 → JAR 빌드 → AWS OIDC 인증 → Docker 이미지 ECR push → ECS 롤링 배포 (컨테이너를 하나씩 교체, 실패 시 자동 롤백) |
 | `discord-notify.yaml` | PR 생성·머지 및 이슈 등록 | Discord 리뷰 요청 및 변경 사항 알림 |
 
-배포 과정에서는 GitHub Actions의 OIDC를 활용하며, SSH 접근은 배포 러너 IP에 한해 일시적으로 허용합니다.
+배포 과정에서는 GitHub Actions의 OIDC를 활용하며, 서버에 SSH로 접속하지 않습니다.
+배포 대상은 저장소 변수 `DEPLOY_TARGET`(`ecs` / `ec2`)으로 고르며, 이전 EC2 배포로 되돌릴 때도 변수만 바꿉니다.
 
-자세한 설정은 [docs/DEPLOY.md](docs/DEPLOY.md) 10절을 참고합니다.
+자세한 설정은 [docs/ECS_MIGRATION.md](docs/ECS_MIGRATION.md)와 [docs/DEPLOY.md](docs/DEPLOY.md) 10절을 참고합니다.
 
 ## Development Guidelines
 
@@ -389,4 +393,5 @@ fix: KST 날짜 경계 사용 시간 집계 오류 수정
 | [SECURITY.md](docs/SECURITY.md) | AWS 권한 및 서비스 보안 정책 |
 | [AWS_SETUP_GUIDE.md](docs/AWS_SETUP_GUIDE.md) | AWS 계정 연동 및 사전 설정 |
 | [DEPLOY.md](docs/DEPLOY.md) | 인프라 구성 및 CI/CD 배포 |
-| [decisions/](docs/decisions/) | ADR 001~016: 주요 기술 및 설계 의사결정 기록 |
+| [ECS_MIGRATION.md](docs/ECS_MIGRATION.md) | EC2 → ECS 전환·한 달 운영·정리 순서 |
+| [decisions/](docs/decisions/) | ADR 001~021: 주요 기술 및 설계 의사결정 기록 |
