@@ -75,6 +75,23 @@ class JdbcClusterLockTest extends IntegrationTestBase {
         assertThat(inner.get()).isEqualTo(1);
     }
 
+    @Test
+    void 일이_도는_동안은_임대를_연장해_최대_보유_시간이_지나도_넘겨주지_않는다() {
+        String name = "test:" + UUID.randomUUID();
+        Duration maxHold = Duration.ofMillis(600);
+        AtomicInteger taken = new AtomicInteger();
+
+        lock.runExclusively(name, maxHold, () -> {
+            clock.advance(Duration.ofMillis(700)); // 연장이 없었다면 여기서 만료된다
+            sleep(450);                             // 그동안 연장(200ms마다)이 돌아 만료 시각을 지금 + 600ms로 민다
+            return lock.runIfFree(name, Duration.ZERO, maxHold, taken::incrementAndGet);
+        });
+
+        assertThat(taken.get()).as("일이 끝나기 전에는 다른 곳이 잡지 못한다").isZero();
+        assertThat(lock.runIfFree(name, Duration.ZERO, maxHold, taken::incrementAndGet))
+            .as("끝나면 바로 풀린다").isTrue();
+    }
+
     private static void sleep(long millis) {
         try {
             Thread.sleep(millis);

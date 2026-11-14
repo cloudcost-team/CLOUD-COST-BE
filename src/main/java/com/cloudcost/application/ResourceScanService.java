@@ -41,8 +41,8 @@ import java.util.concurrent.TimeUnit;
 public class ResourceScanService {
 
     static final int PARALLEL_REGIONS = 6;
-    /** 전 리전 수집이 길어도 넘지 않을 시간. 서버가 죽으면 이 시간 뒤 잠금이 풀린다 */
-    static final Duration LOCK_MAX_HOLD = Duration.ofMinutes(15);
+    /** 수집하는 동안은 계속 연장된다. 서버가 죽어 연장이 멈추면 이 시간 뒤 풀린다 */
+    static final Duration LOCK_MAX_HOLD = Duration.ofMinutes(5);
 
     private final AwsAccountRepository accounts;
     private final AccountResourceRepository resources;
