@@ -20,3 +20,21 @@ locals {
     var.grafana_prom_url == "" ? [] : ["/${var.name}/grafana-api-key"],
   )
 }
+
+# 예전 구성은 이 파라미터들을 Terraform 리소스로 만들었다. 그 state로 apply해도 실제 파라미터를 지우지 않고
+# state에서만 떼어 낸다 (지우면 태스크가 비밀값을 못 읽는다).
+removed {
+  from = aws_ssm_parameter.app
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = aws_ssm_parameter.grafana_api_key
+
+  lifecycle {
+    destroy = false
+  }
+}

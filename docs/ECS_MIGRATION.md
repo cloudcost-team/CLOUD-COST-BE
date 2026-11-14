@@ -69,6 +69,9 @@ aws acm describe-certificate --certificate-arn <위 ARN> --query "Certificate.Do
 ## 3단계 — 기존 데이터 옮기기 (선택, 시연 데이터를 유지할 때)
 EC2 DB를 떠서 RDS에 그대로 넣는다. RDS는 Private 서브넷이라, ECS 호스트에서 한 번만 도는 복원 태스크로 넣는다.
 1. ECS 서비스 컨테이너 수를 0으로 내린다 (복원 중 DB를 쓰지 않게).
+   **기존 EC2 앱도 멈춘다** (`docker compose stop app`). pg_dump는 시작 시점의 스냅샷이라, 덤프 뒤에 EC2에 생긴 변경은
+   RDS에 없다. 사용자가 있는 서비스라면 이때부터 DNS 전환까지가 점검 시간이다.
+   (2026-11-15 전환은 사용자가 없어 앱을 켜 둔 채 덤프하고, 전환 직전 EC2에 새 데이터가 없는 것을 확인했다.)
 2. EC2에서 `docker compose exec -T db pg_dump -U cci -d cci -Fc > /tmp/cci.dump` → 로컬로 복사 →
    비공개 S3 버킷에 올리고 15분짜리 presigned URL을 만든다.
 3. `postgres:16-alpine` 이미지로 복원 태스크를 띄운다 (DB 비밀번호는 Secrets Manager에서 주입, URL은 실행할 때 넘김):
