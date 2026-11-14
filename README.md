@@ -297,7 +297,7 @@ GitHub Actions를 통해 테스트와 배포를 자동화합니다.
 | Workflow | Trigger | Process |
 |---|---|---|
 | `ci.yaml` | `dev`, `main` 대상 PR 및 `main` Push | JDK 21 설정 → 테스트 실행 → 실패 시 테스트 리포트 업로드 |
-| `cd.yaml` | `dev` Push (문서 파일만 변경된 경우 제외) | CI 통과 → JAR 빌드 → AWS OIDC 인증 → Docker 이미지 ECR push → ECS 롤링 배포 (컨테이너를 하나씩 교체, 실패 시 자동 롤백) |
+| `cd.yaml` | `dev` Push (문서 파일만 변경된 경우 제외) | 변수 `DEPLOY_TARGET=ecs`: CI 통과 → JAR 빌드 → AWS OIDC 인증 → Docker 이미지 ECR push → ECS 롤링 배포 (하나씩 교체, 실패 시 자동 롤백)<br>변수가 없거나 `ec2`: CI 통과 → JAR 빌드 → SSH 임시 허용 → EC2 서버 배포 → 기동 확인 → SSH 허용 해제 |
 | `discord-notify.yaml` | PR 생성·머지 및 이슈 등록 | Discord 리뷰 요청 및 변경 사항 알림 |
 
 배포 과정에서는 GitHub Actions의 OIDC를 활용하며, 서버에 SSH로 접속하지 않습니다.
