@@ -22,8 +22,11 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yaml
 
+  # 배포 대상은 저장소 변수 DEPLOY_TARGET으로 고른다 (Settings → Secrets and variables → Actions → Variables).
+  # 없거나 ec2면 지금 EC2 서버로, ecs면 ECS로 배포한다 (docs/ECS_MIGRATION.md). 되돌릴 때도 변수만 바꾼다.
   deploy:
     needs: ci
+    if: vars.DEPLOY_TARGET != 'ecs'
     runs-on: ubuntu-latest
 
     steps:
@@ -97,3 +100,78 @@ jobs:
         run: |
           aws ec2 revoke-security-group-ingress --group-id "${{ secrets.PROD_SG_ID }}" \
             --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${RUNNER_IP}/32}]"
+
+  deploy-ecs:
+    needs: ci
+    if: vars.DEPLOY_TARGET == 'ecs'
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ap-northeast-2
+      ECR_REPOSITORY: cloudcost-insight
+      ECS_CLUSTER: cci-cluster
+      ECS_SERVICE: cci-app
+      ECS_TASK_FAMILY: cci-app
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: wrapper
+          cache-read-only: false
+
+      - name: Build bootJar
+        run: |
+          chmod +x gradlew
+          ./gradlew bootJar -x test
+          cp build/libs/cloudcost-insight-*.jar deploy/app.jar
+
+      - name: AWS 자격 증명 (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: ECR 로그인
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 커밋 해시 태그와 latest를 함께 올린다 (latest는 Terraform이 처음 만든 태스크 정의가 쓴다)
+      - name: 이미지 빌드·push
+        id: image
+        run: |
+          IMAGE="${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}"
+          docker build -t "$IMAGE:${GITHUB_SHA}" -t "$IMAGE:latest" deploy
+          docker push "$IMAGE:${GITHUB_SHA}"
+          docker push "$IMAGE:latest"
+          echo "uri=$IMAGE:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: 지금 태스크 정의 가져오기
+        run: |
+          aws ecs describe-task-definition --task-definition "$ECS_TASK_FAMILY" \
+            --query taskDefinition > task-definition.json
+
+      - name: 새 이미지로 태스크 정의 바꾸기
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: app
+          image: ${{ steps.image.outputs.uri }}
+
+      # 컨테이너 2개를 하나씩 바꾼다 (ALB 헬스체크 통과 후 다음). 실패하면 ECS가 이전 버전으로 되돌린다
+      - name: ECS 배포 (무중단)
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          service: ${{ env.ECS_SERVICE }}
+          wait-for-service-stability: true
