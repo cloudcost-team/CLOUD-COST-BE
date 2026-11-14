@@ -32,3 +32,15 @@ resource "aws_db_instance" "main" {
   deletion_protection = false
   skip_final_snapshot = true
 }
+
+# RDS가 관리하는 마스터 비밀번호는 기본 7일마다 바뀐다. 태스크는 시작할 때 한 번만 비밀번호를 받으므로,
+# 바뀐 뒤 새 DB 연결이 실패한다. 한 달 운영 동안 바뀌지 않게 주기를 늘린다 (지금 바로 바꾸지는 않는다).
+# 더 오래 운영하게 되면 교체 이벤트를 받아 ECS 서비스를 다시 배포하는 자동화를 추가한다 (ADR-021).
+resource "aws_secretsmanager_secret_rotation" "db" {
+  secret_id          = aws_db_instance.main.master_user_secret[0].secret_arn
+  rotate_immediately = false
+
+  rotation_rules {
+    automatically_after_days = 90
+  }
+}
