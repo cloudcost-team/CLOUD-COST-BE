@@ -1,6 +1,7 @@
 package com.cloudcost.application;
 
 import com.cloudcost.application.error.AwsAccessException;
+import com.cloudcost.application.port.ClusterLock;
 import com.cloudcost.application.port.AccountResourceRepository;
 import com.cloudcost.application.port.AwsAccountRepository;
 import com.cloudcost.application.port.CustomerAwsGateway;
@@ -10,10 +11,10 @@ import com.cloudcost.domain.account.AwsAccount;
 import com.cloudcost.domain.resource.AwsResource;
 import com.cloudcost.domain.resource.ResourceScan;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Set;
@@ -24,7 +25,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 확장 수집 (ADR-020): 켜진 모든 리전에서 볼륨·고정 IP·스냅샷·로드밸런서와, 기본 리전이 아닌 리전의 서버를 읽어 저장한다.
@@ -41,24 +41,27 @@ import java.util.concurrent.locks.ReentrantLock;
 public class ResourceScanService {
 
     static final int PARALLEL_REGIONS = 6;
+    /** 전 리전 수집이 길어도 넘지 않을 시간. 서버가 죽으면 이 시간 뒤 잠금이 풀린다 */
+    static final Duration LOCK_MAX_HOLD = Duration.ofMinutes(15);
 
     private final AwsAccountRepository accounts;
     private final AccountResourceRepository resources;
     private final CustomerAwsGateway gateway;
     private final Clock clock;
     private final Executor background;
-    private final Map<UUID, ReentrantLock> locks = new ConcurrentHashMap<>();
+    private final ClusterLock lock;
     private final Set<UUID> pending = ConcurrentHashMap.newKeySet();
 
     /** @param background 화면 조회가 맡기는 백그라운드 수집용 (테스트는 바로 실행하는 Executor를 넣는다) */
     public ResourceScanService(
         AwsAccountRepository accounts, AccountResourceRepository resources, CustomerAwsGateway gateway, Clock clock,
-        Executor background) {
+        Executor background, ClusterLock lock) {
         this.accounts = accounts;
         this.resources = resources;
         this.gateway = gateway;
         this.clock = clock;
         this.background = background;
+        this.lock = lock;
     }
 
     /** 지금 상태 (수집하지 않는다) */
@@ -95,9 +98,8 @@ public class ResourceScanService {
 
     /** 오래됐으면 다시 훑는다 (끝날 때까지 기다린다). 수집할 수 없는 연결이면 지금 상태를 그대로 돌려준다. AWS 오류는 상태로 남기고 던지지 않는다. */
     public ResourceScan refreshIfStale(String ownerId, UUID accountId) {
-        ReentrantLock lock = locks.computeIfAbsent(accountId, id -> new ReentrantLock());
-        lock.lock();
-        try {
+        // 서버가 여러 대여도 같은 연결은 한 곳에서만 훑는다 (ADR-021)
+        return lock.runExclusively("resource-scan:" + accountId, LOCK_MAX_HOLD, () -> {
             AwsAccount account = accounts.findByOwnerIdAndId(ownerId, accountId).orElse(null);
             ResourceScan scan = current(ownerId, accountId);
             Instant now = clock.instant();
@@ -105,9 +107,7 @@ public class ResourceScanService {
                 return scan;
             }
             return scan(account, scan, now);
-        } finally {
-            lock.unlock();
-        }
+        });
     }
 
     private ResourceScan scan(AwsAccount account, ResourceScan previous, Instant now) {

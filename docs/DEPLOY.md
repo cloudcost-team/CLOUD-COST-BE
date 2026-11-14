@@ -21,6 +21,12 @@
    ```
 서버가 이 역할로 고객 Role을 맡으므로, 고객 Trust Policy의 Principal(`CCI_BACKEND_ROLE_ARN`)은 바뀌지 않는다.
 
+**ECS로 옮길 때 (ADR-021)**: 새 Role을 만들지 말고 이 Role을 ECS **Task Role**로 그대로 쓴다. 신뢰 정책에 하나만 더 추가한다:
+```json
+{ "Effect": "Allow", "Principal": { "Service": "ecs-tasks.amazonaws.com" }, "Action": "sts:AssumeRole" }
+```
+고객 Role은 이 Role의 ARN만 믿으므로, Role을 새로 만들면 기존 고객 연결이 모두 끊긴다.
+
 ## 2. 키 페어
 EC2 → 키 페어 → 키 페어 생성: 이름 `cci-server-key`, RSA, `.pem` → 다운로드 후
 ```bash
