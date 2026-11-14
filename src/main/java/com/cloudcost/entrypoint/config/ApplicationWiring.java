@@ -124,9 +124,10 @@ class ApplicationWiring {
             UnitOfWork unitOfWork,
             Clock clock,
             UsageSettings settings,
-            Pauser pauser) {
+            Pauser pauser,
+            com.cloudcost.application.port.ClusterLock clusterLock) {
         return new Ec2DataRefresher(
-                accounts, instances, usage, syncJobs, gateway, unitOfWork, clock, settings, pauser);
+                accounts, instances, usage, syncJobs, gateway, unitOfWork, clock, settings, pauser, clusterLock);
     }
 
     @Bean
@@ -280,8 +281,9 @@ class ApplicationWiring {
     ResourceScanService resourceScanService(
             AwsAccountRepository accounts, AccountResourceRepository resources, CustomerAwsGateway gateway, Clock clock,
             @org.springframework.beans.factory.annotation.Qualifier("resourceScanExecutor")
-            java.util.concurrent.Executor resourceScanExecutor) {
-        return new ResourceScanService(accounts, resources, gateway, clock, resourceScanExecutor);
+            java.util.concurrent.Executor resourceScanExecutor,
+            com.cloudcost.application.port.ClusterLock clusterLock) {
+        return new ResourceScanService(accounts, resources, gateway, clock, resourceScanExecutor, clusterLock);
     }
 
     /** 화면 조회가 맡기는 백그라운드 확장 수집 (ADR-020). 동시에 2개 연결까지, 대기 50개를 넘으면 이번 조회는 맡기지 않는다 (다음 조회 때 다시) */

@@ -1,6 +1,7 @@
 package com.cloudcost.application;
 
 import com.cloudcost.application.error.AwsAccessException;
+import com.cloudcost.application.port.ClusterLock;
 import com.cloudcost.application.port.AwsAccountRepository;
 import com.cloudcost.application.port.CustomerAwsGateway;
 import com.cloudcost.application.port.CustomerAwsSession;
@@ -28,8 +29,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 조회 시점 수집 (캐시 방식).
@@ -59,7 +58,10 @@ public class Ec2DataRefresher {
     private final UsageSettings settings;
     private final RefreshPolicy policy;
     private final AwsRetry retry;
-    private final Map<UUID, ReentrantLock> locks = new ConcurrentHashMap<>();
+    private final ClusterLock lock;
+
+    /** 소급 수집(최대 455일)이 길어도 넘지 않을 시간. 서버가 죽으면 이 시간 뒤 잠금이 풀린다 */
+    static final Duration LOCK_MAX_HOLD = Duration.ofMinutes(30);
 
     public Ec2DataRefresher(
         AwsAccountRepository accounts,
@@ -70,7 +72,8 @@ public class Ec2DataRefresher {
         UnitOfWork unitOfWork,
         Clock clock,
         UsageSettings settings,
-        Pauser pauser) {
+        Pauser pauser,
+        ClusterLock lock) {
         this.accounts = accounts;
         this.instances = instances;
         this.usage = usage;
@@ -81,6 +84,7 @@ public class Ec2DataRefresher {
         this.settings = settings;
         this.policy = settings.refreshPolicy();
         this.retry = new AwsRetry(pauser);
+        this.lock = lock;
     }
 
     public Freshness refreshIfStale(String ownerId, UUID accountId) {
@@ -91,16 +95,13 @@ public class Ec2DataRefresher {
      * @param trigger 조회 시점(QUERY)인지 예약 수집(SCHEDULED)인지. 캐시 규칙은 같다 (예약 수집도 1시간 안이면 AWS를 부르지 않는다).
      */
     public Freshness refreshIfStale(String ownerId, UUID accountId, SyncJob.Trigger trigger) {
-        ReentrantLock lock = locks.computeIfAbsent(accountId, id -> new ReentrantLock());
-        lock.lock();
-        try {
-            // 잠금을 기다리는 동안 다른 요청이 수집했을 수 있으므로 다시 읽는다.
+        // 서버가 여러 대여도 같은 연결은 한 곳에서만 수집한다 (ADR-021)
+        return lock.runExclusively("ec2-refresh:" + accountId, LOCK_MAX_HOLD, () -> {
+            // 잠금을 기다리는 동안 다른 요청(다른 서버 포함)이 수집했을 수 있으므로 다시 읽는다.
             AwsAccount account = accounts.findByOwnerIdAndId(ownerId, accountId)
                 .orElseThrow(AwsAccountService::notFound);
             return refresh(account, trigger);
-        } finally {
-            lock.unlock();
-        }
+        });
     }
 
     private Freshness refresh(AwsAccount account, SyncJob.Trigger trigger) {

@@ -1,0 +1,30 @@
+// ECS용 Alloy 설정 (태스크마다 붙는 사이드카, infra/ecs/ecs.tf).
+// EC2용(config.alloy)과 달리 서버(/proc)·PostgreSQL 지표는 모으지 않는다 (호스트를 볼 수 없고 DB는 RDS가 따로 있다).
+// 앱 컨테이너는 bridge 네트워크 링크 이름 "app"으로 부른다. ECS에서는 관리 포트를 8080으로 합친다.
+
+prometheus.scrape "app" {
+  targets = [{
+    "__address__" = "app:8080",
+    "instance"    = sys.env("ALLOY_INSTANCE"),
+    "job"         = "cloudcost-app",
+  }]
+  metrics_path    = "/actuator/prometheus"
+  scrape_interval = "60s"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_CLOUD_PROM_URL")
+
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_PROM_USER")
+      password = sys.env("GRAFANA_CLOUD_API_KEY")
+    }
+  }
+
+  external_labels = {
+    environment = "prod",
+    platform    = "ecs",
+  }
+}

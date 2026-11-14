@@ -212,5 +212,15 @@ UNIQUE `(notification_id, channel_id)`. 인덱스 `(status, next_attempt_at)`(�
 키(`CCI_SECRET_KEY`)는 DB에 없어 DB만 유출돼서는 풀 수 없다. `v1:`이 없는 이전 평문 값은 앱이 시작할 때 일괄 암호화한다(`PlaintextWebhookEncryptor`, 여러 번 돌아도 같다). 그 전까지도 그대로 읽힌다.
 키가 바뀌어 못 푸는 행은 그 채널만 주소 없음(null)으로 읽혀 발송이 실패로 끝나고, 다른 채널·목록·등록은 막지 않는다.
 
+## V14 (2026-11-15) — 서버 여러 대 대비 잠금 (ADR-021)
+### cluster_locks — 이름별 임대 잠금 (`JdbcClusterLock`)
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| name | VARCHAR(100) PK | `ec2-refresh:{연결 id}`, `resource-scan:{연결 id}`, `collection-scheduler`, `notification-dispatch` |
+| locked_until | TIMESTAMPTZ | 이 시각이 지나면 누구든 다시 잡을 수 있다 |
+| locked_by | VARCHAR(36) | 잡은 쪽 토큰 (잡을 때마다 새 UUID) |
+
+연결별 행은 수집이 끝나면 지운다. 예약 작업 행은 남겨 두고 `locked_until`만 바꾼다. 사용자 데이터가 아니라 owner_id가 없다.
+
 ## 보존 (백로그)
 ec2_usage_hourly는 455일, sync_jobs는 90일, notifications·notification_deliveries는 읽은 지 90일 정도로 정리하는 작업이 필요하다.
