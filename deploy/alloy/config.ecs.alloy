@@ -5,7 +5,7 @@
 prometheus.scrape "app" {
   targets = [{
     "__address__" = "app:8080",
-    "instance"    = sys.env("ALLOY_INSTANCE"),
+    "instance"    = constants.hostname, // 태스크마다 다른 컨테이너 호스트 이름 → 두 태스크 지표가 섞이지 않는다
     "job"         = "cloudcost-app",
   }]
   metrics_path    = "/actuator/prometheus"

@@ -60,8 +60,8 @@ public class Ec2DataRefresher {
     private final AwsRetry retry;
     private final ClusterLock lock;
 
-    /** 소급 수집(최대 455일)이 길어도 넘지 않을 시간. 서버가 죽으면 이 시간 뒤 잠금이 풀린다 */
-    static final Duration LOCK_MAX_HOLD = Duration.ofMinutes(30);
+    /** 수집하는 동안은 계속 연장된다. 서버가 죽어 연장이 멈추면 이 시간 뒤 풀린다 */
+    static final Duration LOCK_MAX_HOLD = Duration.ofMinutes(5);
 
     public Ec2DataRefresher(
         AwsAccountRepository accounts,

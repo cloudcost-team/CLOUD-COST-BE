@@ -34,5 +34,5 @@ output "rds_endpoint" {
 
 output "ssm_secret_parameters" {
   description = "직접 값을 넣어야 하는 비밀값 자리"
-  value       = concat([for p in aws_ssm_parameter.app : p.name], [for p in aws_ssm_parameter.grafana_api_key : p.name])
+  value       = local.secret_parameter_names
 }

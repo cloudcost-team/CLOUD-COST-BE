@@ -1,6 +1,7 @@
 package com.cloudcost.adapter.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.cloudcost.IntegrationTestBase;
 import com.cloudcost.application.port.ClusterLock;
@@ -11,15 +12,18 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 /** 서버가 여러 대여도 같은 일을 한 곳에서만 하는지 (ADR-021) */
 class JdbcClusterLockTest extends IntegrationTestBase {
 
     @Autowired ClusterLock lock;
+    @Autowired JdbcTemplate jdbc;
 
     @Test
     void 같은_이름은_동시에_한_곳에서만_실행하고_끝나면_다음이_이어받는다() throws Exception {
@@ -73,6 +77,40 @@ class JdbcClusterLockTest extends IntegrationTestBase {
                 .as("최대 보유 시간이 지나면 다른 곳이 잡을 수 있다").isTrue();
         });
         assertThat(inner.get()).isEqualTo(1);
+    }
+
+    @Test
+    void 일이_도는_동안은_임대를_연장해_최대_보유_시간이_지나도_넘겨주지_않는다() {
+        String name = "test:" + UUID.randomUUID();
+        Duration maxHold = Duration.ofMillis(600);
+        AtomicInteger taken = new AtomicInteger();
+
+        lock.runExclusively(name, maxHold, () -> {
+            clock.advance(Duration.ofMillis(700)); // 연장이 없었다면 여기서 만료된다
+            sleep(450);                             // 그동안 연장(200ms마다)이 돌아 만료 시각을 지금 + 600ms로 민다
+            return lock.runIfFree(name, Duration.ZERO, maxHold, taken::incrementAndGet);
+        });
+
+        assertThat(taken.get()).as("일이 끝나기 전에는 다른 곳이 잡지 못한다").isZero();
+        assertThat(lock.runIfFree(name, Duration.ZERO, maxHold, taken::incrementAndGet))
+            .as("끝나면 바로 풀린다").isTrue();
+    }
+
+    @Test
+    void 종료_중이라_연장_예약이_거부돼도_잠금을_남기지_않는다() {
+        String name = "test:" + UUID.randomUUID();
+        JdbcClusterLock closing = new JdbcClusterLock(jdbc, clock);
+        closing.shutdown();
+        AtomicInteger runs = new AtomicInteger();
+
+        assertThatThrownBy(() -> closing.runExclusively(name, Duration.ofMinutes(5), runs::incrementAndGet))
+            .isInstanceOf(RejectedExecutionException.class);
+        assertThatThrownBy(() -> closing.runIfFree(name, Duration.ZERO, Duration.ofMinutes(30), runs::incrementAndGet))
+            .isInstanceOf(RejectedExecutionException.class);
+
+        assertThat(runs.get()).isZero();
+        assertThat(lock.runIfFree(name, Duration.ZERO, Duration.ofMinutes(5), runs::incrementAndGet))
+            .as("다른 서버가 바로 잡을 수 있다").isTrue();
     }
 
     private static void sleep(long millis) {

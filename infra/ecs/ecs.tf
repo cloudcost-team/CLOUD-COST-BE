@@ -178,7 +178,7 @@ locals {
 
     secrets = concat(
       [{ name = "DB_PASSWORD", valueFrom = "${aws_db_instance.main.master_user_secret[0].secret_arn}:password::" }],
-      [for env_name, param in aws_ssm_parameter.app : { name = env_name, valueFrom = param.arn }],
+      [for env_name, arn in local.app_secret_arns : { name = env_name, valueFrom = arn }],
     )
 
     logConfiguration = {
@@ -203,12 +203,11 @@ locals {
 
     environment = [
       { name = "ALLOY_CONFIG", value = file("${path.module}/../../deploy/alloy/config.ecs.alloy") },
-      { name = "ALLOY_INSTANCE", value = "cloudcost-app-ecs" },
       { name = "GRAFANA_CLOUD_PROM_URL", value = var.grafana_prom_url },
       { name = "GRAFANA_CLOUD_PROM_USER", value = var.grafana_prom_user },
     ]
 
-    secrets = [for p in aws_ssm_parameter.grafana_api_key : { name = "GRAFANA_CLOUD_API_KEY", valueFrom = p.arn }]
+    secrets = [{ name = "GRAFANA_CLOUD_API_KEY", valueFrom = local.grafana_secret_arn }]
 
     logConfiguration = {
       logDriver = "awslogs"
