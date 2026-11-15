@@ -65,8 +65,8 @@ class JdbcClusterLock implements ClusterLock {
         while (!tryAcquire(lease)) {
             pause();
         }
-        lease.startRenewing();
         try {
+            lease.startRenewing(); // 종료 중이면 예약이 거부된다. 그래도 finally에서 잠금을 푼다
             return work.get();
         } finally {
             lease.close(() -> jdbc.update("DELETE FROM cluster_locks WHERE name = ? AND locked_by = ?", name, lease.token));
@@ -80,8 +80,8 @@ class JdbcClusterLock implements ClusterLock {
         if (!tryAcquire(lease)) {
             return false;
         }
-        lease.startRenewing();
         try {
+            lease.startRenewing();
             work.run();
             return true;
         } finally {
