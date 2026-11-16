@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>CloudCost ERD</title>
+<!--
+  CloudCost Insight ERD (흰 배경). 스키마 원본: src/main/resources/db/migration V1~V14.
+  PNG 만들기: Chrome headless로 이 파일을 열어 스크린샷 (assets/erd.png).
+-->
+<style>
+  :root {
+    --bg: #ffffff; --ink: #1f2430; --sub: #5f6878; --faint: #b9bfca;
+    --line: #d9dce3; --head: #f3f4f7; --pk: #fff3df; --pk-key: #e0a21b; --fk-key: #c48a9c;
+    --rel: #e0759a; --rel-logical: #9aa2b4;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); }
+  body { font-family: "Pretendard", "Apple SD Gothic Neo", sans-serif; color: var(--ink); }
+  #canvas { position: relative; width: 2110px; height: 1380px; }
+  svg#rels { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+  /* 참고 ERD처럼: 패널 안에 칸마다 떨어진 셀, 머리글은 바 없이 글자만 */
+  .tbl { position: absolute; background: #eef0f4; border: 1px solid #d3d7df; border-radius: 4px; padding: 0 5px 5px; z-index: 1; }
+  .tbl .hd { display: flex; justify-content: space-between; align-items: baseline; gap: 28px; padding: 7px 3px 5px; }
+  .tbl .hd .ko { font-weight: 700; font-size: 14px; color: var(--ink); }
+  .tbl .hd .en { font-weight: 700; font-size: 14px; color: var(--ink); }
+  table { border-collapse: separate; border-spacing: 2px; margin: -2px; font-size: 12.5px; }
+  td { height: 20px; padding: 0 8px; white-space: nowrap; background: #ffffff; }
+  td.k { width: 28px; padding: 0 0 0 7px; }
+  td.ko { color: var(--ink); font-weight: 500; }
+  td.en { color: #3a4150; }
+  td.dm { color: #c6cbd4; font-style: italic; font-size: 11.5px; }
+  td.ty { color: var(--ink); font-weight: 500; }
+  tr.pk td { background: #fbe6c2; }
+  tr.pk td.ko, tr.pk td.en, tr.pk td.ty { font-weight: 700; }
+  tr.pk td.dm { color: #d9b77e; }
+  .title { position: absolute; left: 40px; top: 26px; }
+  .title h1 { margin: 0; font-size: 22px; font-weight: 800; }
+  .title p { margin: 4px 0 0; font-size: 13px; color: var(--sub); }
+  .legend { position: absolute; right: 40px; top: 30px; display: flex; gap: 22px; font-size: 12.5px; color: var(--sub); align-items: center; }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .group { position: absolute; border: 1.5px dashed #c9cdd6; border-radius: 10px; z-index: 0; }
+  .group b { position: absolute; top: -11px; left: 14px; background: #fff; padding: 0 8px; font-size: 13px; color: var(--sub); }
+</style>
+</head>
+<body>
+<div id="canvas">
+  <div class="title">
+    <h1>CloudCost Insight · ERD</h1>
+    <p>PostgreSQL 16 · Flyway V1–V14 · 테이블 16개</p>
+  </div>
+  <div class="legend">
+    <span><svg width="44" height="10"><line x1="0" y1="5" x2="44" y2="5" stroke="#e0759a" stroke-width="1.6" stroke-dasharray="5 4"/></svg>FK 제약</span>
+    <span><svg width="44" height="10"><line x1="0" y1="5" x2="44" y2="5" stroke="#9aa2b4" stroke-width="1.6" stroke-dasharray="2 4"/></svg>논리 참조 (owner_id 등, FK 없음)</span>
+    <span><svg width="16" height="12"><use href="#key" fill="#e0a21b"/></svg>PK</span>
+    <span><svg width="16" height="12"><use href="#key" fill="#c48a9c"/></svg>FK</span>
+  </div>
+  <svg id="rels">
+    <defs>
+      <symbol id="key" viewBox="0 0 24 16"><circle cx="6" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="0"/><path d="M6 2.5a5.5 5.5 0 1 0 5.2 7.3H15v2.4h3V9.8h1.6v2.4h3V6.2h-11.4A5.5 5.5 0 0 0 6 2.5zm0 3.4a2.1 2.1 0 1 1 0 4.2 2.1 2.1 0 0 1 0-4.2z"/></symbol>
+    </defs>
+  </svg>
+</div>
+<script>
+const T = "TIMESTAMPTZ", V = n => `VARCHAR(${n})`, N = (a, b) => `NUMERIC(${a},${b})`;
+// [논리명, 물리명, 타입, 키] 키: P=PK, F=FK, PF=PK+FK, L=논리 참조
+const TABLES = {
+  users: ["사용자", 40, 96, [
+    ["사용자 ID", "id", V(64), "P"], ["이메일", "email", V(320)], ["표시 이름", "display_name", V(200)],
+    ["로그인 제공자", "auth_provider", V(16)], ["제공자 식별자", "provider_subject", V(255)],
+    ["마지막 로그인", "last_login_at", T], ["가입 시각", "created_at", T]]],
+  refresh_tokens: ["리프레시 토큰", 40, 330, [
+    ["토큰 ID", "id", "UUID", "P"], ["사용자 ID", "owner_id", V(64), "L"], ["토큰 계열 ID", "family_id", "UUID"],
+    ["토큰 해시", "token_hash", V(64)], ["발급 시각", "created_at", T], ["만료 시각", "expires_at", T],
+    ["사용 시각", "used_at", T], ["폐기 시각", "revoked_at", T]]],
+  alert_settings: ["알림 설정", 40, 590, [
+    ["사용자 ID", "owner_id", V(64), "P"], ["예산 80% 알림", "budget80", "BOOLEAN"], ["예산 100% 알림", "budget100", "BOOLEAN"],
+    ["예산 120% 알림", "budget120", "BOOLEAN"], ["급증 알림", "spike", "BOOLEAN"], ["주간 요약", "weekly_summary", "BOOLEAN"],
+    ["수정 시각", "updated_at", T]]],
+  notification_channels: ["알림 채널", 40, 830, [
+    ["채널 ID", "id", "UUID", "P"], ["사용자 ID", "owner_id", V(64), "L"], ["채널 유형", "type", V(20)],
+    ["웹훅 주소 (암호화)", "webhook_url", V(600)], ["사용 여부", "enabled", "BOOLEAN"],
+    ["등록 시각", "created_at", T], ["수정 시각", "updated_at", T]]],
+  notification_deliveries: ["알림 발송", 40, 1070, [
+    ["발송 ID", "id", "UUID", "P"], ["알림 ID", "notification_id", "UUID", "F"], ["채널 ID", "channel_id", "UUID", "F"],
+    ["사용자 ID", "owner_id", V(64), "L"], ["상태", "status", V(16)], ["시도 횟수", "attempts", "INT"],
+    ["마지막 오류", "last_error", V(300)], ["다음 시도 시각", "next_attempt_at", T], ["발송 시각", "sent_at", T],
+    ["생성 시각", "created_at", T]]],
+  aws_accounts: ["AWS 연결", 545, 96, [
+    ["연결 ID", "id", "UUID", "P"], ["사용자 ID", "owner_id", V(64), "F"], ["연결 이름", "alias", V(160)],
+    ["조회 리전", "region", V(32)], ["External ID", "external_id", V(64)], ["Role ARN", "role_arn", V(2048)],
+    ["AWS 계정 번호", "aws_account_id", V(12)], ["스택 ID", "stack_id", V(512)], ["상태", "status", V(16)],
+    ["마지막 오류 코드", "last_error_code", V(64)], ["마지막 오류 메시지", "last_error_message", V(1000)],
+    ["검증 시각", "verified_at", T], ["인스턴스 갱신 시각", "instances_refreshed_at", T],
+    ["사용량 갱신 시각", "usage_refreshed_at", T], ["연결 해제 시각", "disconnected_at", T],
+    ["생성 시각", "created_at", T], ["수정 시각", "updated_at", T]]],
+  account_budgets: ["월 예산", 545, 590, [
+    ["연결 ID", "account_id", "UUID", "PF"], ["사용자 ID", "owner_id", V(64), "L"], ["예산 금액", "amount", N(15, 2)],
+    ["통화", "currency", V(3)], ["수정 시각", "updated_at", T]]],
+  account_resource_scans: ["리소스 스캔 상태", 545, 770, [
+    ["연결 ID", "account_id", "UUID", "PF"], ["사용자 ID", "owner_id", V(64), "L"], ["상태", "status", V(32)],
+    ["권한 버전", "permission_version", "INT"], ["스캔 시각", "scanned_at", T], ["안내 메시지", "message", V(500)],
+    ["Describe 호출 수", "describe_count", "INT"], ["CloudWatch 호출 수", "cw_request_count", "INT"]]],
+  notifications: ["알림", 545, 1010, [
+    ["알림 ID", "id", "UUID", "P"], ["연결 ID", "account_id", "UUID", "F"], ["사용자 ID", "owner_id", V(64), "L"],
+    ["알림 유형", "type", V(20)], ["메시지", "message", V(500)], ["중복 방지 키", "event_key", V(200)],
+    ["임계 비율(%)", "threshold_percent", "INT"], ["예산(USD)", "budget_usd", N(20, 6)], ["월말 예상(USD)", "forecast_usd", N(20, 6)],
+    ["급증일", "spike_date", "DATE"], ["급증 배수", "spike_ratio", N(20, 1)], ["급증 원인", "spike_cause", V(255)],
+    ["생성 시각", "created_at", T], ["읽은 시각", "read_at", T]]],
+  ec2_instances: ["EC2 인스턴스", 1080, 96, [
+    ["행 ID", "id", "UUID", "P"], ["연결 ID", "account_id", "UUID", "F"], ["사용자 ID", "owner_id", V(64), "L"],
+    ["인스턴스 ID", "instance_id", V(32)], ["Name 태그", "name", V(256)], ["인스턴스 타입", "instance_type", V(64)],
+    ["리전", "region", V(32)], ["가용 영역", "availability_zone", V(32)], ["상태", "state", V(32)],
+    ["시작 시각", "launch_time", T], ["OS", "platform_details", V(128)], ["테넌시", "tenancy", V(16)],
+    ["스팟 여부", "spot", "BOOLEAN"], ["상세 모니터링", "detailed_monitoring", "BOOLEAN"], ["현재 존재", "present", "BOOLEAN"],
+    ["수집 후 실행 여부", "active_since_usage_sync", "BOOLEAN"], ["사용량 수집 완료 시각", "usage_collected_until", T],
+    ["지표 수집 완료 시각", "metrics_collected_until", T], ["처음 발견", "first_seen_at", T], ["마지막 발견", "last_seen_at", T]]],
+  ec2_usage_hourly: ["시간별 사용량", 1080, 640, [
+    ["행 ID", "id", "BIGINT", "P"], ["연결 ID", "account_id", "UUID", "F"], ["사용자 ID", "owner_id", V(64), "L"],
+    ["인스턴스 ID", "instance_id", V(32), "L"], ["시간 시작", "hour_start", T], ["샘플 수", "sample_count", N(10, 2)],
+    ["CPU 평균(%)", "cpu_avg", N(7, 3)], ["CPU 최대(%)", "cpu_max", N(7, 3)], ["네트워크 수신(B)", "network_in_bytes", "BIGINT"],
+    ["네트워크 송신(B)", "network_out_bytes", "BIGINT"], ["수집 시각", "collected_at", T]]],
+  account_resources: ["AWS 리소스", 1080, 1010, [
+    ["행 ID", "id", "UUID", "P"], ["연결 ID", "account_id", "UUID", "F"], ["사용자 ID", "owner_id", V(64), "L"],
+    ["리소스 유형", "type", V(20)], ["리소스 ID", "resource_id", V(255)], ["이름", "name", V(255)], ["리전", "region", V(32)],
+    ["세부 유형", "subtype", V(64)], ["크기(GB)", "size_gb", "INT"], ["사용 중", "in_use", "BOOLEAN"],
+    ["리소스 생성 시각", "created_at", T], ["요청 수", "request_count", "BIGINT"], ["플랫폼", "platform", V(100)],
+    ["관측 시각", "observed_at", T]]],
+  sync_jobs: ["수집 작업", 1620, 96, [
+    ["작업 ID", "id", "UUID", "P"], ["연결 ID", "account_id", "UUID", "F"], ["사용자 ID", "owner_id", V(64), "L"],
+    ["실행 계기", "trigger_type", V(16)], ["상태", "status", V(16)], ["인스턴스 갱신", "instances_refreshed", "BOOLEAN"],
+    ["사용량 갱신", "usage_refreshed", "BOOLEAN"], ["EC2 호출 수", "ec2_request_count", "INT"], ["CloudWatch 호출 수", "cw_request_count", "INT"],
+    ["인스턴스 수", "instance_count", "INT"], ["사용량 행 수", "usage_rows", "INT"], ["오류 코드", "error_code", V(64)],
+    ["오류 메시지", "error_message", V(1000)], ["경고", "warning", V(2000)], ["시작 시각", "started_at", T], ["종료 시각", "finished_at", T]]],
+  ec2_price_cache: ["온디맨드 단가 캐시", 1620, 560, [
+    ["행 ID", "id", "UUID", "P"], ["리전", "region", V(32)], ["인스턴스 타입", "instance_type", V(64)],
+    ["운영체제", "operating_system", V(64)], ["테넌시", "tenancy", V(16)], ["라이선스", "license_model", V(64)],
+    ["사전 설치 SW", "pre_installed_sw", V(32)], ["시간당 단가(USD)", "usd_per_hour", N(14, 8)], ["조회 시각", "fetched_at", T]]],
+  exchange_rates: ["환율", 1620, 820, [
+    ["행 ID", "id", "UUID", "P"], ["기준 통화", "base", V(3)], ["대상 통화", "quote", V(3)], ["환율", "rate", N(18, 6)],
+    ["기준일", "rate_date", "DATE"], ["출처", "source", V(100)], ["조회 시각", "fetched_at", T]]],
+  cluster_locks: ["클러스터 잠금", 1620, 1030, [
+    ["잠금 이름", "name", V(100), "P"], ["잠금 만료", "locked_until", T], ["잠금 보유자", "locked_by", V(36)]]],
+};
+
+// [부모, 자식, 자식 컬럼, 부모 쪽 변, 자식 쪽 변, 종류(fk|logical), 자식 다중성(many|one), 꺾는 x 또는 y]
+const RELS = [
+  ["users", "aws_accounts", "owner_id", "right", "left", "fk", "many"],
+  ["users", "refresh_tokens", "owner_id", "bottom", "top", "logical", "many"],
+  ["users", "alert_settings", "owner_id", "left", "left", "logical", "one", 22],
+  ["users", "notification_channels", "owner_id", "left", "left", "logical", "many", 14],
+  ["aws_accounts", "ec2_instances", "account_id", "right", "left", "fk", "many"],
+  ["aws_accounts", "ec2_usage_hourly", "account_id", "right", "left", "fk", "many"],
+  ["aws_accounts", "account_resources", "account_id", "right", "left", "fk", "many"],
+  ["aws_accounts", "sync_jobs", "account_id", "top", "top", "fk", "many", 74],
+  ["aws_accounts", "account_budgets", "account_id", "bottom", "top", "fk", "one"],
+  ["aws_accounts", "account_resource_scans", "account_id", "left", "left", "fk", "one", 507],
+  ["aws_accounts", "notifications", "account_id", "left", "left", "fk", "many", 507],
+  ["ec2_instances", "ec2_usage_hourly", "instance_id", "bottom", "top", "logical", "many"],
+  ["notifications", "notification_deliveries", "notification_id", "left", "right", "fk", "many"],
+  ["notification_channels", "notification_deliveries", "channel_id", "bottom", "top", "fk", "many"],
+];
+
+const canvas = document.getElementById("canvas");
+const KEY = c => `<svg width="16" height="11" style="vertical-align:-1px"><use href="#key" fill="${c}"/></svg>`;
+for (const [name, [ko, x, y, cols]] of Object.entries(TABLES)) {
+  const d = document.createElement("div");
+  d.className = "tbl"; d.id = name; d.style.left = x + "px"; d.style.top = y + "px";
+  const rows = cols.map(([k, e, t, key]) => {
+    const pk = key === "P" || key === "PF";
+    const icon = pk ? KEY("#e0a21b") : key === "F" ? KEY("#c48a9c") : key === "L" ? KEY("#cfd3dc") : "";
+    return `<tr class="${pk ? "pk" : ""}" data-col="${e}"><td class="k">${icon}</td><td class="ko">${k}</td><td class="en">${e}</td><td class="dm">Domain</td><td class="ty">${t}</td></tr>`;
+  }).join("");
+  d.innerHTML = `<div class="hd"><span class="ko">${ko}</span><span class="en">${name}</span></div><table>${rows}</table>`;
+  canvas.appendChild(d);
+}
+
+const groups = [["독립 테이블 · 공용 캐시와 운영", "ec2_price_cache", "cluster_locks"]];
+for (const [label, first, last] of groups) {
+  const a = document.getElementById(first), b = document.getElementById(last);
+  const tables = [...document.querySelectorAll(".tbl")].filter(t => t.offsetLeft >= a.offsetLeft - 2 && t.offsetTop >= a.offsetTop - 2);
+  const x0 = Math.min(...tables.map(t => t.offsetLeft)) - 18, y0 = a.offsetTop - 26;
+  const x1 = Math.max(...tables.map(t => t.offsetLeft + t.offsetWidth)) + 18, y1 = b.offsetTop + b.offsetHeight + 18;
+  const g = document.createElement("div"); g.className = "group";
+  Object.assign(g.style, {left: x0 + "px", top: y0 + "px", width: (x1 - x0) + "px", height: (y1 - y0) + "px"});
+  g.innerHTML = `<b>${label}</b>`; canvas.appendChild(g);
+}
+
+const svg = document.getElementById("rels");
+const NS = "http://www.w3.org/2000/svg";
+const box = id => { const e = document.getElementById(id); return {x: e.offsetLeft, y: e.offsetTop, w: e.offsetWidth, h: e.offsetHeight, el: e}; };
+const rowY = (id, col) => { const b = box(id); const r = b.el.querySelector(`tr[data-col="${col}"]`); return b.y + r.offsetTop + b.el.querySelector(".hd").offsetHeight + r.offsetHeight / 2 + 1; };
+const pkCol = id => TABLES[id][3].find(c => c[3] === "P" || c[3] === "PF")[1];
+function anchor(id, side, col) {
+  const b = box(id);
+  if (side === "left") return [b.x, rowY(id, col)];
+  if (side === "right") return [b.x + b.w, rowY(id, col)];
+  if (side === "top") return [b.x + Math.min(b.w - 30, 60), b.y];
+  return [b.x + Math.min(b.w - 30, 60), b.y + b.h];
+}
+function path(pts, kind) {
+  const p = document.createElementNS(NS, "path");
+  p.setAttribute("d", "M" + pts.map(q => q.join(" ")).join(" L"));
+  p.setAttribute("fill", "none");
+  p.setAttribute("stroke", kind === "fk" ? "var(--rel)" : "var(--rel-logical)");
+  p.setAttribute("stroke-width", "1.6");
+  p.setAttribute("stroke-dasharray", kind === "fk" ? "5 4" : "2 4");
+  svg.appendChild(p);
+}
+// 끝 표기: dir = 테이블에서 바깥으로 나가는 단위 벡터
+function endMark(pt, dir, type, kind) {
+  const c = kind === "fk" ? "var(--rel)" : "var(--rel-logical)";
+  const g = document.createElementNS(NS, "g");
+  const [x, y] = pt, [dx, dy] = dir, nx = -dy, ny = dx;
+  const L = (a, b) => `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${c}" stroke-width="1.6"/>`;
+  const at = d => [x + dx * d, y + dy * d];
+  const bar = d => L([at(d)[0] + nx * 6, at(d)[1] + ny * 6], [at(d)[0] - nx * 6, at(d)[1] - ny * 6]);
+  let s = L(pt, at(22));
+  if (type === "oneOnly") s += bar(8) + bar(13);
+  else {
+    const o = at(18);
+    s += `<circle cx="${o[0]}" cy="${o[1]}" r="4" fill="#fff" stroke="${c}" stroke-width="1.6"/>`;
+    if (type === "one") s += bar(8);
+    else s += L(at(10), [x + nx * 7, y + ny * 7]) + L(at(10), [x - nx * 7, y - ny * 7]);
+  }
+  g.innerHTML = s; svg.appendChild(g);
+}
+const DIR = {left: [-1, 0], right: [1, 0], top: [0, -1], bottom: [0, 1]};
+for (const [parent, child, col, ps, cs, kind, mult, bend] of RELS) {
+  const a = anchor(parent, ps, pkCol(parent)), b = anchor(child, cs, col);
+  const da = DIR[ps], db = DIR[cs];
+  const a2 = [a[0] + da[0] * 22, a[1] + da[1] * 22], b2 = [b[0] + db[0] * 22, b[1] + db[1] * 22];
+  let mid;
+  if (ps === "left" && cs === "left") { const x = bend ?? Math.min(a2[0], b2[0]) - 20; mid = [[x, a2[1]], [x, b2[1]]]; }
+  else if (ps === "top" && cs === "top") { const y = bend ?? Math.min(a2[1], b2[1]) - 20; mid = [[a2[0], y], [b2[0], y]]; }
+  else if (da[0] !== 0) { const x = bend ?? (a2[0] + b2[0]) / 2; mid = [[x, a2[1]], [x, b2[1]]]; }
+  else { const y = bend ?? (a2[1] + b2[1]) / 2; mid = [[a2[0], y], [b2[0], y]]; }
+  path([a2, ...mid, b2], kind);
+  endMark(a, da, "oneOnly", kind);
+  endMark(b, db, mult, kind);
+}
+document.body.dataset.ready = "1";
+</script>
+</body>
+</html>
